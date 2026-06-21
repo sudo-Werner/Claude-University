@@ -1,4 +1,6 @@
-from flask import Flask, jsonify, request
+from pathlib import Path
+
+from flask import Flask, jsonify, request, send_from_directory
 
 from backend import db, events, profile, queries
 
@@ -61,5 +63,15 @@ def create_app(db_path=None):
         finally:
             conn.close()
         return jsonify(result or {})
+
+    frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+
+    @app.get("/")
+    def index():
+        return send_from_directory(frontend_dir, "platform.html")
+
+    @app.get("/src/<path:filename>")
+    def src_files(filename):
+        return send_from_directory(frontend_dir / "src", filename)
 
     return app
