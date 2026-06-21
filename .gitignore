@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Test / tooling caches
+.pytest_cache/
+
+# Local runtime data (the SQLite db is created at runtime, never committed)
+backend/data/
+
+# Claude session memory / handoff buffer
+.remember/
+
+# OS
+.DS_Store
