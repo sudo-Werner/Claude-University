@@ -60,14 +60,17 @@ def list_courses(conn, content_dir):
     for child in sorted(content_dir.iterdir()):
         if not (child / "course.json").exists():
             continue
-        manifest = load_manifest(content_dir, child.name)
-        progress = course_progress(conn, content_dir, child.name)
-        summaries.append({
-            "id": manifest["id"],
-            "title": manifest["title"],
-            "subtitle": manifest.get("subtitle", ""),
-            "progress": {k: progress[k] for k in ("done", "total", "pct")},
-            "nextLesson": progress["nextLesson"],
-            "reviewsDue": 0,
-        })
+        try:  # skip malformed course
+            manifest = load_manifest(content_dir, child.name)
+            progress = course_progress(conn, content_dir, child.name)
+            summaries.append({
+                "id": manifest["id"],
+                "title": manifest["title"],
+                "subtitle": manifest.get("subtitle", ""),
+                "progress": {k: progress[k] for k in ("done", "total", "pct")},
+                "nextLesson": progress["nextLesson"],
+                "reviewsDue": 0,
+            })
+        except Exception:
+            continue  # skip malformed course
     return summaries

@@ -93,6 +93,7 @@ export async function init({ window, fetch }) {
   async function openCourse(courseId) {
     ui.courseId = courseId;
     ui.manifest = await loadCourse({ fetch, courseId });
+    if (!ui.manifest) { showHome(); return; }
     await refreshSummary();
     log("course_opened", { courseId });
     showCourse();

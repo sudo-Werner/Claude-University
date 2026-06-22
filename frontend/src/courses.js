@@ -1,5 +1,6 @@
 export async function listCourses({ fetch, endpoint = "/api/courses" }) {
   const resp = await fetch(endpoint);
+  if (!resp.ok) return [];
   const body = await resp.json();
   return body.courses || [];
 }

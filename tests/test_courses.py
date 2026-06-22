@@ -72,3 +72,16 @@ def test_list_courses_returns_summary(conn, tmp_path):
     assert summary["progress"] == {"done": 0, "total": 2, "pct": 0}
     assert summary["nextLesson"]["id"] == "l1"
     assert summary["reviewsDue"] == 0
+
+
+def test_list_courses_skips_malformed_course_json(conn, tmp_path):
+    from backend import courses
+    root = _make_course(tmp_path)
+    # Add a second course with invalid JSON in course.json
+    bad_dir = root / "bad-course" / "lessons"
+    bad_dir.mkdir(parents=True)
+    (root / "bad-course" / "course.json").write_text("{ not valid json")
+    # Should not raise; only the valid course is returned
+    listed = courses.list_courses(conn, root)
+    assert len(listed) == 1
+    assert listed[0]["id"] == "demo"

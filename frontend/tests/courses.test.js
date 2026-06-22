@@ -29,6 +29,11 @@ test("loadCourse fetches the manifest by id", async () => {
   assert.equal(c.id, "machine-learning");
 });
 
+test("listCourses returns [] when fetch responds with non-ok status", async () => {
+  const fetch = async () => ({ ok: false, status: 500 });
+  assert.deepEqual(await listCourses({ fetch }), []);
+});
+
 test("loadLesson fetches by course and lesson id, null on miss", async () => {
   let url;
   const ok = async (u) => {
