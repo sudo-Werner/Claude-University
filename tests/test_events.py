@@ -47,3 +47,19 @@ def test_missing_required_field_raises(conn):
         events.insert_events(conn, [bad])
     count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
     assert count == 0
+
+
+def test_insert_persists_course_id(conn):
+    from backend import events, queries
+
+    events.insert_events(conn, [{
+        "client_event_id": "ce-course-1",
+        "session_id": "s1",
+        "event_type": "lesson_completed",
+        "occurred_at": "2026-06-22T19:00:00+00:00",
+        "course_id": "machine-learning",
+        "topic_id": "ml-m3-l2",
+    }])
+    rows = queries.query_events(conn, event_type="lesson_completed")
+    assert rows[0]["course_id"] == "machine-learning"
+    assert rows[0]["topic_id"] == "ml-m3-l2"
