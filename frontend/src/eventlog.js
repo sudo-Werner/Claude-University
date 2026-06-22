@@ -1,6 +1,7 @@
 export function buildEvent({
   type,
   topicId = null,
+  courseId = null,
   payload = null,
   sessionId,
   device = "web",
@@ -14,6 +15,7 @@ export function buildEvent({
     occurred_at: now().toISOString(),
     device,
     topic_id: topicId,
+    course_id: courseId,
     payload,
   };
 }
