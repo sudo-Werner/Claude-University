@@ -20,6 +20,7 @@ export function dashboardHTML(data, timerView) {
   ).join("");
 
   return `
+    <div class="dash">
     <div class="greeting"><h1>Good morning, Werner</h1><span>Today</span></div>
     <section class="card">
       <div class="session-head">
@@ -48,5 +49,6 @@ export function dashboardHTML(data, timerView) {
       </section>
     </div>
     <div class="streak-strip">${FLAME}<div><b>${data.streakDays}-day streak.</b> One session today keeps it alive.</div></div>
+    </div>
   `;
 }

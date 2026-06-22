@@ -27,6 +27,7 @@ export function lessonHTML(lesson, state) {
     : "";
 
   return `
+    <div class="lesson-col">
     <div>
       <div class="steps">${segs}</div>
       <div class="steprow"><span>Step ${lesson.step} of ${lesson.totalSteps} · <b>Exercise</b></span><span class="right">${lesson.topic}</span></div>
@@ -43,6 +44,7 @@ export function lessonHTML(lesson, state) {
     <div class="nav">
       <button class="btn-back" data-action="back">Back</button>
       <button class="btn-primary" data-action="continue">Continue ${ARROW}</button>
+    </div>
     </div>
   `;
 }
