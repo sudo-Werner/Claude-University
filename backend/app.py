@@ -74,4 +74,8 @@ def create_app(db_path=None):
     def src_files(filename):
         return send_from_directory(frontend_dir / "src", filename)
 
+    @app.get("/styles.css")
+    def styles():
+        return send_from_directory(frontend_dir, "styles.css")
+
     return app

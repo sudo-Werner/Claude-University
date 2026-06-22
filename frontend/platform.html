@@ -4,9 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Claude University</title>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main id="app">Loading…</main>
+    <div class="page"><main class="app" id="app">Loading…</main></div>
     <script type="module">
       import { init } from "/src/app.js";
       init({ window, fetch: window.fetch.bind(window) });
