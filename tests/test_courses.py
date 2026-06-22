@@ -38,3 +38,37 @@ def test_flatten_lessons_keeps_order_and_module(tmp_path):
     flat = courses.flatten_lessons(courses.load_manifest(root, "demo"))
     assert [l["id"] for l in flat] == ["l1", "l2"]
     assert flat[0]["moduleTitle"] == "Module One"
+
+
+def test_progress_starts_at_zero_and_points_at_first(conn, tmp_path):
+    from backend import courses
+    root = _make_course(tmp_path)
+    p = courses.course_progress(conn, root, "demo")
+    assert p == {"done": 0, "total": 2, "pct": 0,
+                 "nextLesson": {"id": "l1", "title": "Lesson One", "moduleTitle": "Module One"}}
+
+
+def test_completing_a_lesson_advances_progress(conn, tmp_path):
+    from backend import courses, events
+    root = _make_course(tmp_path)
+    events.insert_events(conn, [{
+        "client_event_id": "ce-1", "session_id": "s1",
+        "event_type": "lesson_completed", "occurred_at": "2026-06-22T19:00:00+00:00",
+        "course_id": "demo", "topic_id": "l1",
+    }])
+    p = courses.course_progress(conn, root, "demo")
+    assert p["done"] == 1
+    assert p["pct"] == 50
+    assert p["nextLesson"]["id"] == "l2"
+
+
+def test_list_courses_returns_summary(conn, tmp_path):
+    from backend import courses
+    root = _make_course(tmp_path)
+    listed = courses.list_courses(conn, root)
+    assert len(listed) == 1
+    summary = listed[0]
+    assert summary["id"] == "demo"
+    assert summary["progress"] == {"done": 0, "total": 2, "pct": 0}
+    assert summary["nextLesson"]["id"] == "l1"
+    assert summary["reviewsDue"] == 0
