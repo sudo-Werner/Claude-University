@@ -4,7 +4,19 @@ import { shellHTML } from "../src/views/shell.js";
 import { dashboardHTML } from "../src/views/dashboard.js";
 import { lessonHTML } from "../src/views/lesson.js";
 import { diagnosticHTML } from "../src/views/diagnostic.js";
-import { DASHBOARD_SEED, SAMPLE_LESSON } from "../src/seed.js";
+const DASHBOARD_SEED = {
+  topic: "Backpropagation, intuitively",
+  sub: "Module 3 · Neural Networks · Lesson 2",
+  durationMin: 90, progressPct: 30, lessonsDone: 12, lessonsTotal: 40,
+  reviewsDue: 8, streakDays: 12,
+};
+const SAMPLE_LESSON = {
+  step: 4, totalSteps: 5, topic: "Backpropagation", eyebrow: "EXERCISE",
+  promptHtml: "A weight <code>w</code> has gradient <code>∂L/∂w = 0.4</code>.",
+  hintHtml: "Gradient descent moves <em>against</em> the gradient.",
+  solutionAns: "w ← w − 0.04",
+  solutionNote: "A small move downhill on the loss.",
+};
 
 const idleTimer = {
   fills: [0, 0, 0],
@@ -13,12 +25,15 @@ const idleTimer = {
   clock: "0:00 / 90:00",
 };
 
-test("shell shows both tabs with the active one selected", () => {
-  const html = shellHTML({ activeTab: "lesson", streakDays: 12 });
-  assert.match(html, /data-tab="dashboard"/);
-  assert.match(html, /data-tab="lesson"[^>]*aria-selected="true"/);
-  assert.match(html, /id="view"/);
-  assert.match(html, /12/);
+test("shell shows the streak; back control only when given", () => {
+  const home = shellHTML({ streakDays: 12 });
+  assert.match(home, /12/);
+  assert.match(home, /id="view"/);
+  assert.doesNotMatch(home, /data-action="nav-back"/);
+
+  const inCourse = shellHTML({ streakDays: 12, back: "Courses" });
+  assert.match(inCourse, /data-action="nav-back"/);
+  assert.match(inCourse, /Courses/);
 });
 
 test("dashboard renders the seeded session and stats", () => {

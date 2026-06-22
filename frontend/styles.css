@@ -263,3 +263,7 @@ textarea::placeholder{color:#b3a994}
 @media (min-width:760px){
   .course-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:18px; align-items:start}
 }
+
+.nav-back-top{align-self:flex-start; background:none; border:none; font:600 14px/1 inherit; cursor:pointer;
+  color:var(--text-mut); padding:2px 0}
+.nav-back-top:hover{color:var(--text)}
