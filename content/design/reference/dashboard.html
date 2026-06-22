@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude University — Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page">
+    <main class="app">
+
+      <header class="topbar">
+        <div class="brand"><span class="logo">U</span>Claude University</div>
+        <div class="streak">
+          <svg class="flame" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2c1 3-1 4-1 6a3 3 0 006 0c0-1.5-1-2.5-1-4 2 1.5 4 4 4 8a8 8 0 11-16 0c0-4 3-6 4-8 .5 1 1 1.5 2 2 1-1 1.5-2 1-4z" fill="#e0892f"/></svg>
+          12
+        </div>
+      </header>
+
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" aria-selected="true">Dashboard</button>
+        <button class="tab" role="tab" aria-selected="false">Lesson</button>
+      </div>
+
+      <div class="greeting"><h1>Good morning, Alex</h1><span>Thursday</span></div>
+
+      <!-- TODAY'S SESSION — merges the session card + 90-min phase timer -->
+      <section class="card">
+        <div class="session-head">
+          <span class="eyebrow">TODAY'S SESSION</span>
+          <span class="meta">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#a59b89" stroke-width="2"/><path d="M12 7v5l3 2" stroke="#a59b89" stroke-width="2" stroke-linecap="round"/></svg>
+            90 min
+          </span>
+        </div>
+        <h2 class="session-topic">Backpropagation, intuitively</h2>
+        <div class="session-sub">Module 3 · Neural Networks · Lesson 2</div>
+
+        <div class="phase-bar" aria-label="Session plan">
+          <div class="phase-track" style="flex:15 1 0"><i style="background:#3aa0e0; width:0"></i></div>
+          <div class="phase-track" style="flex:60 1 0"><i style="background:#7c6aff; width:0"></i></div>
+          <div class="phase-track" style="flex:15 1 0"><i style="background:#25b478; width:0"></i></div>
+        </div>
+        <div class="phase-labels">
+          <div class="active-warm" style="flex:15 1 0"><div class="name">Warm-up</div><div class="dur">15m</div></div>
+          <div style="flex:60 1 0"><div class="name">Peak focus</div><div class="dur">60m</div></div>
+          <div style="flex:15 1 0"><div class="name">Cool-down</div><div class="dur">15m</div></div>
+        </div>
+
+        <div class="timer-status"><span><b>Warm-up</b> in progress</span><span class="clock">0:00 / 90:00</span></div>
+
+        <button class="btn-primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="#fff"><path d="M7 5l12 7-12 7V5z"/></svg>
+          Start session
+        </button>
+      </section>
+
+      <div class="stat-row">
+        <section class="stat">
+          <span class="eyebrow mut">COURSE PROGRESS</span>
+          <div style="display:flex; align-items:baseline; gap:6px; margin-top:12px"><span class="big">30</span><span class="unit">%</span></div>
+          <div class="bar"><i style="width:30%"></i></div>
+          <div class="stat-note">12 of 40 lessons</div>
+        </section>
+        <section class="stat">
+          <span class="eyebrow mut">REVIEWS DUE</span>
+          <div style="display:flex; align-items:baseline; gap:6px; margin-top:12px"><span class="big" style="color:var(--blue)">8</span><span class="unit">cards</span></div>
+          <div class="stat-note" style="margin:10px 0 14px">Spaced repetition</div>
+          <button class="btn-secondary">Review</button>
+        </section>
+      </div>
+
+      <div class="streak-strip">
+        <svg class="flame" viewBox="0 0 24 24" fill="none"><path d="M12 2c1 3-1 4-1 6a3 3 0 006 0c0-1.5-1-2.5-1-4 2 1.5 4 4 4 8a8 8 0 11-16 0c0-4 3-6 4-8 .5 1 1 1.5 2 2 1-1 1.5-2 1-4z" fill="#e0892f"/></svg>
+        <div><b>12-day streak.</b> One session today keeps it alive.</div>
+      </div>
+
+    </main>
+  </div>
+</body>
+</html>

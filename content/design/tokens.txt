@@ -1,0 +1,183 @@
+CLAUDE UNIVERSITY — DESIGN TOKENS (plain text)
+Warm frosted-glass study theme. UI font system-ui; reading font Georgia (serif). No frameworks.
+
+================================================================
+COLOURS (exact hex / rgba)
+================================================================
+
+BRAND / ACCENT
+  Purple (primary)          #7c6aff
+  Purple deep (text)        #5a4bd0
+  Blue (secondary)          #2f8fd0
+  Blue bright (warm-up)     #3aa0e0
+  Blue text / inline code   #1f78b4
+  Green (peak->cool/success)#25b478  (deep #21a06a, text #1c7a52 / #1c8c5c, darkest #13633f)
+  Primary gradient          linear-gradient(135deg, #7c6aff, #4fa3e8)
+  Logo-mark gradient        linear-gradient(135deg, #7c6aff, #4fc3f7)
+
+TEXT
+  Primary / headings        #241f1a
+  Body                      #544e44
+  Reading prose (serif)     #403a31
+  Secondary / meta          #837a6c
+  Captions / labels         #8f8676
+  Faint (units, counters)   #b3a994
+  On-gradient text          #ffffff
+
+PAGE BASE
+  Body fallback             #f1e7d6
+  Page gradient             linear-gradient(180deg, #f4ecdd, #efe3cf)
+  Ambient blobs (fixed layer behind glass):
+    peach   rgba(255,178,116,0.48)   at 10% 6%
+    purple  rgba(150,130,255,0.36)   at 90% 4%
+    blue    rgba(110,194,240,0.34)   at 82% 94%
+    pink    rgba(255,158,182,0.24)   at 16% 98%
+
+GLASS SURFACES (translucent + backdrop-filter blur)
+  Card                      rgba(255,253,249,0.60-0.62)   blur 26px saturate 1.6
+  Stat card                 rgba(255,253,249,0.55)        blur 22px saturate 1.5
+  Soft strip                rgba(255,250,242,0.50)        blur 18px saturate 1.4
+  Inner block (no blur)     rgba(255,255,255,0.42)
+  Field / option row        rgba(255,255,255,0.50)
+  Tab track                 rgba(150,122,90,0.13)         blur 16px saturate 1.4
+  Active tab pill           rgba(255,255,255,0.85)        blur 10px
+  Track (progress/phase)    rgba(120,100,70,0.14)
+
+BORDERS (translucent)
+  Card                      rgba(255,255,255,0.65)
+  Stat / small              rgba(255,255,255,0.62)
+  Field / option            rgba(255,255,255,0.60)
+  Dashed (gated hint)       rgba(150,120,80,0.40)
+
+SEMANTIC FILLS
+  Success bg / border       rgba(37,180,120,0.15) / rgba(37,180,120,0.42)
+  Error  bg / border        rgba(214,85,126,0.13) / rgba(214,85,126,0.34) ; text #b04068 ; mark #d6557e
+  Streak bg / border        rgba(255,232,196,0.66) / rgba(255,255,255,0.6) ; flame #e0892f ; text #b5670f
+  Hint   bg / border        rgba(255,184,100,0.18) / rgba(224,160,80,0.42) ; text #8a5613 ; code #a05c12
+  Selected (option/reveal)  rgba(124,106,255,0.14) / border rgba(124,106,255,0.50)
+
+================================================================
+TYPE SCALE   (UI = system-ui ; READ = Georgia serif)
+================================================================
+  Display      26px / line 1.1   weight 700   UI     big stat numbers
+  H1           23px / 1.2        weight 650   UI     session topic, completion title
+  H2           18-20px / 1.3     weight 600   UI     greeting, step question
+  H3           15px / 1.3        weight 600   UI     concept titles, option labels
+  Read         16px / 1.7        weight 400   SERIF  lesson prose, exercise prompts
+  Read-sm      14-15px / 1.6     weight 400   SERIF  concept bodies, solution gloss
+  Body         13-14px / 1.5     weight 400   UI     meta, descriptions
+  Label        11px / 1.4        weight 700   UI     eyebrows, UPPERCASE, letter-spacing 0.09em
+  Caption      10-12px           weight 400-600 UI   units, counters, phase durations
+  Mono                                         ui-monospace  formulas / code-like answers
+  Numerals: tabular-nums on timer + counters.
+
+================================================================
+SPACING SCALE (4px base)
+================================================================
+  4 · 8 · 10 · 12 · 14 · 16 · 18 · 20 · 22 · 24 · 32
+  Card padding 22-24 · card gap 16 · option-row gap 9
+  Page padding 26 vertical / 18 horizontal · content max-width 448px
+
+================================================================
+BORDER RADIUS
+================================================================
+  sm   11px   buttons in controls, badges, chips
+  md   15px   inputs, option rows, primary/secondary/back buttons
+  lg   20px   stat cards
+  xl   24px   primary cards
+  full 999px  pills, bars, dots, streak chip
+  (icon tiles 8-10px)
+
+================================================================
+ELEVATION (warm-tinted, soft)
+================================================================
+  Card        0 1px 0 rgba(255,255,255,.75) inset, 0 18px 48px -24px rgba(90,65,40,.40)
+  Stat card   0 1px 0 rgba(255,255,255,.70) inset, 0 14px 36px -22px rgba(90,65,40,.36)
+  Tab pill    0 1px 0 rgba(255,255,255,.9)  inset, 0 2px 8px  -2px  rgba(90,65,40,.25)
+  Primary CTA 0 1px 0 rgba(255,255,255,.35) inset, 0 12px 26px -10px rgba(124,106,255,.6)
+  Transitions all .15-.18s
+
+================================================================
+COMPONENTS + STATES
+================================================================
+
+PRIMARY BUTTON (gradient CTA)
+  default   gradient fill, white text, 600, radius 15, glow shadow
+  hover     brightness(1.03)
+  active    translateY(1px)
+  disabled  bg rgba(140,118,84,.16), text #a99f8f, no shadow, not-allowed
+  error     n/a (action button)
+
+SECONDARY BUTTON ("Review")
+  default   border rgba(79,163,232,.4), fill rgba(79,163,232,.14), text #1f78b4
+  hover     fill rgba(79,163,232,.22)
+  active    translateY(1px)
+  disabled  opacity .5, not-allowed
+
+BACK BUTTON (glass, neutral)
+  default   rgba(255,255,255,.5)+blur, border rgba(255,255,255,.6), text #665f53
+  hover     rgba(255,255,255,.7)
+
+SEGMENTED CONTROL (Dashboard / Lesson)
+  track     rgba(150,122,90,.13)+blur, border rgba(255,255,255,.5)
+  inactive  transparent, text #7d7568    hover text #574f44
+  active    white pill rgba(255,255,255,.85), text #241f1a, pill shadow
+
+CARD (glass)
+  default   rgba(255,253,249,.62)+blur 26, border rgba(255,255,255,.65), radius 24, card shadow
+
+PROGRESS BAR
+  track rgba(120,100,70,.14) ; fill gradient (course) or phase colour (timer); width anim .2s
+
+SESSION TIMER (90 min, 3 phases)
+  warm-up 15m #3aa0e0 · peak 60m #7c6aff · cool-down 15m #25b478
+  states: idle ("Start session") / running ("Pause", fills advance) / paused ("Resume") / complete
+
+QUIZ OPTION ROW
+  default   field glass, border rgba(255,255,255,.6), text #48423a, 20px circle indicator
+  hover     border rgba(124,106,255,.35)
+  selected  fill rgba(124,106,255,.14), border rgba(124,106,255,.5), text #241f1a, filled purple dot
+  correct   fill rgba(37,180,120,.16), border rgba(37,180,120,.5), text #1c7a52, check mark, locked
+  error/wrong fill rgba(214,85,126,.14), border rgba(214,85,126,.48), text #b04068, x mark, locked
+  disabled (unselected, post-answer) rgba(255,255,255,.3), faint border, text #8f8676, opacity .72
+
+TEXT INPUT / TEXTAREA
+  default   field glass, border rgba(255,255,255,.6), radius 13-14, text #241f1a
+  focus     border #7c6aff
+  placeholder #b3a994
+  (answer field = mono ; "explain it back" = serif + live word counter)
+  disabled  opacity .5
+  error     border rgba(214,85,126,.5) (if validation needed)
+
+HINT DISCLOSURE (gated)
+  default   translucent + dashed border, text #837a6c, amber lightbulb -> "Show hint"
+  hover     bg rgba(255,255,255,.45)
+  revealed  warm-glass callout rgba(255,184,100,.18), border rgba(224,160,80,.42), text #8a5613 -> "Hide hint"
+
+SOLUTION REVEAL (gated)
+  locked (no attempt) rgba(255,255,255,.36), text #a59b89, lock icon, not-allowed -> "Attempt first to unlock the solution"
+  ready (attempted)   rgba(124,106,255,.14), border rgba(124,106,255,.46), text #5a4bd0 -> "Reveal solution"
+  shown               rgba(37,180,120,.15), border rgba(37,180,120,.42), text #1c7a52 -> "Solution shown"
+                      reveals SOLUTION panel: eyebrow #1c8c5c + mono answer #13633f + serif gloss
+  rule: unreachable until the answer field is non-empty (answer before solution)
+
+STREAK CHIP
+  pill, rgba(255,232,196,.66)+blur, border rgba(255,255,255,.6), amber flame #e0892f, count #b5670f
+
+STEP PROGRESS (lesson, 5 segments height 4)
+  upcoming  rgba(140,118,84,.3)
+  current   gradient
+  done      #7c6aff
+
+FEEDBACK BANNER (concept check)
+  ok   bg rgba(37,180,120,.13), border rgba(37,180,120,.34), text #1c7a52
+  err  bg rgba(214,85,126,.12), border rgba(214,85,126,.34), text #b04068
+
+================================================================
+LAYOUT PRINCIPLES (cognitive-load rules)
+================================================================
+  1. One primary action per screen (exactly one gradient CTA visible).
+  2. Progressive reveal — answer before any solution; hints/solutions gated, never shown by default.
+  3. Chunking — 2-3 new concepts max, one step at a time (5-step stepper).
+  4. Read-first, low-glare surface — serif prose, generous line-height, warm frosted glass;
+     accent vivid but sparse; depth from blur + soft shadow, not harsh contrast.
