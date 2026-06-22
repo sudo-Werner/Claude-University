@@ -1,0 +1,52 @@
+const CLOCK_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#a59b89" stroke-width="2"/><path d="M12 7v5l3 2" stroke="#a59b89" stroke-width="2" stroke-linecap="round"/></svg>`;
+const PLAY_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="#fff"><path d="M7 5l12 7-12 7V5z"/></svg>`;
+const FLAME = `<svg class="flame" viewBox="0 0 24 24" fill="none"><path d="M12 2c1 3-1 4-1 6a3 3 0 006 0c0-1.5-1-2.5-1-4 2 1.5 4 4 4 8a8 8 0 11-16 0c0-4 3-6 4-8 .5 1 1 1.5 2 2 1-1 1.5-2 1-4z" fill="#e0892f"/></svg>`;
+
+const PHASE_COLORS = ["#3aa0e0", "#7c6aff", "#25b478"];
+const PHASE_NAMES = ["Warm-up", "Peak focus", "Cool-down"];
+const PHASE_DUR = ["15m", "60m", "15m"];
+const PHASE_FLEX = [15, 60, 15];
+
+export function dashboardHTML(data, timerView) {
+  const tracks = PHASE_FLEX.map(
+    (flex, i) =>
+      `<div class="phase-track" style="flex:${flex} 1 0"><i style="background:${PHASE_COLORS[i]}; width:${Math.round(
+        timerView.fills[i] * 100,
+      )}%"></i></div>`,
+  ).join("");
+  const labels = PHASE_FLEX.map(
+    (flex, i) =>
+      `<div class="${i === timerView.activePhaseIndex ? "active-warm" : ""}" style="flex:${flex} 1 0"><div class="name">${PHASE_NAMES[i]}</div><div class="dur">${PHASE_DUR[i]}</div></div>`,
+  ).join("");
+
+  return `
+    <div class="greeting"><h1>Good morning, Werner</h1><span>Today</span></div>
+    <section class="card">
+      <div class="session-head">
+        <span class="eyebrow">TODAY'S SESSION</span>
+        <span class="meta">${CLOCK_ICON} ${data.durationMin} min</span>
+      </div>
+      <h2 class="session-topic">${data.topic}</h2>
+      <div class="session-sub">${data.sub}</div>
+      <div class="phase-bar" aria-label="Session plan">${tracks}</div>
+      <div class="phase-labels">${labels}</div>
+      <div class="timer-status"><span>${timerView.statusLabel}</span><span class="clock">${timerView.clock}</span></div>
+      <button class="btn-primary" data-action="start-session">${PLAY_ICON} Start session</button>
+    </section>
+    <div class="stat-row">
+      <section class="stat">
+        <span class="eyebrow mut">COURSE PROGRESS</span>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-top:12px"><span class="big">${data.progressPct}</span><span class="unit">%</span></div>
+        <div class="bar"><i style="width:${data.progressPct}%"></i></div>
+        <div class="stat-note">${data.lessonsDone} of ${data.lessonsTotal} lessons</div>
+      </section>
+      <section class="stat">
+        <span class="eyebrow mut">REVIEWS DUE</span>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-top:12px"><span class="big" style="color:var(--blue)">${data.reviewsDue}</span><span class="unit">cards</span></div>
+        <div class="stat-note" style="margin:10px 0 14px">Spaced repetition</div>
+        <button class="btn-secondary" data-action="review">Review</button>
+      </section>
+    </div>
+    <div class="streak-strip">${FLAME}<div><b>${data.streakDays}-day streak.</b> One session today keeps it alive.</div></div>
+  `;
+}
