@@ -245,3 +245,25 @@ textarea::placeholder{color:#b3a994}
   .prompt{font-size:17px; line-height:1.7}
   .diag-col{max-width:640px; margin:0 auto; width:100%}
 }
+
+/* =================  UNIVERSITY HOME (course grid)  ================= */
+.home{display:flex; flex-direction:column; gap:16px}
+.course-grid{display:flex; flex-direction:column; gap:14px}
+.course-card{display:block; width:100%; text-align:left; font:inherit; cursor:pointer; color:var(--text);
+  background:var(--glass-card-2); backdrop-filter:blur(26px) saturate(1.6); -webkit-backdrop-filter:blur(26px) saturate(1.6);
+  border:1px solid var(--border-glass); border-radius:var(--r-xl); padding:22px; box-shadow:var(--sh-card)}
+.course-title{font-size:18px; font-weight:600; letter-spacing:-.01em}
+.course-sub{color:var(--text-mut); font-size:13px; margin:3px 0 14px}
+.course-meta{color:var(--text-mut); font-size:13px; margin-top:10px}
+.course-continue{display:inline-block; margin-top:12px; color:var(--purple-deep); font-weight:600; font-size:14px}
+.course-card.add-course{display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+  border-style:dashed; border-color:rgba(124,106,255,.40); background:var(--glass-stat); color:var(--text-mut)}
+.add-plus{font-size:30px; line-height:1; color:var(--purple); margin-bottom:6px}
+
+@media (min-width:760px){
+  .course-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:18px; align-items:start}
+}
+
+.nav-back-top{align-self:flex-start; background:none; border:none; font:600 14px/1 inherit; cursor:pointer;
+  color:var(--text-mut); padding:2px 0}
+.nav-back-top:hover{color:var(--text)}

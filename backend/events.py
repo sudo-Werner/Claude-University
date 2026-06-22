@@ -22,14 +22,15 @@ def insert_events(conn, events):
         payload = ev.get("payload")
         cur = conn.execute(
             """INSERT OR IGNORE INTO events
-               (client_event_id, session_id, device, topic_id,
+               (client_event_id, session_id, device, topic_id, course_id,
                 event_type, occurred_at, received_at, payload)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 ev["client_event_id"],
                 ev["session_id"],
                 ev.get("device"),
                 ev.get("topic_id"),
+                ev.get("course_id"),
                 ev["event_type"],
                 ev["occurred_at"],
                 received_at,

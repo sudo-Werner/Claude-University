@@ -1,0 +1,14 @@
+{
+  "id": "machine-learning",
+  "title": "Machine Learning",
+  "subtitle": "From fundamentals to neural networks",
+  "modules": [
+    {
+      "id": "m3",
+      "title": "Neural Networks",
+      "lessons": [
+        { "id": "ml-m3-l2", "title": "Backpropagation, intuitively" }
+      ]
+    }
+  ]
+}

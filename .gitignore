@@ -6,6 +6,7 @@ __pycache__/
 
 # Test / tooling caches
 .pytest_cache/
+.playwright-mcp/
 
 # Local runtime data (the SQLite db is created at runtime, never committed)
 backend/data/

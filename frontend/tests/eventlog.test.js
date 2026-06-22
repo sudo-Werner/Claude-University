@@ -64,3 +64,11 @@ test("clearEvents removes only the named ids", () => {
   clearEvents(s, ["a", "c"]);
   assert.deepEqual(readBuffer(s).map((e) => e.client_event_id), ["b"]);
 });
+
+test("buildEvent includes course_id (null by default, set when given)", () => {
+  counter = 0;
+  const a = buildEvent({ type: "x", sessionId: "s", now: fixedNow, newId: fakeId });
+  assert.equal(a.course_id, null);
+  const b = buildEvent({ type: "x", courseId: "machine-learning", sessionId: "s", now: fixedNow, newId: fakeId });
+  assert.equal(b.course_id, "machine-learning");
+});

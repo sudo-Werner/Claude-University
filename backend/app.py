@@ -2,7 +2,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries
+from backend import db, events, profile, queries, courses
 
 
 def create_app(db_path=None):
@@ -63,6 +63,29 @@ def create_app(db_path=None):
         finally:
             conn.close()
         return jsonify(result or {})
+
+    @app.get("/api/courses")
+    def get_courses():
+        conn = db.get_connection(path)
+        try:
+            result = courses.list_courses(conn, courses.CONTENT_DIR)
+        finally:
+            conn.close()
+        return jsonify({"courses": result})
+
+    @app.get("/api/courses/<course_id>")
+    def get_course(course_id):
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        return jsonify(manifest)
+
+    @app.get("/api/courses/<course_id>/lessons/<lesson_id>")
+    def get_lesson(course_id, lesson_id):
+        lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
+        if lesson is None:
+            return jsonify({"error": "lesson not found"}), 404
+        return jsonify(lesson)
 
     frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 
