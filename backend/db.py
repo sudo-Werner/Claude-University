@@ -23,3 +23,7 @@ def _migrate(conn):
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(events)").fetchall()}
     if "course_id" not in cols:
         conn.execute("ALTER TABLE events ADD COLUMN course_id TEXT")
+    # Index the column here, not in schema.sql: the column is only guaranteed to
+    # exist after the ALTER above on a pre-existing DB. IF NOT EXISTS keeps it
+    # idempotent and a no-op on a fresh DB (where the column came from the schema).
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_course ON events(course_id)")

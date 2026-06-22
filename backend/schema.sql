@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_session  ON events(session_id);
 CREATE INDEX IF NOT EXISTS idx_events_type     ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_occurred ON events(occurred_at);
-CREATE INDEX IF NOT EXISTS idx_events_course   ON events(course_id);
+-- idx_events_course is created in db._migrate, AFTER the course_id column is
+-- ensured: on a pre-existing DB the column is added by ALTER at migrate time,
+-- so indexing it here (before migrate) would fail with "no such column".
 
 CREATE TABLE IF NOT EXISTS profile (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
