@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation
+from backend import db, events, profile, queries, courses, claude_client, generation, srs
 
 
 def create_app(db_path=None):
@@ -129,6 +129,17 @@ def create_app(db_path=None):
         if lesson is None:
             return jsonify({"error": "lesson not found"}), 404
         return jsonify(lesson)
+
+    @app.get("/api/courses/<course_id>/reviews")
+    def get_reviews(course_id):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        conn = db.get_connection(path)
+        try:
+            due = srs.due_lesson_ids(conn, courses.CONTENT_DIR, course_id)
+        finally:
+            conn.close()
+        return jsonify({"due": due})
 
     frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 

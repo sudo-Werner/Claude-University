@@ -34,7 +34,7 @@ def flatten_lessons(manifest):
 def completed_lesson_ids(conn, course_id):
     rows = conn.execute(
         "SELECT DISTINCT topic_id FROM events "
-        "WHERE event_type = 'lesson_completed' AND course_id = ?",
+        "WHERE event_type IN ('lesson_completed', 'lesson_reviewed') AND course_id = ?",
         (course_id,),
     ).fetchall()
     return {r["topic_id"] for r in rows if r["topic_id"]}
@@ -64,13 +64,14 @@ def list_courses(conn, content_dir):
         try:  # skip malformed course
             manifest = load_manifest(content_dir, child.name)
             progress = course_progress(conn, content_dir, child.name)
+            from backend import srs
             summaries.append({
                 "id": manifest["id"],
                 "title": manifest["title"],
                 "subtitle": manifest.get("subtitle", ""),
                 "progress": {k: progress[k] for k in ("done", "total", "pct")},
                 "nextLesson": progress["nextLesson"],
-                "reviewsDue": 0,
+                "reviewsDue": srs.reviews_due_count(conn, content_dir, child.name),
             })
         except Exception:
             continue  # skip malformed course

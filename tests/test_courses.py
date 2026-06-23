@@ -117,3 +117,19 @@ def test_write_course_creates_manifest_with_brief_and_ids(tmp_path):
     on_disk = courses.load_manifest(root, "intro-stats")
     assert on_disk["title"] == "Intro Stats"
     assert (root / "intro-stats" / "lessons").is_dir()
+
+
+def test_completed_counts_reviewed_events(conn, tmp_path):
+    from backend import courses, events
+    root = tmp_path / "courses"
+    (root / "demo" / "lessons").mkdir(parents=True)
+    (root / "demo" / "course.json").write_text(__import__("json").dumps({
+        "id": "demo", "title": "Demo", "subtitle": "", "brief": "",
+        "modules": [{"id": "m1", "title": "M1", "lessons": [{"id": "demo-l1", "title": "L1"}]}],
+    }))
+    events.insert_events(conn, [{
+        "client_event_id": "r1", "session_id": "s1", "event_type": "lesson_reviewed",
+        "occurred_at": "2026-01-01T09:00:00+00:00", "course_id": "demo",
+        "topic_id": "demo-l1", "payload": {"quality": "good"},
+    }])
+    assert "demo-l1" in courses.completed_lesson_ids(conn, "demo")
