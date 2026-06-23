@@ -47,3 +47,28 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "hintHtml (a hint as HTML), solutionAns (the answer), solutionNote (one-sentence why).\n"
         "Shape every learner-facing field to the learner preferences above."
     )
+
+
+def build_chat_prompt(messages, profile):
+    lines = [COURSE_SYSTEM_PROMPT, "", f"Learner preferences (JSON): {json.dumps(profile or {})}", ""]
+    for m in messages:
+        who = "Learner" if m.get("role") == "user" else "You"
+        lines.append(f"{who}: {m.get('content', '')}")
+    lines.append("You:")
+    return "\n".join(lines)
+
+
+def _sse(event, data):
+    return f"event: {event}\ndata: {data}\n\n"
+
+
+def chat_sse(messages, profile, *, stream_fn):
+    prompt = build_chat_prompt(messages, profile)
+    full = []
+    for chunk in stream_fn(prompt):
+        full.append(chunk)
+        yield _sse("delta", chunk)
+    proposal = detect_proposal("".join(full))
+    if proposal is not None:
+        yield _sse("proposal", json.dumps(proposal))
+    yield _sse("done", "{}")

@@ -32,3 +32,38 @@ def test_lesson_prompt_includes_context():
     assert "Basics" in prompt
     assert "stats-l1" in prompt
     assert "promptHtml" in prompt  # tells the model the required shape
+
+
+def _events(sse_chunks):
+    # parse "event: X\ndata: Y\n\n" chunks into (event, data) tuples
+    out = []
+    for chunk in sse_chunks:
+        ev = data = None
+        for line in chunk.splitlines():
+            if line.startswith("event:"):
+                ev = line[len("event:"):].strip()
+            elif line.startswith("data:"):
+                data = line[len("data:"):].strip()
+        if ev:
+            out.append((ev, data))
+    return out
+
+
+def test_chat_sse_streams_deltas_then_done():
+    def fake_stream(prompt):
+        yield "Hi! "
+        yield "What do you want to learn?"
+    chunks = list(gen.chat_sse([{"role": "user", "content": "hello"}], {}, stream_fn=fake_stream))
+    evs = _events(chunks)
+    assert ("delta", "Hi!") in evs
+    assert evs[-1][0] == "done"
+
+
+def test_chat_sse_emits_proposal_when_course_fence_present():
+    def fake_stream(prompt):
+        yield "Great, here is a plan.\n```course\n"
+        yield '{"title": "Stats", "modules": []}\n```'
+    chunks = list(gen.chat_sse([{"role": "user", "content": "stats"}], {}, stream_fn=fake_stream))
+    evs = _events(chunks)
+    proposal = [d for (e, d) in evs if e == "proposal"]
+    assert proposal and '"title": "Stats"' in proposal[0]

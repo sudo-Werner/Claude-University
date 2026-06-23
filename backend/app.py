@@ -2,7 +2,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses
+from backend import db, events, profile, queries, courses, claude_client, generation
 
 
 def create_app(db_path=None):
@@ -80,6 +80,20 @@ def create_app(db_path=None):
             return jsonify({"error": "title and modules are required"}), 400
         manifest = courses.write_course(courses.CONTENT_DIR, body)
         return jsonify({"course": manifest}), 201
+
+    @app.post("/api/courses/chat")
+    def post_course_chat():
+        body = request.get_json(silent=True) or {}
+        messages = body.get("messages", [])
+        conn = db.get_connection(path)
+        try:
+            prof = profile.latest_profile(conn)
+        finally:
+            conn.close()
+        prof_data = (prof or {}).get("data") if isinstance(prof, dict) else None
+        stream_fn = lambda prompt: claude_client.stream(prompt)
+        sse = generation.chat_sse(messages, prof_data, stream_fn=stream_fn)
+        return app.response_class(sse, mimetype="text/event-stream")
 
     @app.get("/api/courses/<course_id>")
     def get_course(course_id):
