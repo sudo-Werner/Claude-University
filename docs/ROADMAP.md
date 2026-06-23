@@ -16,8 +16,9 @@ steering map and gets updated as slices land. Items can be re-ordered if reality
 
 ## The remaining slices
 
-### Slice 4 — Spaced-repetition engine (the #1 pillar) ← NEXT
-**Closes:** done-item 1.
+### Slice 4 — Spaced-repetition engine (the #1 pillar) ✅ SHIPPED 2026-06-23
+**Closes:** done-item 1. Deployed: Anki-style recall rating → SM-2 schedule from `lesson_reviewed`
+events, real per-course reviews-due, `/reviews` endpoint, Review session. Verified on the Pi.
 **Why first:** biggest missing learning pillar, and it's *unblocked* — it can run on an
 **Anki-style self-rated recall signal** after each lesson (Again / Hard / Good / Easy), so it does
 not depend on auto-grading.
@@ -28,7 +29,7 @@ per-course "reviews due" count becomes real; a **review surface** that resurface
 (single source of truth), consistent with Slice 1.
 **Depends on:** nothing new.
 
-### Slice 5 — Checkable concept-check items + feedback
+### Slice 5 — Checkable concept-check items + feedback ← NEXT
 **Closes:** done-item 3; advances 4.
 **Scope:** lessons gain a small `items` array in their JSON (MCQ / fill-in-the-blank with correct
 answers + per-choice feedback), generated alongside the exercise; the lesson screen checks the
