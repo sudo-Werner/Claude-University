@@ -162,6 +162,15 @@ def test_run_structured_applies_validator():
         cc.run_structured("x", runner=lambda args: good, validate=lambda o: "missing" in o)
 
 
+def test_env_strips_anthropic_credentials(monkeypatch):
+    # The Task 0 spike proved a stale ANTHROPIC_API_KEY shadows the Max OAuth and 401s.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-bad")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "tok-bad")
+    env = cc._env()
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "ANTHROPIC_AUTH_TOKEN" not in env
+
+
 def test_stream_yields_text_deltas():
     # Fake CLI stream-json lines: assistant messages carry text in content blocks.
     lines = [
@@ -198,6 +207,11 @@ class ClaudeError(Exception):
 
 def _env():
     env = dict(os.environ)
+    # CRITICAL (confirmed in the Task 0 spike): a stale ANTHROPIC_API_KEY in the
+    # environment makes Claude Code authenticate with that key instead of the Max
+    # subscription OAuth — which 401s. Strip both so the subscription login is used.
+    env.pop("ANTHROPIC_API_KEY", None)
+    env.pop("ANTHROPIC_AUTH_TOKEN", None)
     env.setdefault("HOME", "/home/werner")
     env["PATH"] = "/home/werner/.local/bin:" + env.get("PATH", "/usr/bin:/bin")
     return env
