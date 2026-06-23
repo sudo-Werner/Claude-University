@@ -59,7 +59,8 @@ def build_chat_prompt(messages, profile):
 
 
 def _sse(event, data):
-    return f"event: {event}\ndata: {data}\n\n"
+    payload = "\n".join(f"data: {line}" for line in data.split("\n"))
+    return f"event: {event}\n{payload}\n\n"
 
 
 def chat_sse(messages, profile, *, stream_fn):

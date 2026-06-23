@@ -67,3 +67,17 @@ def test_chat_sse_emits_proposal_when_course_fence_present():
     evs = _events(chunks)
     proposal = [d for (e, d) in evs if e == "proposal"]
     assert proposal and '"title": "Stats"' in proposal[0]
+
+
+def test_chat_sse_preserves_multiline_delta():
+    def fake_stream(prompt):
+        yield "Line one.\nLine two.\n```course\n{}"  # multi-line chunk with embedded newlines
+    chunks = list(gen.chat_sse([{"role": "user", "content": "x"}], {}, stream_fn=fake_stream))
+    # find the delta frame and reconstruct its data by joining all data: lines
+    delta_frame = next(c for c in chunks if c.startswith("event: delta"))
+    data = "\n".join(
+        line[len("data:"):].lstrip(" ")
+        for line in delta_frame.rstrip("\n").split("\n")
+        if line.startswith("data:")
+    )
+    assert data == "Line one.\nLine two.\n```course\n{}"
