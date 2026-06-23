@@ -15,6 +15,7 @@ def conn(tmp_path):
 def client(tmp_path):
     from backend.app import create_app
 
-    app = create_app(db_path=tmp_path / "test_api.db")
-    app.config.update(TESTING=True)
+    db_path = tmp_path / "test_api.db"
+    app = create_app(db_path=db_path)
+    app.config.update(TESTING=True, DB_PATH=db_path)
     return app.test_client()

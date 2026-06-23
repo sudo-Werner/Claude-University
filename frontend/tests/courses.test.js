@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, loadReviews } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -46,4 +46,16 @@ test("loadLesson fetches by course and lesson id, null on miss", async () => {
 
   const missing = async () => ({ ok: false, status: 404 });
   assert.equal(await loadLesson({ fetch: missing, courseId: "x", lessonId: "y" }), null);
+});
+
+test("loadReviews returns the due array", async () => {
+  let url;
+  const fetch = async (u) => { url = u; return { ok: true, json: async () => ({ due: ["c-l1", "c-l2"] }) }; };
+  const due = await loadReviews({ fetch, courseId: "c" });
+  assert.equal(url, "/api/courses/c/reviews");
+  assert.deepEqual(due, ["c-l1", "c-l2"]);
+});
+
+test("loadReviews returns [] on non-ok", async () => {
+  assert.deepEqual(await loadReviews({ fetch: async () => ({ ok: false, status: 500 }), courseId: "c" }), []);
 });

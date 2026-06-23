@@ -97,3 +97,29 @@ def test_post_course_rejects_missing_fields(client, tmp_path, monkeypatch):
 def test_routes_reject_illegal_ids(client):
     assert client.get("/api/courses/Bad_Id").status_code == 404
     assert client.get("/api/courses/machine-learning/lessons/..%2fsecret").status_code == 404
+
+
+def test_reviews_endpoint_lists_due(client, tmp_path, monkeypatch):
+    from backend import courses, events, db
+    root = tmp_path / "courses"
+    root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+
+    # insert a long-past review into the SAME db the client app uses
+    app_db = client.application.config["DB_PATH"]
+    conn = db.get_connection(app_db)
+    try:
+        events.insert_events(conn, [{
+            "client_event_id": "rev-1", "session_id": "s1", "event_type": "lesson_reviewed",
+            "occurred_at": "2020-01-01T09:00:00+00:00", "course_id": manifest["id"],
+            "topic_id": lesson_id, "payload": {"quality": "good"},
+        }])
+    finally:
+        conn.close()
+
+    due = client.get(f"/api/courses/{manifest['id']}/reviews").get_json()["due"]
+    assert due == [lesson_id]
+    listed = client.get("/api/courses").get_json()["courses"]
+    found = next(c for c in listed if c["id"] == manifest["id"])
+    assert found["reviewsDue"] == 1

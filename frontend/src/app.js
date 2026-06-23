@@ -3,7 +3,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews } from "./courses.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
@@ -47,6 +47,7 @@ export async function init({ window, fetch }) {
     timer: { running: false, elapsed: 0, intervalId: null },
     diagnostic: {},
     chat: null,
+    reviewQueue: [],
   };
 
   // ---- diagnostic (unchanged flow, now lands on the home) ----
@@ -121,9 +122,7 @@ export async function init({ window, fetch }) {
     const view = root.querySelector("#view");
     view.innerHTML = dashboardHTML(sessionData(), timerView(ui.timer.elapsed));
     view.querySelector('[data-action="start-session"]').addEventListener("click", startLesson);
-    view.querySelector('[data-action="review"]').addEventListener("click", () =>
-      log("review_opened", { courseId: ui.courseId }),
-    );
+    view.querySelector('[data-action="review"]').addEventListener("click", startReviewSession);
   }
 
   function showCourse() {
@@ -137,6 +136,7 @@ export async function init({ window, fetch }) {
   async function startLesson() {
     const next = ui.summary && ui.summary.nextLesson;
     if (!next) return;
+    ui.reviewQueue = [];
     const view = root.querySelector("#view");
     if (view) view.innerHTML = `<div class="card lesson loading">Preparing your lesson…</div>`;
     ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: next.id });
@@ -179,12 +179,41 @@ export async function init({ window, fetch }) {
       paintLesson();
     });
     view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
-    view.querySelector('[data-action="continue"]').addEventListener("click", async () => {
-      log("lesson_completed", { courseId: ui.courseId, topicId: ui.lesson.id });
-      await doFlush();
-      await refreshSummary(); // progress advances; next lesson moves on
-      showCourse();
+    view.querySelectorAll('[data-quality]').forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const quality = btn.getAttribute("data-quality");
+        log("lesson_reviewed", { courseId: ui.courseId, topicId: ui.lesson.id, payload: { quality } });
+        await doFlush();
+        await advanceAfterLesson();
+      });
     });
+  }
+
+  async function advanceAfterLesson() {
+    if (ui.reviewQueue.length) {
+      const nextId = ui.reviewQueue.shift();
+      ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: nextId });
+      if (!ui.lesson) { await refreshSummary(); showCourse(); return; }
+      ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false };
+      log("lesson_view", { courseId: ui.courseId, topicId: nextId });
+      showLesson();
+      return;
+    }
+    await refreshSummary();
+    showCourse();
+  }
+
+  async function startReviewSession() {
+    const due = await loadReviews({ fetch, courseId: ui.courseId });
+    log("review_opened", { courseId: ui.courseId });
+    if (!due.length) { showCourse(); return; }
+    ui.reviewQueue = due.slice(1);
+    ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: due[0] });
+    if (!ui.lesson) { showCourse(); return; }
+    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false };
+    log("lesson_view", { courseId: ui.courseId, topicId: due[0] });
+    if (!ui.timer.running) startTimer();
+    showLesson();
   }
 
   // ---- course creation chat ----

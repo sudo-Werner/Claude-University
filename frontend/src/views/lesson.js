@@ -43,7 +43,17 @@ export function lessonHTML(lesson, state) {
     </section>
     <div class="nav">
       <button class="btn-back" data-action="back">Back</button>
-      <button class="btn-primary" data-action="continue">Continue ${ARROW}</button>
+      ${
+        state.solutionRevealed
+          ? `<div class="rate" role="group" aria-label="Rate recall">
+               <span class="rate-q">How well did you recall this?</span>
+               <button class="rate-btn" data-quality="again">Again</button>
+               <button class="rate-btn" data-quality="hard">Hard</button>
+               <button class="rate-btn" data-quality="good">Good</button>
+               <button class="rate-btn" data-quality="easy">Easy</button>
+             </div>`
+          : `<button class="btn-primary" data-action="continue" disabled>Reveal solution to finish</button>`
+      }
     </div>
     </div>
   `;
