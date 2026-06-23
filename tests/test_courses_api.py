@@ -1,24 +1,69 @@
-def test_list_courses_includes_machine_learning(client):
-    resp = client.get("/api/courses")
+import json
+
+
+def _fixture_course(courses, root):
+    """Create a course manifest plus one written lesson file in a temp content dir.
+
+    Writing the lesson file means the lesson GET serves it from disk — it does NOT
+    hit the just-in-time generator (which would call real Claude). A lesson id that
+    is NOT in the manifest returns 404 from ensure_lesson before any generation.
+    """
+    manifest = courses.write_course(root, {
+        "title": "Test Topic",
+        "subtitle": "a test course",
+        "brief": "ctx",
+        "modules": [{"title": "Module One", "lessons": [{"title": "Lesson One"}]}],
+    })
+    lesson_id = manifest["modules"][0]["lessons"][0]["id"]
+    lesson = {
+        "id": lesson_id, "courseId": manifest["id"], "topic": "Topic One",
+        "step": 1, "totalSteps": 1, "eyebrow": "EXERCISE",
+        "promptHtml": "p", "hintHtml": "h", "solutionAns": "a", "solutionNote": "n",
+    }
+    (root / manifest["id"] / "lessons" / f"{lesson_id}.json").write_text(json.dumps(lesson))
+    return manifest, lesson_id
+
+
+def test_list_courses_returns_created_course(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"
+    root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+
+    listed = client.get("/api/courses").get_json()["courses"]
+    found = next(c for c in listed if c["id"] == manifest["id"])
+    assert found["title"] == "Test Topic"
+    assert found["progress"]["total"] == 1
+    assert found["nextLesson"]["id"] == lesson_id
+
+
+def test_get_course_manifest(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"
+    root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _fixture_course(courses, root)
+
+    resp = client.get(f"/api/courses/{manifest['id']}")
     assert resp.status_code == 200
-    courses = resp.get_json()["courses"]
-    ml = next(c for c in courses if c["id"] == "machine-learning")
-    assert ml["title"] == "Machine Learning"
-    assert ml["progress"]["total"] >= 1
-    assert ml["nextLesson"]["id"] == "ml-m3-l2"
+    assert resp.get_json()["modules"][0]["title"] == "Module One"
 
 
-def test_get_course_manifest(client):
-    resp = client.get("/api/courses/machine-learning")
-    assert resp.status_code == 200
-    assert resp.get_json()["modules"][0]["title"] == "Neural Networks"
+def test_get_lesson_and_404s(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"
+    root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
 
-
-def test_get_lesson_and_404s(client):
-    ok = client.get("/api/courses/machine-learning/lessons/ml-m3-l2")
+    ok = client.get(f"/api/courses/{cid}/lessons/{lesson_id}")
     assert ok.status_code == 200
-    assert ok.get_json()["topic"] == "Backpropagation"
-    assert client.get("/api/courses/machine-learning/lessons/nope").status_code == 404
+    assert ok.get_json()["topic"] == "Topic One"
+    # unknown lesson id is not in the manifest -> 404 (no generation)
+    assert client.get(f"/api/courses/{cid}/lessons/nope").status_code == 404
+    # unknown course -> 404
     assert client.get("/api/courses/nope").status_code == 404
 
 
