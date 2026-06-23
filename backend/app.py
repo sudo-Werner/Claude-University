@@ -73,6 +73,14 @@ def create_app(db_path=None):
             conn.close()
         return jsonify({"courses": result})
 
+    @app.post("/api/courses")
+    def post_course():
+        body = request.get_json(silent=True) or {}
+        if not body.get("title") or not body.get("modules"):
+            return jsonify({"error": "title and modules are required"}), 400
+        manifest = courses.write_course(courses.CONTENT_DIR, body)
+        return jsonify({"course": manifest}), 201
+
     @app.get("/api/courses/<course_id>")
     def get_course(course_id):
         manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
