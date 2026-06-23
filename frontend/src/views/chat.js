@@ -16,8 +16,9 @@ export function chatHTML(messages, { pending = false } = {}) {
       <div class="greeting"><h1>Add a course</h1><span>Tell Claude what you want to learn</span></div>
       <div class="chat-thread">${thread}${dots}</div>
       <div class="chat-input">
-        <textarea data-field="chat" placeholder="e.g. intermediate linear algebra for ML, ~3h/week"></textarea>
-        <button class="btn-primary" data-action="send">Send</button>
+        <textarea data-field="chat" rows="3"
+          placeholder="e.g. intermediate linear algebra for ML, ~3 hours a week — I know basic calculus"></textarea>
+        <div class="chat-send"><button class="btn-primary" data-action="send">Send</button></div>
       </div>
     </div>
   `;

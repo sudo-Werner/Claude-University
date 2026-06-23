@@ -269,13 +269,26 @@ textarea::placeholder{color:#b3a994}
 .nav-back-top:hover{color:var(--text)}
 
 /* =================  COURSE-CREATION CHAT  ================= */
-.chat-col{display:flex; flex-direction:column; gap:14px}
+.chat-col{display:flex; flex-direction:column; gap:16px}
 .chat-thread{display:flex; flex-direction:column; gap:10px}
 .msg{max-width:85%; padding:11px 14px; border-radius:var(--r-lg); font-size:14px; line-height:1.5; white-space:pre-wrap}
 .msg.me{align-self:flex-end; background:var(--grad); color:#fff}
 .msg.claude{align-self:flex-start; background:var(--glass-card-2); border:1px solid var(--border-glass); color:var(--text)}
 .msg.pending{color:var(--text-mut)}
-.chat-input{display:flex; gap:8px; align-items:flex-end}
-.chat-input textarea{flex:1; min-height:48px}
+
+/* composer: roomy multi-line input, Send below it on the right */
+.chat-input{display:flex; flex-direction:column; gap:10px}
+.chat-input textarea{
+  width:100%; min-height:96px; resize:vertical;
+  background:var(--glass-field); border:1px solid var(--border-field); border-radius:var(--r-md);
+  padding:13px 15px; font:15px/1.5 inherit; color:var(--text);
+}
+.chat-send{display:flex; justify-content:flex-end}
+.chat-input .btn-primary{width:auto; padding:12px 26px}
+
+@media (min-width:760px){
+  .chat-col{max-width:680px; margin:0 auto; width:100%}
+}
+
 .card.proposal{margin-top:6px}
 .card.lesson.loading{display:flex; align-items:center; justify-content:center; min-height:200px; color:var(--text-mut)}
