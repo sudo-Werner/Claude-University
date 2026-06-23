@@ -85,3 +85,35 @@ def test_list_courses_skips_malformed_course_json(conn, tmp_path):
     listed = courses.list_courses(conn, root)
     assert len(listed) == 1
     assert listed[0]["id"] == "demo"
+
+
+def test_slug_for_is_url_safe_and_deduped():
+    from backend import courses
+    assert courses.slug_for("Linear Algebra for ML!", set()) == "linear-algebra-for-ml"
+    assert courses.slug_for("Go", {"go"}) == "go-2"
+    assert courses.slug_for("Go", {"go", "go-2"}) == "go-3"
+    assert courses.slug_for("***", set()) == "course"
+
+
+def test_write_course_creates_manifest_with_brief_and_ids(tmp_path):
+    from backend import courses
+    root = tmp_path / "courses"
+    root.mkdir()
+    proposal = {
+        "title": "Intro Stats",
+        "subtitle": "From scratch",
+        "brief": "Beginner, 2h/week, wants intuition first.",
+        "modules": [
+            {"title": "Basics", "lessons": [{"title": "Mean & median"}, {"title": "Variance"}]},
+        ],
+    }
+    manifest = courses.write_course(root, proposal)
+    assert manifest["id"] == "intro-stats"
+    assert manifest["brief"] == "Beginner, 2h/week, wants intuition first."
+    assert manifest["modules"][0]["id"] == "m1"
+    ids = [l["id"] for l in manifest["modules"][0]["lessons"]]
+    assert ids == ["intro-stats-l1", "intro-stats-l2"]
+    # persisted + lessons dir created
+    on_disk = courses.load_manifest(root, "intro-stats")
+    assert on_disk["title"] == "Intro Stats"
+    assert (root / "intro-stats" / "lessons").is_dir()
