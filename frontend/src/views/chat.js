@@ -1,6 +1,11 @@
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
 function bubble(m) {
   const who = m.role === "user" ? "me" : "claude";
-  return `<div class="msg ${who}">${m.html || m.content}</div>`;
+  return `<div class="msg ${who}">${esc(m.content)}</div>`;
 }
 
 export function chatHTML(messages, { pending = false } = {}) {

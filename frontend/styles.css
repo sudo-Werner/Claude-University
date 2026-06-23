@@ -271,7 +271,7 @@ textarea::placeholder{color:#b3a994}
 /* =================  COURSE-CREATION CHAT  ================= */
 .chat-col{display:flex; flex-direction:column; gap:14px}
 .chat-thread{display:flex; flex-direction:column; gap:10px}
-.msg{max-width:85%; padding:11px 14px; border-radius:var(--r-lg); font-size:14px; line-height:1.5}
+.msg{max-width:85%; padding:11px 14px; border-radius:var(--r-lg); font-size:14px; line-height:1.5; white-space:pre-wrap}
 .msg.me{align-self:flex-end; background:var(--grad); color:#fff}
 .msg.claude{align-self:flex-start; background:var(--glass-card-2); border:1px solid var(--border-glass); color:var(--text)}
 .msg.pending{color:var(--text-mut)}

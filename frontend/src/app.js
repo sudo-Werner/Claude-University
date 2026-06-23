@@ -218,17 +218,18 @@ export async function init({ window, fetch }) {
     const ta = root.querySelector('[data-field="chat"]');
     const text = ta.value.trim();
     if (!text || ui.chat.pending) return;
-    ui.chat.messages.push({ role: "user", content: escapeHtml(text) });
-    ui.chat.messages.push({ role: "assistant", content: "", html: "" });
+    ui.chat.messages.push({ role: "user", content: text });       // raw
+    const reply = { role: "assistant", content: "" };
+    ui.chat.messages.push(reply);
     ui.chat.pending = true;
     paintChat();
-    const reply = ui.chat.messages[ui.chat.messages.length - 1];
+    const history = ui.chat.messages
+      .filter((m) => m !== reply)                                  // exclude the in-progress placeholder
+      .map((m) => ({ role: m.role, content: m.content }));
     await streamChat({
       fetch,
-      messages: ui.chat.messages
-        .filter((m) => m.content !== "" || m !== reply)
-        .map((m) => ({ role: m.role, content: m.content })),
-      onDelta: (d) => { reply.html += escapeHtml(d); paintChat(); },
+      messages: history,
+      onDelta: (d) => { reply.content += d; paintChat(); },
       onProposal: (p) => { ui.chat.proposal = p; },
       onDone: () => { ui.chat.pending = false; paintChat(); },
     });
