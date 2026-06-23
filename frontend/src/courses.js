@@ -17,6 +17,13 @@ export async function loadLesson({ fetch, courseId, lessonId }) {
   return resp.json();
 }
 
+export async function loadReviews({ fetch, courseId }) {
+  const resp = await fetch(`/api/courses/${courseId}/reviews`);
+  if (!resp.ok) return [];
+  const body = await resp.json();
+  return body.due || [];
+}
+
 export async function createCourse({ fetch, proposal }) {
   const resp = await fetch("/api/courses", {
     method: "POST",

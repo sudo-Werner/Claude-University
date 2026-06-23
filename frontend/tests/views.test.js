@@ -89,3 +89,15 @@ test("diagnostic enables Continue once all answered and marks selections", () =>
   assert.doesNotMatch(all, /data-action="finish-diagnostic"[^>]*disabled/);
   assert.match(all, /class="opt selected"/);
 });
+
+test("lesson shows the recall rating once the solution is revealed", () => {
+  const revealed = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: true });
+  assert.match(revealed, /data-quality="again"/);
+  assert.match(revealed, /data-quality="hard"/);
+  assert.match(revealed, /data-quality="good"/);
+  assert.match(revealed, /data-quality="easy"/);
+  assert.match(revealed, /recall/i);
+
+  const notYet = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.doesNotMatch(notYet, /data-quality=/);
+});
