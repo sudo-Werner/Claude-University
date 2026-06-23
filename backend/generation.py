@@ -1,6 +1,7 @@
 import json
+from pathlib import Path
 
-from backend import claude_client
+from backend import claude_client, courses
 
 COURSE_SYSTEM_PROMPT = (
     "You are a curriculum designer building a personalized course for a single learner "
@@ -73,3 +74,32 @@ def chat_sse(messages, profile, *, stream_fn):
     if proposal is not None:
         yield _sse("proposal", json.dumps(proposal))
     yield _sse("done", "{}")
+
+
+def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate):
+    existing = courses.load_lesson(content_dir, course_id, lesson_id)
+    if existing is not None:
+        return existing
+    manifest = courses.load_manifest(content_dir, course_id)
+    if manifest is None:
+        return None
+    flat = courses.flatten_lessons(manifest)
+    meta = next((l for l in flat if l["id"] == lesson_id), None)
+    if meta is None:
+        return None
+    position = [l["id"] for l in flat].index(lesson_id) + 1
+    prompt = lesson_prompt(
+        brief=manifest.get("brief", ""),
+        profile=profile,
+        lesson_id=lesson_id,
+        lesson_title=meta["title"],
+        module_title=meta["moduleTitle"],
+        position=position,
+        total=len(flat),
+    )
+    lesson = generate(prompt)
+    if not valid_lesson(lesson):
+        raise claude_client.ClaudeError("generated lesson failed validation")
+    path = Path(content_dir) / course_id / "lessons" / f"{lesson_id}.json"
+    path.write_text(json.dumps(lesson, indent=2, ensure_ascii=False))
+    return lesson

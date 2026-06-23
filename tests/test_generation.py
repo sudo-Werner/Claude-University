@@ -81,3 +81,49 @@ def test_chat_sse_preserves_multiline_delta():
         if line.startswith("data:")
     )
     assert data == "Line one.\nLine two.\n```course\n{}"
+
+
+import json as _json
+import pytest
+from backend import claude_client
+
+
+def _course(tmp_path):
+    from backend import courses
+    root = tmp_path / "courses"
+    (root / "demo" / "lessons").mkdir(parents=True)
+    (root / "demo" / "course.json").write_text(_json.dumps({
+        "id": "demo", "title": "Demo", "subtitle": "", "brief": "beginner friendly",
+        "modules": [{"id": "m1", "title": "Basics",
+                     "lessons": [{"id": "demo-l1", "title": "First"}]}],
+    }))
+    return root
+
+
+def test_ensure_lesson_generates_validates_and_caches(tmp_path):
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    calls = []
+    def generate(prompt):
+        calls.append(prompt)
+        return made
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=generate)
+    assert out["id"] == "demo-l1"
+    assert "beginner friendly" in calls[0]  # brief fed into the prompt
+    # cached: file now exists and a second call does not regenerate
+    assert (root / "demo" / "lessons" / "demo-l1.json").exists()
+    out2 = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: (_ for _ in ()).throw(AssertionError("regenerated")))
+    assert out2["id"] == "demo-l1"
+
+
+def test_ensure_lesson_unknown_id_returns_none(tmp_path):
+    root = _course(tmp_path)
+    assert gen.ensure_lesson(root, "demo", "demo-l9", {}, generate=lambda p: {}) is None
+
+
+def test_ensure_lesson_invalid_generation_raises_and_writes_nothing(tmp_path):
+    root = _course(tmp_path)
+    with pytest.raises(claude_client.ClaudeError):
+        gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: {"bad": 1})
+    assert not (root / "demo" / "lessons" / "demo-l1.json").exists()

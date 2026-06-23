@@ -105,6 +105,21 @@ def create_app(db_path=None):
     @app.get("/api/courses/<course_id>/lessons/<lesson_id>")
     def get_lesson(course_id, lesson_id):
         lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
+        if lesson is not None:
+            return jsonify(lesson)
+        conn = db.get_connection(path)
+        try:
+            prof = profile.latest_profile(conn)
+        finally:
+            conn.close()
+        prof_data = (prof or {}).get("data") if isinstance(prof, dict) else None
+        generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_lesson)
+        try:
+            lesson = generation.ensure_lesson(
+                courses.CONTENT_DIR, course_id, lesson_id, prof_data, generate=generate
+            )
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not prepare this lesson"}), 502
         if lesson is None:
             return jsonify({"error": "lesson not found"}), 404
         return jsonify(lesson)
