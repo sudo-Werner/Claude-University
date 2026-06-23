@@ -956,6 +956,11 @@ test("parseSSELines extracts complete events and keeps the partial tail", () => 
 test("parseSSELines returns no events for an empty buffer", () => {
   assert.deepEqual(parseSSELines(""), { events: [], rest: "" });
 });
+
+test("parseSSELines joins multiple data lines in one frame (multi-line delta)", () => {
+  const { events } = parseSSELines("event: delta\ndata: Line one.\ndata: Line two.\n\n");
+  assert.deepEqual(events[0], { event: "delta", data: "Line one.\nLine two." });
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -972,12 +977,16 @@ export function parseSSELines(buffer) {
   const rest = parts.pop(); // last item is an incomplete frame (or "")
   for (const frame of parts) {
     let event = null;
-    let data = null;
+    const dataLines = [];
     for (const line of frame.split("\n")) {
       if (line.startsWith("event:")) event = line.slice(6).trim();
-      else if (line.startsWith("data:")) data = line.slice(5).trim();
+      // Per the SSE spec, a frame may carry multiple data: lines (the backend
+      // emits one per newline of a multi-line chat delta). Join them with "\n"
+      // and strip only the single framing space after "data:" — not all
+      // whitespace — so payload whitespace and newlines survive intact.
+      else if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^ /, ""));
     }
-    if (event) events.push({ event, data });
+    if (event) events.push({ event, data: dataLines.join("\n") });
   }
   return { events, rest };
 }
