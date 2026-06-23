@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSSELines } from "../src/chat.js";
+import { chatHTML } from "../src/views/chat.js";
 
 test("parseSSELines extracts complete events and keeps the partial tail", () => {
   const buffer =
@@ -21,4 +22,17 @@ test("parseSSELines returns no events for an empty buffer", () => {
 test("parseSSELines joins multiple data lines in one frame (multi-line delta)", () => {
   const { events } = parseSSELines("event: delta\ndata: Line one.\ndata: Line two.\n\n");
   assert.deepEqual(events[0], { event: "delta", data: "Line one.\nLine two." });
+});
+
+test("chatHTML renders the composer with input + send hooks", () => {
+  const html = chatHTML([], {});
+  assert.match(html, /data-field="chat"/);
+  assert.match(html, /data-action="send"/);
+  assert.match(html, /Add a course/);
+});
+
+test("chatHTML escapes message content", () => {
+  const html = chatHTML([{ role: "user", content: "<b>hi</b>" }], {});
+  assert.doesNotMatch(html, /<b>hi<\/b>/);
+  assert.match(html, /&lt;b&gt;hi/);
 });
