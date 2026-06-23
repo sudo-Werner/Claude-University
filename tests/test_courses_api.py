@@ -47,3 +47,8 @@ def test_post_course_rejects_missing_fields(client, tmp_path, monkeypatch):
     monkeypatch.setattr(courses, "CONTENT_DIR", tmp_path / "courses")
     assert client.post("/api/courses", json={"title": "x"}).status_code == 400
     assert client.post("/api/courses", json={"modules": []}).status_code == 400
+
+
+def test_routes_reject_illegal_ids(client):
+    assert client.get("/api/courses/Bad_Id").status_code == 404
+    assert client.get("/api/courses/machine-learning/lessons/..%2fsecret").status_code == 404

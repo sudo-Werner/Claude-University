@@ -1,4 +1,5 @@
 from pathlib import Path
+import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
@@ -8,6 +9,7 @@ from backend import db, events, profile, queries, courses, claude_client, genera
 def create_app(db_path=None):
     app = Flask(__name__)
     path = db_path or db.DEFAULT_DB_PATH
+    _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
     # Ensure the schema exists at startup.
     init_conn = db.get_connection(path)
@@ -97,6 +99,8 @@ def create_app(db_path=None):
 
     @app.get("/api/courses/<course_id>")
     def get_course(course_id):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
         manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
         if manifest is None:
             return jsonify({"error": "course not found"}), 404
@@ -104,6 +108,8 @@ def create_app(db_path=None):
 
     @app.get("/api/courses/<course_id>/lessons/<lesson_id>")
     def get_lesson(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
         lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
         if lesson is not None:
             return jsonify(lesson)
