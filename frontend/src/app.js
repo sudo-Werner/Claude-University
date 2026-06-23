@@ -3,12 +3,14 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse } from "./courses.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
 import { lessonHTML } from "./views/lesson.js";
 import { diagnosticHTML } from "./views/diagnostic.js";
+import { chatHTML } from "./views/chat.js";
+import { streamChat } from "./chat.js";
 
 const EVENTS_ENDPOINT = "/api/events";
 const PROFILE_ENDPOINT = "/api/profile";
@@ -44,6 +46,7 @@ export async function init({ window, fetch }) {
     lessonState: { answer: "", hintVisible: false, solutionRevealed: false },
     timer: { running: false, elapsed: 0, intervalId: null },
     diagnostic: {},
+    chat: null,
   };
 
   // ---- diagnostic (unchanged flow, now lands on the home) ----
@@ -80,7 +83,7 @@ export async function init({ window, fetch }) {
     });
     view.querySelector('[data-action="add-course"]').addEventListener("click", () => {
       log("add_course_clicked");
-      window.alert("Course creation is coming soon.");
+      showChat();
     });
   }
 
@@ -134,8 +137,10 @@ export async function init({ window, fetch }) {
   async function startLesson() {
     const next = ui.summary && ui.summary.nextLesson;
     if (!next) return;
+    const view = root.querySelector("#view");
+    if (view) view.innerHTML = `<div class="card lesson loading">Preparing your lesson…</div>`;
     ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: next.id });
-    if (!ui.lesson) return;
+    if (!ui.lesson) { showCourse(); return; }
     ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false };
     log("lesson_view", { courseId: ui.courseId, topicId: next.id });
     if (!ui.timer.running) startTimer();
@@ -180,6 +185,63 @@ export async function init({ window, fetch }) {
       await refreshSummary(); // progress advances; next lesson moves on
       showCourse();
     });
+  }
+
+  // ---- course creation chat ----
+  function showChat() {
+    ui.screen = "chat";
+    ui.chat = { messages: [], proposal: null, pending: false };
+    root.innerHTML = shellHTML({ streakDays: STREAK_DAYS, back: "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showHome);
+    paintChat();
+  }
+
+  function paintChat() {
+    const view = root.querySelector("#view");
+    view.innerHTML = chatHTML(ui.chat.messages, { pending: ui.chat.pending });
+    if (ui.chat.proposal) {
+      const card = doc.createElement("div");
+      card.className = "card proposal";
+      card.innerHTML =
+        `<div class="eyebrow">PROPOSED COURSE</div>` +
+        `<h2 class="session-topic">${escapeHtml(ui.chat.proposal.title)}</h2>` +
+        `<div class="session-sub">${escapeHtml(ui.chat.proposal.subtitle || "")}</div>` +
+        `<button class="btn-primary" data-action="create-course">Create this course</button>`;
+      view.querySelector(".chat-thread").appendChild(card);
+      card.querySelector('[data-action="create-course"]').addEventListener("click", createFromProposal);
+    }
+    const send = view.querySelector('[data-action="send"]');
+    if (send) send.addEventListener("click", sendChat);
+  }
+
+  async function sendChat() {
+    const ta = root.querySelector('[data-field="chat"]');
+    const text = ta.value.trim();
+    if (!text || ui.chat.pending) return;
+    ui.chat.messages.push({ role: "user", content: escapeHtml(text) });
+    ui.chat.messages.push({ role: "assistant", content: "", html: "" });
+    ui.chat.pending = true;
+    paintChat();
+    const reply = ui.chat.messages[ui.chat.messages.length - 1];
+    await streamChat({
+      fetch,
+      messages: ui.chat.messages
+        .filter((m) => m.content !== "" || m !== reply)
+        .map((m) => ({ role: m.role, content: m.content })),
+      onDelta: (d) => { reply.html += escapeHtml(d); paintChat(); },
+      onProposal: (p) => { ui.chat.proposal = p; },
+      onDone: () => { ui.chat.pending = false; paintChat(); },
+    });
+  }
+
+  async function createFromProposal() {
+    const course = await createCourse({ fetch, proposal: ui.chat.proposal });
+    if (course) { log("course_created", { courseId: course.id }); openCourse(course.id); }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   }
 
   function startTimer() {
