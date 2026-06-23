@@ -1,8 +1,13 @@
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
 function courseCard(c) {
   return `
     <button class="course-card" data-course="${c.id}">
-      <div class="course-title">${c.title}</div>
-      <div class="course-sub">${c.subtitle}</div>
+      <div class="course-title">${esc(c.title)}</div>
+      <div class="course-sub">${esc(c.subtitle)}</div>
       <div class="bar"><i style="width:${c.progress.pct}%"></i></div>
       <div class="course-meta">${c.progress.done} of ${c.progress.total} lessons · ${c.reviewsDue} reviews due</div>
       <span class="course-continue">Continue →</span>

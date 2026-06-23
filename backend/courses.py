@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 CONTENT_DIR = Path(__file__).resolve().parent.parent / "content" / "courses"
@@ -74,3 +75,42 @@ def list_courses(conn, content_dir):
         except Exception:
             continue  # skip malformed course
     return summaries
+
+
+def slug_for(title, existing_ids):
+    base = re.sub(r"[^a-z0-9]+", "-", (title or "").lower()).strip("-")
+    if not base:
+        base = "course"
+    if base not in existing_ids:
+        return base
+    n = 2
+    while f"{base}-{n}" in existing_ids:
+        n += 1
+    return f"{base}-{n}"
+
+
+def write_course(content_dir, proposal):
+    content_dir = Path(content_dir)
+    existing = {p.name for p in content_dir.iterdir()} if content_dir.exists() else set()
+    course_id = slug_for(proposal["title"], existing)
+
+    modules = []
+    counter = 1
+    for m_idx, module in enumerate(proposal.get("modules", []), start=1):
+        lessons = []
+        for lesson in module.get("lessons", []):
+            lessons.append({"id": f"{course_id}-l{counter}", "title": lesson["title"]})
+            counter += 1
+        modules.append({"id": f"m{m_idx}", "title": module["title"], "lessons": lessons})
+
+    manifest = {
+        "id": course_id,
+        "title": proposal["title"],
+        "subtitle": proposal.get("subtitle", ""),
+        "brief": proposal.get("brief", ""),
+        "modules": modules,
+    }
+    course_dir = content_dir / course_id
+    (course_dir / "lessons").mkdir(parents=True, exist_ok=True)
+    (course_dir / "course.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
+    return manifest

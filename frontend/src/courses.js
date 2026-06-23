@@ -16,3 +16,14 @@ export async function loadLesson({ fetch, courseId, lessonId }) {
   if (!resp.ok) return null;
   return resp.json();
 }
+
+export async function createCourse({ fetch, proposal }) {
+  const resp = await fetch("/api/courses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(proposal),
+  });
+  if (!resp.ok) return null;
+  const body = await resp.json();
+  return body.course;
+}

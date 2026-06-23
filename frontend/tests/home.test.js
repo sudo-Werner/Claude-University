@@ -23,3 +23,13 @@ test("home renders a card per course with progress and continue", () => {
 test("home always shows the add-course card", () => {
   assert.match(homeHTML([]), /data-action="add-course"/);
 });
+
+test("home escapes HTML in course title and subtitle", () => {
+  const html = homeHTML([{
+    id: "x", title: "<script>alert(1)</script>", subtitle: "a & b",
+    progress: { done: 0, total: 1, pct: 0 }, nextLesson: null, reviewsDue: 0,
+  }]);
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /a &amp; b/);
+});
