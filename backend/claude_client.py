@@ -34,10 +34,14 @@ def _run_cli(args):
 
 def _spawn_cli(args):
     proc = subprocess.Popen(
-        [CLAUDE_BIN, *args], stdout=subprocess.PIPE, text=True, env=_env()
+        [CLAUDE_BIN, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, env=_env(),
     )
     for line in proc.stdout:
         yield line
+    proc.wait()
+    if proc.returncode != 0:
+        raise ClaudeError(f"claude stream exited {proc.returncode}: {(proc.stderr.read() or '')[:500]}")
 
 
 def extract_json(text):

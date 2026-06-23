@@ -1,7 +1,29 @@
+import html as _html
 import json
 from pathlib import Path
 
 from backend import claude_client, courses
+
+# Default-deny HTML sanitizer: escape everything, then restore a tiny safe allowlist.
+# The lesson fields are meant to carry only <code>, <em>, <strong>, <br>, and
+# <span class="mono"> formatting; anything else (script, img, on* handlers, other
+# tags/attributes) stays escaped and inert.
+_ALLOWED_HTML = {
+    "&lt;code&gt;": "<code>", "&lt;/code&gt;": "</code>",
+    "&lt;em&gt;": "<em>", "&lt;/em&gt;": "</em>",
+    "&lt;strong&gt;": "<strong>", "&lt;/strong&gt;": "</strong>",
+    "&lt;br&gt;": "<br>", "&lt;br/&gt;": "<br>", "&lt;br /&gt;": "<br>",
+    '&lt;span class=&quot;mono&quot;&gt;': '<span class="mono">',
+    "&lt;/span&gt;": "</span>",
+}
+
+
+def sanitize_html(value):
+    out = _html.escape(str(value), quote=True)
+    for escaped, allowed in _ALLOWED_HTML.items():
+        out = out.replace(escaped, allowed)
+    return out
+
 
 COURSE_SYSTEM_PROMPT = (
     "You are a curriculum designer building a personalized course for a single learner "
@@ -67,9 +89,13 @@ def _sse(event, data):
 def chat_sse(messages, profile, *, stream_fn):
     prompt = build_chat_prompt(messages, profile)
     full = []
-    for chunk in stream_fn(prompt):
-        full.append(chunk)
-        yield _sse("delta", chunk)
+    try:
+        for chunk in stream_fn(prompt):
+            full.append(chunk)
+            yield _sse("delta", chunk)
+    except claude_client.ClaudeError:
+        yield _sse("error", json.dumps({"message": "Claude is unavailable right now."}))
+        return
     proposal = detect_proposal("".join(full))
     if proposal is not None:
         yield _sse("proposal", json.dumps(proposal))
@@ -98,6 +124,17 @@ def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate):
         total=len(flat),
     )
     lesson = generate(prompt)
+    if isinstance(lesson, dict):
+        lesson["id"] = lesson_id
+        lesson["courseId"] = course_id
+        lesson["step"] = position
+        lesson["totalSteps"] = len(flat)
+    for field in ("promptHtml", "hintHtml", "solutionAns", "solutionNote"):
+        if isinstance(lesson, dict) and isinstance(lesson.get(field), str):
+            lesson[field] = sanitize_html(lesson[field])
+    for field in ("topic", "eyebrow"):
+        if isinstance(lesson, dict) and isinstance(lesson.get(field), str):
+            lesson[field] = _html.escape(lesson[field], quote=True)
     if not valid_lesson(lesson):
         raise claude_client.ClaudeError("generated lesson failed validation")
     path = Path(content_dir) / course_id / "lessons" / f"{lesson_id}.json"

@@ -127,3 +127,38 @@ def test_ensure_lesson_invalid_generation_raises_and_writes_nothing(tmp_path):
     with pytest.raises(claude_client.ClaudeError):
         gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: {"bad": 1})
     assert not (root / "demo" / "lessons" / "demo-l1.json").exists()
+
+
+def test_ensure_lesson_sanitizes_unsafe_html(tmp_path):
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["promptHtml"] = '<code>w</code><img src=x onerror=alert(1)>'
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made))
+    assert "<img" not in out["promptHtml"]
+    assert "&lt;img" in out["promptHtml"]
+    assert "<code>w</code>" in out["promptHtml"]
+
+
+def test_ensure_lesson_reconciles_ids_and_step(tmp_path):
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "wrong"
+    made["courseId"] = "wrong"
+    made["step"] = 99
+    made["totalSteps"] = 99
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made))
+    assert out["id"] == "demo-l1"
+    assert out["courseId"] == "demo"
+    assert out["step"] == 1
+    assert out["totalSteps"] == 1
+
+
+def test_chat_sse_emits_error_on_claude_failure():
+    def failing_stream(prompt):
+        raise claude_client.ClaudeError("connection refused")
+        yield  # make it a generator
+    chunks = list(gen.chat_sse([{"role": "user", "content": "hello"}], {}, stream_fn=failing_stream))
+    evs = _events(chunks)
+    event_names = [e for (e, _) in evs]
+    assert "error" in event_names
+    assert "done" not in event_names

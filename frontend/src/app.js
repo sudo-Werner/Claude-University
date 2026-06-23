@@ -232,6 +232,7 @@ export async function init({ window, fetch }) {
       onDelta: (d) => { reply.content += d; paintChat(); },
       onProposal: (p) => { ui.chat.proposal = p; },
       onDone: () => { ui.chat.pending = false; paintChat(); },
+      onError: (e) => { reply.content = "⚠️ " + (e.message || "Claude is unavailable right now."); ui.chat.pending = false; paintChat(); },
     });
   }
 
