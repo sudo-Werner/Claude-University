@@ -51,8 +51,27 @@ def detect_proposal(text):
     return claude_client.extract_fenced_json(text, "course")
 
 
+def valid_check(item):
+    if not isinstance(item, dict) or not isinstance(item.get("prompt"), str) \
+            or not isinstance(item.get("explanation"), str):
+        return False
+    if item.get("type") == "mcq":
+        choices = item.get("choices")
+        answer = item.get("answer")
+        return (isinstance(choices, list) and len(choices) >= 2
+                and isinstance(answer, int) and 0 <= answer < len(choices))
+    if item.get("type") == "fill":
+        return isinstance(item.get("answer"), str)
+    return False
+
+
 def valid_lesson(obj):
-    return isinstance(obj, dict) and all(k in obj for k in LESSON_KEYS)
+    if not (isinstance(obj, dict) and all(k in obj for k in LESSON_KEYS)):
+        return False
+    checks = obj.get("checks")
+    if not (isinstance(checks, list) and 1 <= len(checks) <= 3):
+        return False
+    return all(valid_check(c) for c in checks)
 
 
 def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, position, total):
@@ -67,7 +86,12 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         f'  id: "{lesson_id}"\n'
         "  courseId, topic (short), step (integer 1), totalSteps (integer 1), "
         'eyebrow ("EXERCISE"), promptHtml (the question as HTML, may use <code>), '
-        "hintHtml (a hint as HTML), solutionAns (the answer), solutionNote (one-sentence why).\n"
+        "hintHtml (a hint as HTML), solutionAns (the answer), solutionNote (one-sentence why),\n"
+        "  checks: a list of 2-3 concept-check items. Each item is either "
+        '{"type":"mcq","prompt":"<question, may use <code>>","choices":["A","B","C"],'
+        '"answer":<integer index of the correct choice>,"explanation":"<one sentence why>"} '
+        'or {"type":"fill","prompt":"<question>","answer":"<the exact expected answer>",'
+        '"explanation":"<one sentence why>"}.\n'
         "Shape every learner-facing field to the learner preferences above."
     )
 
@@ -135,6 +159,15 @@ def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate):
     for field in ("topic", "eyebrow"):
         if isinstance(lesson, dict) and isinstance(lesson.get(field), str):
             lesson[field] = _html.escape(lesson[field], quote=True)
+    if isinstance(lesson, dict) and isinstance(lesson.get("checks"), list):
+        for chk in lesson["checks"]:
+            if not isinstance(chk, dict):
+                continue
+            for f in ("prompt", "explanation"):
+                if isinstance(chk.get(f), str):
+                    chk[f] = sanitize_html(chk[f])
+            if isinstance(chk.get("choices"), list):
+                chk["choices"] = [sanitize_html(c) if isinstance(c, str) else c for c in chk["choices"]]
     if not valid_lesson(lesson):
         raise claude_client.ClaudeError("generated lesson failed validation")
     path = Path(content_dir) / course_id / "lessons" / f"{lesson_id}.json"
