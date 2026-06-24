@@ -65,23 +65,27 @@ desktop wide layout; a separate home "Continue Learning" hero (the dashboard ses
 "Continue →" already cover it); mark-complete (lessons complete via the recall rating).
 **Depends on:** Slices 4–6 (the player reflects mastery/reviews).
 
-### Slice 8 — Content-quality safeguards + loose ends ← NEXT
-**Closes:** done-items 7, 8.
-**Scope:** a lightweight check that generated lessons are sane (schema already enforced; add a
-self-review/regenerate-on-obvious-failure pass); make the Pi's Claude-subscription login resilient
-(detect 401 → surface "re-auth needed" instead of silent failure). **Streak: dropped** — research
-flags it as zero-value for a single AI-taught learner (YAGNI); revisit only if Werner wants it.
+### Slice 8 — Content-quality safeguards + loose ends ✅ SHIPPED 2026-06-24 — ROADMAP COMPLETE
+**Closes:** done-items 7, 8. Deployed + Pi-verified: Claude CLI auth failures are detected
+(`ClaudeAuthError`, keyed on the CLI's `api_error_status` 401/403, content-safe — never text-scans a
+successful generation) and surfaced as a clear "re-authenticate on the Pi" message on the lesson
+screen and in the course-creation chat (no more silent/generic failure); generation rejects
+empty/whitespace learner-facing fields and regenerates via the existing retry (a heuristic, not a
+second LLM call — Pi-light); `<hr>` is allowed in the sanitizer; the dropped "streak" placeholder is
+removed (UI + dead CSS). **All planned slices (1–8) are shipped.** The hourly loop now shifts to a
+quality/maintenance pass (scan for bloat/dead code/non-SOTA patterns; keep the Pi light).
+**Decision:** a true LLM self-review pass was rejected as Pi-heavy/YAGNI; the cheap heuristic +
+existing retry deliver "regenerate-on-obvious-failure" without doubling per-lesson cost.
 
 ## Known issues (discovered during build)
 - ✅ **FIXED 2026-06-24 (commit 6fc932b):** lesson body rendered raw HTML tags as literal text.
   Widened the sanitizer allowlist to safe attribute-less block tags (h1–h3, p, pre, ul/ol, li),
   switched the prompt container `<p>`→`<div>`, and styled the tags. Security-reviewed + Pi-verified
   (lesson now renders as proper coursework).
-- **"12-day streak" still shown on the course dashboard** though streak was dropped (YAGNI). A
-  leftover placeholder constant; remove the line. (Small; fold into a cleanup pass.)
-- **Generator sometimes emits `<hr/>`** (a divider) which isn't in the sanitizer allowlist, so it
-  shows as literal `<hr/>` text inside a lesson. Either add `<hr>` to the allowlist (safe,
-  attribute-less) or tell the prompt not to use it. Found in the Slice 6 e2e. (Cosmetic, minor.)
+- ✅ **FIXED 2026-06-24 (Slice 8):** the "12-day streak" placeholder is removed (UI pill + dashboard
+  strip + constant + dead CSS).
+- ✅ **FIXED 2026-06-24 (Slice 8):** `<hr>`/`<hr/>`/`<hr />` are now in the sanitizer allowlist and
+  render as a divider instead of literal text.
 - **Pi resource contention breaks lesson generation (INFRA — needs Werner).** On 2026-06-24 a
   fresh-lesson generation `claude -p` call timed out (120s) because the Pi was memory-exhausted
   (RAM ~7.1/7.6Gi, **swap 100% full**) and load spiked to ~6. Driver: **houston-mission-control**
