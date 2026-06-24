@@ -4,6 +4,7 @@ import { shellHTML } from "../src/views/shell.js";
 import { dashboardHTML } from "../src/views/dashboard.js";
 import { lessonHTML } from "../src/views/lesson.js";
 import { diagnosticHTML } from "../src/views/diagnostic.js";
+import { curriculumHTML, lessonStatus, moduleProgress } from "../src/views/curriculum.js";
 const DASHBOARD_SEED = {
   topic: "Backpropagation, intuitively",
   sub: "Module 3 · Neural Networks · Lesson 2",
@@ -134,4 +135,56 @@ test("dashboard omits the mastery breakdown when all counts are zero", () => {
     { fills: [0,0,0], activePhaseIndex: 0, statusLabel: "", clock: "" },
   );
   assert.doesNotMatch(html, /class="mastery"/);
+});
+
+const SAMPLE_MANIFEST = {
+  id: "demo", title: "Demo Course", subtitle: "s",
+  modules: [
+    { id: "m1", title: "Basics", lessons: [
+      { id: "demo-l1", title: "Lesson One" }, { id: "demo-l2", title: "Lesson Two" } ] },
+    { id: "m2", title: "Advanced", lessons: [ { id: "demo-l3", title: "Lesson Three" } ] },
+  ],
+};
+const SAMPLE_MASTERY = { "demo-l1": "proficient" };  // l1 done, rest not
+
+test("lessonStatus reflects done / current / todo", () => {
+  assert.equal(lessonStatus("demo-l1", SAMPLE_MASTERY, "demo-l2"), "done");
+  assert.equal(lessonStatus("demo-l2", SAMPLE_MASTERY, "demo-l2"), "current");
+  assert.equal(lessonStatus("demo-l3", SAMPLE_MASTERY, "demo-l2"), "todo");
+});
+
+test("moduleProgress counts completed lessons in a module", () => {
+  assert.deepEqual(moduleProgress(SAMPLE_MANIFEST.modules[0], SAMPLE_MASTERY), { done: 1, total: 2 });
+  assert.deepEqual(moduleProgress(SAMPLE_MANIFEST.modules[1], SAMPLE_MASTERY), { done: 0, total: 1 });
+});
+
+test("curriculumHTML renders modules, lessons, progress, badge and hooks", () => {
+  const html = curriculumHTML(SAMPLE_MANIFEST, SAMPLE_MASTERY, "demo-l2");
+  assert.match(html, /Basics/);
+  assert.match(html, /Advanced/);
+  assert.match(html, /Lesson One/);
+  assert.match(html, /data-lesson="demo-l1"/);
+  assert.match(html, /data-lesson="demo-l3"/);
+  assert.match(html, /1\/2/);            // module-one progress
+  assert.match(html, /Proficient/);      // badge for the completed lesson
+  assert.match(html, /1 of 3 lessons/);  // overall header
+});
+
+test("curriculumHTML tolerates missing mastery", () => {
+  const html = curriculumHTML(SAMPLE_MANIFEST, undefined, null);
+  assert.match(html, /0 of 3 lessons/);
+  assert.match(html, /data-lesson="demo-l1"/);
+});
+
+test("lessonHTML renders player nav with Prev/Next enabled per nav flags", () => {
+  // reuse the file's existing SAMPLE_LESSON + a minimal state with solutionRevealed:false
+  const state = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
+  const mid = lessonHTML(SAMPLE_LESSON, state, { hasPrev: true, hasNext: true });
+  assert.match(mid, /data-action="curriculum"/);
+  assert.match(mid, /data-action="prev-lesson"/);
+  assert.match(mid, /data-action="next-lesson"/);
+  assert.doesNotMatch(mid, /data-action="prev-lesson"[^>]*disabled/);
+
+  const first = lessonHTML(SAMPLE_LESSON, state, { hasPrev: false, hasNext: true });
+  assert.match(first, /data-action="prev-lesson"[^>]*disabled/);
 });
