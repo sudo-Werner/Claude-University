@@ -54,6 +54,8 @@ def course_progress(conn, content_dir, course_id):
 
 
 def list_courses(conn, content_dir):
+    # Deferred here to avoid a courses↔srs circular import (srs imports courses at module level).
+    from backend import srs
     content_dir = Path(content_dir)
     summaries = []
     if not content_dir.exists():
@@ -64,7 +66,6 @@ def list_courses(conn, content_dir):
         try:  # skip malformed course
             manifest = load_manifest(content_dir, child.name)
             progress = course_progress(conn, content_dir, child.name)
-            from backend import srs
             summaries.append({
                 "id": manifest["id"],
                 "title": manifest["title"],
@@ -73,7 +74,7 @@ def list_courses(conn, content_dir):
                 "nextLesson": progress["nextLesson"],
                 "reviewsDue": srs.reviews_due_count(conn, content_dir, child.name),
             })
-        except Exception:
+        except (json.JSONDecodeError, KeyError, TypeError):
             continue  # skip malformed course
     return summaries
 

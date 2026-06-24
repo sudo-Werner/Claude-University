@@ -1,7 +1,4 @@
-function esc(s) {
-  return String(s).replace(/[&<>"]/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-}
+import { esc } from "../escape.js";
 
 const norm = (s) => String(s).trim().toLowerCase();
 

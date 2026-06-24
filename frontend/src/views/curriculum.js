@@ -2,10 +2,7 @@ const LABELS = { attempted: "Attempted", familiar: "Familiar", proficient: "Prof
 
 const CHECK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
-function esc(s) {
-  return String(s).replace(/[&<>"]/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-}
+import { esc } from "../escape.js";
 
 function flatten(manifest) {
   const out = [];

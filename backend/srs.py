@@ -38,7 +38,7 @@ def sm2(reviews):
     }
 
 
-def _reviews_by_lesson(conn, course_id):
+def reviews_by_lesson(conn, course_id):
     rows = conn.execute(
         "SELECT topic_id, occurred_at, payload FROM events "
         "WHERE event_type = 'lesson_reviewed' AND course_id = ? "
@@ -61,7 +61,7 @@ def due_lesson_ids(conn, content_dir, course_id, today=None):
     manifest = courses.load_manifest(content_dir, course_id)
     if manifest is None:
         return []
-    by_lesson = _reviews_by_lesson(conn, course_id)
+    by_lesson = reviews_by_lesson(conn, course_id)
     due = []
     for lesson in courses.flatten_lessons(manifest):
         revs = by_lesson.get(lesson["id"])

@@ -1,7 +1,4 @@
-function esc(s) {
-  return String(s).replace(/[&<>"]/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-}
+import { esc } from "../escape.js";
 
 function bubble(m) {
   const who = m.role === "user" ? "me" : "claude";

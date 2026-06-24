@@ -5,11 +5,12 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery
 
+_ID_RE = _re.compile(r"^[a-z0-9-]+$")
+
 
 def create_app(db_path=None):
     app = Flask(__name__)
     path = db_path or db.DEFAULT_DB_PATH
-    _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
     # Ensure the schema exists at startup.
     init_conn = db.get_connection(path)
@@ -92,8 +93,8 @@ def create_app(db_path=None):
             prof = profile.latest_profile(conn)
         finally:
             conn.close()
-        prof_data = (prof or {}).get("data") if isinstance(prof, dict) else None
-        stream_fn = lambda prompt: claude_client.stream(prompt)
+        prof_data = (prof or {}).get("data")
+        stream_fn = claude_client.stream
         sse = generation.chat_sse(messages, prof_data, stream_fn=stream_fn)
         return app.response_class(sse, mimetype="text/event-stream")
 
@@ -124,7 +125,7 @@ def create_app(db_path=None):
             performance = mastery.performance_summary(conn, courses.CONTENT_DIR, course_id)
         finally:
             conn.close()
-        prof_data = (prof or {}).get("data") if isinstance(prof, dict) else None
+        prof_data = (prof or {}).get("data")
         generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_lesson)
         try:
             lesson = generation.ensure_lesson(

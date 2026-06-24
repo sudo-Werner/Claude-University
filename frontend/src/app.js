@@ -1,3 +1,4 @@
+import { esc } from "./escape.js";
 import { getSessionId, newId } from "./ids.js";
 import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
@@ -316,8 +317,8 @@ export async function init({ window, fetch }) {
       card.className = "card proposal";
       card.innerHTML =
         `<div class="eyebrow">PROPOSED COURSE</div>` +
-        `<h2 class="session-topic">${escapeHtml(ui.chat.proposal.title)}</h2>` +
-        `<div class="session-sub">${escapeHtml(ui.chat.proposal.subtitle || "")}</div>` +
+        `<h2 class="session-topic">${esc(ui.chat.proposal.title)}</h2>` +
+        `<div class="session-sub">${esc(ui.chat.proposal.subtitle || "")}</div>` +
         `<button class="btn-primary" data-action="create-course">Create this course</button>`;
       view.querySelector(".chat-thread").appendChild(card);
       card.querySelector('[data-action="create-course"]').addEventListener("click", createFromProposal);
@@ -360,14 +361,9 @@ export async function init({ window, fetch }) {
     root.innerHTML = shellHTML({ back: ui.manifest ? ui.manifest.title : "Courses" });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
     const view = root.querySelector("#view");
-    view.innerHTML = `<div class="card lesson"><div class="prompt">${escapeHtml(message)}</div>` +
+    view.innerHTML = `<div class="card lesson"><div class="prompt">${esc(message)}</div>` +
       `<div class="nav"><button class="btn-back" data-action="back">Back</button></div></div>`;
     view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   }
 
   function startTimer() {

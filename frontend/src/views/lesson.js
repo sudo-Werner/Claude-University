@@ -62,7 +62,7 @@ export function lessonHTML(lesson, state, nav = {}) {
                <button class="rate-btn" data-quality="good">Good</button>
                <button class="rate-btn" data-quality="easy">Easy</button>
              </div>`
-          : `<button class="btn-primary" data-action="continue" disabled>Reveal solution to finish</button>`
+          : `<span class="nav-hint">Reveal the solution to finish</span>`
       }
     </div>
     </div>

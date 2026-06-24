@@ -151,10 +151,15 @@ def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, perfo
     if manifest is None:
         return None
     flat = courses.flatten_lessons(manifest)
-    meta = next((l for l in flat if l["id"] == lesson_id), None)
+    meta = None
+    position = None
+    for i, l in enumerate(flat):
+        if l["id"] == lesson_id:
+            meta = l
+            position = i + 1
+            break
     if meta is None:
         return None
-    position = [l["id"] for l in flat].index(lesson_id) + 1
     prompt = lesson_prompt(
         brief=manifest.get("brief", ""),
         profile=profile,
@@ -166,18 +171,19 @@ def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, perfo
         performance=performance,
     )
     lesson = generate(prompt)
-    if isinstance(lesson, dict):
-        lesson["id"] = lesson_id
-        lesson["courseId"] = course_id
-        lesson["step"] = position
-        lesson["totalSteps"] = len(flat)
+    if not isinstance(lesson, dict):
+        raise claude_client.ClaudeError("generator returned a non-dict result")
+    lesson["id"] = lesson_id
+    lesson["courseId"] = course_id
+    lesson["step"] = position
+    lesson["totalSteps"] = len(flat)
     for field in ("promptHtml", "hintHtml", "solutionAns", "solutionNote"):
-        if isinstance(lesson, dict) and isinstance(lesson.get(field), str):
+        if isinstance(lesson.get(field), str):
             lesson[field] = sanitize_html(lesson[field])
     for field in ("topic", "eyebrow"):
-        if isinstance(lesson, dict) and isinstance(lesson.get(field), str):
+        if isinstance(lesson.get(field), str):
             lesson[field] = _html.escape(lesson[field], quote=True)
-    if isinstance(lesson, dict) and isinstance(lesson.get("checks"), list):
+    if isinstance(lesson.get("checks"), list):
         for chk in lesson["checks"]:
             if not isinstance(chk, dict):
                 continue
