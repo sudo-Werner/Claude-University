@@ -62,16 +62,20 @@ self-review/regenerate-on-obvious-failure pass); make the Pi's Claude-subscripti
 (detect 401 → surface "re-auth needed" instead of silent failure). **Streak: dropped** — research
 flags it as zero-value for a single AI-taught learner (YAGNI); revisit only if Werner wants it.
 
-## Known issues (discovered during build, not yet scheduled)
-- **Lesson body renders raw HTML tags as literal text (HIGH — degrades every lesson).** The
-  generator emits rich lesson HTML (`<h1>/<h2>/<h3>/<p>/<pre>/<ul>/<li>`), but the default-deny
-  sanitizer allowlist only keeps `<code>/<em>/<strong>/<br>/<span class="mono">`, so all structural
-  tags are escaped and shown to the learner as literal `<h2>…</h2>` text. Found in the Slice 5 Pi
-  e2e (2026-06-24). Fix: widen the allowlist to safe block tags (h1–h3, p, pre, ul/ol, li — not XSS
-  vectors) and style them, OR constrain the prompt to the allowlist. Recommend doing this BEFORE
-  Slice 6 — adaptivity over unreadable lessons is premature.
+## Known issues (discovered during build)
+- ✅ **FIXED 2026-06-24 (commit 6fc932b):** lesson body rendered raw HTML tags as literal text.
+  Widened the sanitizer allowlist to safe attribute-less block tags (h1–h3, p, pre, ul/ol, li),
+  switched the prompt container `<p>`→`<div>`, and styled the tags. Security-reviewed + Pi-verified
+  (lesson now renders as proper coursework).
 - **"12-day streak" still shown on the course dashboard** though streak was dropped (YAGNI). A
-  leftover placeholder constant; remove the line.
+  leftover placeholder constant; remove the line. (Small; fold into a cleanup pass.)
+- **Pi resource contention breaks lesson generation (INFRA — needs Werner).** On 2026-06-24 a
+  fresh-lesson generation `claude -p` call timed out (120s) because the Pi was memory-exhausted
+  (RAM ~7.1/7.6Gi, **swap 100% full**) and load spiked to ~6. Driver: **houston-mission-control**
+  — its uvicorn holds ~56% RAM (~4GB+), it runs dev servers (vite/esbuild/tsx/hocuspocus), and it
+  spawns its own heavy `claude -p` (opus-4-7) generations concurrently. Claude University itself is
+  innocent (~33MB idle). Not touched (Pierre's project, in active use). Werner's call: cap/relocate
+  houston, add swap, or accept that CU generation fails when houston is busy.
 
 ## Explicitly NOT building (YAGNI, per research)
 Video hosting, instructor/marketplace, enrollment/payments, ratings-by-others, peer review,
