@@ -101,3 +101,16 @@ test("lesson shows the recall rating once the solution is revealed", () => {
   const notYet = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
   assert.doesNotMatch(notYet, /data-quality=/);
 });
+
+test("lesson renders the checks section once the solution is revealed", () => {
+  const withChecks = {
+    ...SAMPLE_LESSON,
+    checks: [{ type: "fill", prompt: "2+2?", answer: "4", explanation: "because" }],
+  };
+  const revealed = lessonHTML(withChecks, { answer: "x", hintVisible: false, solutionRevealed: true, checkAnswers: {}, checkResults: {} });
+  assert.match(revealed, /Check your understanding/);
+  assert.match(revealed, /data-check-input="0"/);
+
+  const notYet = lessonHTML(withChecks, { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} });
+  assert.doesNotMatch(notYet, /Check your understanding/);
+});

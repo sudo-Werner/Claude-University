@@ -10,6 +10,7 @@ import { dashboardHTML } from "./views/dashboard.js";
 import { lessonHTML } from "./views/lesson.js";
 import { diagnosticHTML } from "./views/diagnostic.js";
 import { chatHTML } from "./views/chat.js";
+import { gradeCheck } from "./views/checks.js";
 import { streamChat } from "./chat.js";
 
 const EVENTS_ENDPOINT = "/api/events";
@@ -141,7 +142,7 @@ export async function init({ window, fetch }) {
     if (view) view.innerHTML = `<div class="card lesson loading">Preparing your lesson…</div>`;
     ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: next.id });
     if (!ui.lesson) { showCourse(); return; }
-    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false };
+    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
     log("lesson_view", { courseId: ui.courseId, topicId: next.id });
     if (!ui.timer.running) startTimer();
     showLesson();
@@ -187,6 +188,38 @@ export async function init({ window, fetch }) {
         await advanceAfterLesson();
       });
     });
+    view.querySelectorAll('[data-check-input]').forEach((inp) => {
+      inp.addEventListener("input", () => {
+        const i = Number(inp.getAttribute("data-check-input"));
+        ui.lessonState.checkAnswers[i] = inp.value;
+      });
+    });
+    view.querySelectorAll('[data-choice]').forEach((btn) => {
+      btn.addEventListener("click", () =>
+        answerCheck(Number(btn.getAttribute("data-check")), Number(btn.getAttribute("data-choice"))),
+      );
+    });
+    view.querySelectorAll('[data-action="check-fill"]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const i = Number(btn.getAttribute("data-check"));
+        const inp = view.querySelector(`[data-check-input="${i}"]`);
+        answerCheck(i, inp ? inp.value : "");
+      });
+    });
+  }
+
+  function answerCheck(i, answer) {
+    const check = ui.lesson.checks && ui.lesson.checks[i];
+    if (!check || ui.lessonState.checkResults[i]) return;
+    const result = gradeCheck(check, answer);
+    ui.lessonState.checkAnswers[i] = answer;
+    ui.lessonState.checkResults[i] = { correct: result.correct };
+    log("lesson_check", {
+      courseId: ui.courseId,
+      topicId: ui.lesson.id,
+      payload: { index: i, type: check.type, correct: result.correct },
+    });
+    paintLesson();
   }
 
   async function advanceAfterLesson() {
@@ -194,7 +227,7 @@ export async function init({ window, fetch }) {
       const nextId = ui.reviewQueue.shift();
       ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: nextId });
       if (!ui.lesson) { await refreshSummary(); showCourse(); return; }
-      ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false };
+      ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
       log("lesson_view", { courseId: ui.courseId, topicId: nextId });
       showLesson();
       return;
@@ -210,7 +243,7 @@ export async function init({ window, fetch }) {
     ui.reviewQueue = due.slice(1);
     ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: due[0] });
     if (!ui.lesson) { showCourse(); return; }
-    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false };
+    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
     log("lesson_view", { courseId: ui.courseId, topicId: due[0] });
     if (!ui.timer.running) startTimer();
     showLesson();
