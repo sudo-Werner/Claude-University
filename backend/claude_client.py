@@ -11,6 +11,30 @@ class ClaudeError(Exception):
     pass
 
 
+class ClaudeAuthError(ClaudeError):
+    """Claude CLI could not authenticate (expired/invalid Max login)."""
+
+
+_AUTH_MARKERS = (
+    "invalid api key", "unauthorized", " 401", "please run /login", "/login",
+    "log in", "oauth", "authentication_error", "expired", "not logged in",
+)
+
+
+def _auth_failure_reason(stdout, stderr, *, scan_text):
+    try:
+        env = json.loads(stdout)
+    except (ValueError, TypeError):
+        env = None
+    if isinstance(env, dict) and env.get("api_error_status") in (401, 403):
+        return env.get("result") or ("Claude authentication failed (HTTP %s)." % env.get("api_error_status"))
+    if scan_text:
+        blob = ((stdout or "") + " " + (stderr or "")).lower()
+        if any(m in blob for m in _AUTH_MARKERS):
+            return "Claude authentication failed — the Pi login looks invalid."
+    return None
+
+
 def _env():
     env = dict(os.environ)
     # CRITICAL (confirmed in the Task 0 spike): a stale ANTHROPIC_API_KEY in the
@@ -28,7 +52,13 @@ def _run_cli(args):
         [CLAUDE_BIN, *args], capture_output=True, text=True, env=_env(), timeout=_TIMEOUT
     )
     if proc.returncode != 0:
+        reason = _auth_failure_reason(proc.stdout, proc.stderr, scan_text=True)
+        if reason:
+            raise ClaudeAuthError(reason)
         raise ClaudeError(f"claude exited {proc.returncode}: {proc.stderr[:500]}")
+    reason = _auth_failure_reason(proc.stdout, "", scan_text=False)
+    if reason:
+        raise ClaudeAuthError(reason)
     return proc.stdout
 
 
@@ -41,7 +71,11 @@ def _spawn_cli(args):
         yield line
     proc.wait()
     if proc.returncode != 0:
-        raise ClaudeError(f"claude stream exited {proc.returncode}: {(proc.stderr.read() or '')[:500]}")
+        err = (proc.stderr.read() or "")
+        reason = _auth_failure_reason("", err, scan_text=True)
+        if reason:
+            raise ClaudeAuthError(reason)
+        raise ClaudeError(f"claude stream exited {proc.returncode}: {err[:500]}")
 
 
 def extract_json(text):
@@ -116,6 +150,12 @@ def _extract_stream_text(line):
 def stream(prompt, *, model=DEFAULT_MODEL, spawn=_spawn_cli):
     args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--model", model]
     for line in spawn(args):
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            ev = None
+        if isinstance(ev, dict) and ev.get("api_error_status") in (401, 403):
+            raise ClaudeAuthError(ev.get("result") or "Claude authentication failed.")
         text = _extract_stream_text(line)
         if text:
             yield text
