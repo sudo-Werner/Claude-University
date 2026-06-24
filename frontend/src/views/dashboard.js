@@ -2,6 +2,17 @@ const CLOCK_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none">
 const PLAY_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="#fff"><path d="M7 5l12 7-12 7V5z"/></svg>`;
 const FLAME = `<svg class="flame" viewBox="0 0 24 24" fill="none"><path d="M12 2c1 3-1 4-1 6a3 3 0 006 0c0-1.5-1-2.5-1-4 2 1.5 4 4 4 8a8 8 0 11-16 0c0-4 3-6 4-8 .5 1 1 1.5 2 2 1-1 1.5-2 1-4z" fill="#e0892f"/></svg>`;
 
+const MASTERY_LABELS = { attempted: "Attempted", familiar: "Familiar", proficient: "Proficient", mastered: "Mastered" };
+
+function masteryHTML(counts) {
+  const c = counts || {};
+  const parts = ["mastered", "proficient", "familiar", "attempted"]
+    .filter((k) => (c[k] || 0) > 0)
+    .map((k) => `<span class="m-item"><b>${c[k]}</b> ${MASTERY_LABELS[k]}</span>`);
+  if (!parts.length) return "";
+  return `<div class="mastery"><div class="m-label">Mastery</div><div class="m-row">${parts.join("")}</div></div>`;
+}
+
 const PHASE_COLORS = ["#3aa0e0", "#7c6aff", "#25b478"];
 const PHASE_NAMES = ["Warm-up", "Peak focus", "Cool-down"];
 const PHASE_DUR = ["15m", "60m", "15m"];
@@ -48,6 +59,7 @@ export function dashboardHTML(data, timerView) {
         <button class="btn-secondary" data-action="review">Review</button>
       </section>
     </div>
+    ${masteryHTML(data.masteryCounts)}
     <div class="streak-strip">${FLAME}<div><b>${data.streakDays}-day streak.</b> One session today keeps it alive.</div></div>
     </div>
   `;
