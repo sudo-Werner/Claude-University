@@ -38,15 +38,19 @@ objective signal Slice 6 will consume. E2E confirmed: real generated lesson, mcq
 graded, two `lesson_check` events landed.
 **Depends on:** Slice 4 (the rating/review loop exists; checks feed it a better signal).
 
-### Slice 6 — Adaptivity / mastery ← NEXT
-**Closes:** done-item 2.
-**Scope:** a 4-level mastery state per lesson (Attempted / Familiar / Proficient / Mastered)
-derived from review history + check performance; generation and "what's next" react to it (e.g.
-struggled → easier reinforcement or a prerequisite recap; mastered → advance). Feeds the course
-`brief` + recent performance into lesson generation.
+### Slice 6 — Adaptivity / mastery ✅ SHIPPED 2026-06-24
+**Closes:** done-item 2. Deployed + Pi-verified: per-lesson mastery (attempted/familiar/proficient/
+mastered) derived purely from the event log — SM-2 repetitions capped by `lesson_check` accuracy —
+plus a course-level performance summary that makes lesson generation adapt (deeper/faster when
+strong, reinforce fundamentals when struggling). Mastery exposed on `GET /api/courses/<id>`, shown
+as a dashboard breakdown that refreshes after each lesson. E2E confirmed on a 2-lesson course: both
+completed, mastery derived correctly, performance summary fed the second lesson's generation.
+**Deferred (YAGNI):** dynamic curriculum reordering / inserted recap lessons / regenerating cached
+lessons — adaptivity lives in the generation prompt, not in mutating the manifest. Per-lesson
+mastery badges wait for Slice 7's curriculum view.
 **Depends on:** Slices 4–5 (needs the performance signal).
 
-### Slice 7 — Curriculum structure & lesson-player UX
+### Slice 7 — Curriculum structure & lesson-player UX ← NEXT
 **Closes:** done-items 6 and the UX half of 4–5.
 **Scope (per research):** a **course-overview accordion** (modules expand to lessons with
 completion checkmarks + per-section progress); a **two-panel lesson player** (content + a
@@ -69,6 +73,9 @@ flags it as zero-value for a single AI-taught learner (YAGNI); revisit only if W
   (lesson now renders as proper coursework).
 - **"12-day streak" still shown on the course dashboard** though streak was dropped (YAGNI). A
   leftover placeholder constant; remove the line. (Small; fold into a cleanup pass.)
+- **Generator sometimes emits `<hr/>`** (a divider) which isn't in the sanitizer allowlist, so it
+  shows as literal `<hr/>` text inside a lesson. Either add `<hr>` to the allowlist (safe,
+  attribute-less) or tell the prompt not to use it. Found in the Slice 6 e2e. (Cosmetic, minor.)
 - **Pi resource contention breaks lesson generation (INFRA — needs Werner).** On 2026-06-24 a
   fresh-lesson generation `claude -p` call timed out (120s) because the Pi was memory-exhausted
   (RAM ~7.1/7.6Gi, **swap 100% full**) and load spiked to ~6. Driver: **houston-mission-control**
