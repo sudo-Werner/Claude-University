@@ -46,7 +46,7 @@ def lesson_mastery(conn, content_dir, course_id):
     if manifest is None:
         return {}
     completed = courses.completed_lesson_ids(conn, course_id)
-    reviews = srs._reviews_by_lesson(conn, course_id)
+    reviews = srs.reviews_by_lesson(conn, course_id)
     checks = _checks_by_lesson(conn, course_id)
     out = {}
     for lesson in courses.flatten_lessons(manifest):
@@ -64,7 +64,7 @@ def lesson_mastery(conn, content_dir, course_id):
 def mastery_counts(mastery_map):
     counts = {level: 0 for level in LEVELS}
     for level in mastery_map.values():
-        counts[level] = counts.get(level, 0) + 1
+        counts[level] += 1
     return counts
 
 

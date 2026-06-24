@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import tempfile
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/home/werner/.local/bin/claude")
@@ -63,19 +64,21 @@ def _run_cli(args):
 
 
 def _spawn_cli(args):
-    proc = subprocess.Popen(
-        [CLAUDE_BIN, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, env=_env(),
-    )
-    for line in proc.stdout:
-        yield line
-    proc.wait()
-    if proc.returncode != 0:
-        err = (proc.stderr.read() or "")
-        reason = _auth_failure_reason("", err, scan_text=True)
-        if reason:
-            raise ClaudeAuthError(reason)
-        raise ClaudeError(f"claude stream exited {proc.returncode}: {err[:500]}")
+    with tempfile.TemporaryFile(mode="w+") as tmpfile:
+        proc = subprocess.Popen(
+            [CLAUDE_BIN, *args], stdout=subprocess.PIPE, stderr=tmpfile,
+            text=True, env=_env(),
+        )
+        for line in proc.stdout:
+            yield line
+        proc.wait()
+        if proc.returncode != 0:
+            tmpfile.seek(0)
+            err = tmpfile.read() or ""
+            reason = _auth_failure_reason("", err, scan_text=True)
+            if reason:
+                raise ClaudeAuthError(reason)
+            raise ClaudeError(f"claude stream exited {proc.returncode}: {err[:500]}")
 
 
 def extract_json(text):
