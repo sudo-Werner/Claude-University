@@ -1,5 +1,7 @@
 from backend import generation as gen
 
+_OK_CHECK = {"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}
+
 
 def test_detect_proposal_parses_course_fence():
     text = 'Sounds good!\n```course\n{"title": "Stats", "modules": []}\n```'
@@ -10,6 +12,7 @@ def test_detect_proposal_parses_course_fence():
 
 def test_valid_lesson_requires_all_keys():
     good = {k: "x" for k in gen.LESSON_KEYS}
+    good["checks"] = [dict(_OK_CHECK)]
     assert gen.valid_lesson(good) is True
     missing = dict(good)
     del missing["promptHtml"]
@@ -104,6 +107,7 @@ def test_ensure_lesson_generates_validates_and_caches(tmp_path):
     root = _course(tmp_path)
     made = {k: "x" for k in gen.LESSON_KEYS}
     made["id"] = "demo-l1"
+    made["checks"] = [dict(_OK_CHECK)]
     calls = []
     def generate(prompt):
         calls.append(prompt)
@@ -133,6 +137,7 @@ def test_ensure_lesson_sanitizes_unsafe_html(tmp_path):
     root = _course(tmp_path)
     made = {k: "x" for k in gen.LESSON_KEYS}
     made["promptHtml"] = '<code>w</code><img src=x onerror=alert(1)>'
+    made["checks"] = [dict(_OK_CHECK)]
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made))
     assert "<img" not in out["promptHtml"]
     assert "&lt;img" in out["promptHtml"]
@@ -146,6 +151,7 @@ def test_ensure_lesson_reconciles_ids_and_step(tmp_path):
     made["courseId"] = "wrong"
     made["step"] = 99
     made["totalSteps"] = 99
+    made["checks"] = [dict(_OK_CHECK)]
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made))
     assert out["id"] == "demo-l1"
     assert out["courseId"] == "demo"
@@ -162,3 +168,54 @@ def test_chat_sse_emits_error_on_claude_failure():
     event_names = [e for (e, _) in evs]
     assert "error" in event_names
     assert "done" not in event_names
+
+
+def test_valid_check_accepts_mcq_and_fill():
+    assert gen.valid_check({"type": "mcq", "prompt": "p", "choices": ["a", "b"], "answer": 1, "explanation": "e"})
+    assert gen.valid_check({"type": "fill", "prompt": "p", "answer": "4", "explanation": "e"})
+
+
+def test_valid_check_rejects_malformed():
+    assert not gen.valid_check({"type": "mcq", "prompt": "p", "choices": ["a", "b"], "answer": 5, "explanation": "e"})  # index out of range
+    assert not gen.valid_check({"type": "mcq", "prompt": "p", "choices": ["a"], "answer": 0, "explanation": "e"})  # <2 choices
+    assert not gen.valid_check({"type": "fill", "prompt": "p", "explanation": "e"})  # no answer
+    assert not gen.valid_check({"type": "other", "prompt": "p"})
+    assert not gen.valid_check("nope")
+
+
+def test_valid_lesson_requires_checks():
+    base = {k: "x" for k in gen.LESSON_KEYS}
+    assert not gen.valid_lesson(base)  # no checks
+    base["checks"] = []
+    assert not gen.valid_lesson(base)  # empty
+    base["checks"] = [{"type": "fill", "prompt": "p", "answer": "a", "explanation": "e"}]
+    assert gen.valid_lesson(base)
+    base["checks"] = [base["checks"][0]] * 4
+    assert not gen.valid_lesson(base)  # too many
+
+
+def test_lesson_prompt_mentions_checks():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="x-l1", lesson_title="T",
+                          module_title="M", position=1, total=2)
+    assert "checks" in p
+    assert "mcq" in p and "fill" in p
+
+
+def test_ensure_lesson_sanitizes_check_html(tmp_path):
+    import json as _json
+    from backend import courses
+    root = tmp_path / "courses"
+    (root / "demo" / "lessons").mkdir(parents=True)
+    (root / "demo" / "course.json").write_text(_json.dumps({
+        "id": "demo", "title": "Demo", "subtitle": "", "brief": "beginner",
+        "modules": [{"id": "m1", "title": "M", "lessons": [{"id": "demo-l1", "title": "L1"}]}],
+    }))
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    made["checks"] = [{"type": "mcq", "prompt": "<img src=x onerror=alert(1)>pick", "choices": ["<b>a</b>", "ok"],
+                        "answer": 1, "explanation": "<code>fine</code>"}]
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: made)
+    chk = out["checks"][0]
+    assert "<img" not in chk["prompt"] and "&lt;img" in chk["prompt"]   # unsafe escaped
+    assert "<code>fine</code>" in chk["explanation"]                     # allowlisted kept
+    assert "<b>a</b>" not in chk["choices"][0] and "&lt;b&gt;a" in chk["choices"][0]
