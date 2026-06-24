@@ -29,15 +29,16 @@ per-course "reviews due" count becomes real; a **review surface** that resurface
 (single source of truth), consistent with Slice 1.
 **Depends on:** nothing new.
 
-### Slice 5 — Checkable concept-check items + feedback ← NEXT
-**Closes:** done-item 3; advances 4.
-**Scope:** lessons gain a small `items` array in their JSON (MCQ / fill-in-the-blank with correct
-answers + per-choice feedback), generated alongside the exercise; the lesson screen checks the
-learner's answer and gives feedback instead of pure self-assessment. Gives an *objective* signal
-that later sharpens spaced repetition and adaptivity.
+### Slice 5 — Checkable concept-check items + feedback ✅ SHIPPED 2026-06-24
+**Closes:** done-item 3; advances 4. Deployed + Pi-verified: lessons carry a required `checks`
+array (1–3 items, MCQ or fill-in-the-blank) generated alongside the exercise and sanitized
+server-side; after the solution is revealed a "Check your understanding" section grades each answer
+(correct/incorrect + explanation) and logs a `lesson_check` event `{index, type, correct}` — the
+objective signal Slice 6 will consume. E2E confirmed: real generated lesson, mcq-wrong + fill-correct
+graded, two `lesson_check` events landed.
 **Depends on:** Slice 4 (the rating/review loop exists; checks feed it a better signal).
 
-### Slice 6 — Adaptivity / mastery
+### Slice 6 — Adaptivity / mastery ← NEXT
 **Closes:** done-item 2.
 **Scope:** a 4-level mastery state per lesson (Attempted / Familiar / Proficient / Mastered)
 derived from review history + check performance; generation and "what's next" react to it (e.g.
@@ -60,6 +61,17 @@ curriculum sidebar with current-item highlight, Prev/Next, mark-complete, "X of 
 self-review/regenerate-on-obvious-failure pass); make the Pi's Claude-subscription login resilient
 (detect 401 → surface "re-auth needed" instead of silent failure). **Streak: dropped** — research
 flags it as zero-value for a single AI-taught learner (YAGNI); revisit only if Werner wants it.
+
+## Known issues (discovered during build, not yet scheduled)
+- **Lesson body renders raw HTML tags as literal text (HIGH — degrades every lesson).** The
+  generator emits rich lesson HTML (`<h1>/<h2>/<h3>/<p>/<pre>/<ul>/<li>`), but the default-deny
+  sanitizer allowlist only keeps `<code>/<em>/<strong>/<br>/<span class="mono">`, so all structural
+  tags are escaped and shown to the learner as literal `<h2>…</h2>` text. Found in the Slice 5 Pi
+  e2e (2026-06-24). Fix: widen the allowlist to safe block tags (h1–h3, p, pre, ul/ol, li — not XSS
+  vectors) and style them, OR constrain the prompt to the allowlist. Recommend doing this BEFORE
+  Slice 6 — adaptivity over unreadable lessons is premature.
+- **"12-day streak" still shown on the course dashboard** though streak was dropped (YAGNI). A
+  leftover placeholder constant; remove the line.
 
 ## Explicitly NOT building (YAGNI, per research)
 Video hosting, instructor/marketplace, enrollment/payments, ratings-by-others, peer review,
