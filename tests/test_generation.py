@@ -3,6 +3,42 @@ from backend import generation as gen
 _OK_CHECK = {"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}
 
 
+def test_sanitize_html_allows_safe_block_tags():
+    # Block tags the generator actually emits should render, not show as literal text.
+    src = (
+        "<h1>Title</h1><h2>Sub</h2><h3>Smaller</h3>"
+        "<p>A paragraph with <strong>bold</strong> and <code>code</code>.</p>"
+        "<pre><code>print(1)</code></pre>"
+        "<ul><li>one</li><li>two</li></ul>"
+        "<ol><li>first</li></ol>"
+    )
+    out = gen.sanitize_html(src)
+    for tag in ("<h1>", "</h1>", "<h2>", "<h3>", "<p>", "</p>",
+                "<pre>", "</pre>", "<ul>", "<ol>", "<li>", "</li>"):
+        assert tag in out, tag
+    assert "<strong>bold</strong>" in out
+    assert "<code>print(1)</code>" in out
+
+
+def test_sanitize_html_still_blocks_dangerous_markup():
+    # Default-deny holds: scripts, images, event handlers, and tags with
+    # attributes stay escaped and inert.
+    out = gen.sanitize_html(
+        '<script>alert(1)</script><img src=x onerror=alert(1)>'
+        '<p onclick="x()">hi</p><h2 style="x">t</h2><a href="x">link</a>'
+    )
+    assert "<script" not in out
+    assert "<img" not in out
+    assert "&lt;img" in out  # img escaped, its onerror handler inert as text
+    assert "<p onclick" not in out  # attribute-bearing <p ...> not restored as live tag
+    assert "<h2 style" not in out
+    assert "<a" not in out
+    assert "&lt;script&gt;" in out
+    # A bare <p> is restored, but <p onclick=...> (with attributes) is NOT —
+    # only the exact attribute-less open tag string is in the allowlist.
+    assert "<p>" not in out
+
+
 def test_detect_proposal_parses_course_fence():
     text = 'Sounds good!\n```course\n{"title": "Stats", "modules": []}\n```'
     p = gen.detect_proposal(text)

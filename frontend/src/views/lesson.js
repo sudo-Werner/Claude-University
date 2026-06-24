@@ -35,7 +35,7 @@ export function lessonHTML(lesson, state) {
     </div>
     <section class="card lesson">
       <span class="eyebrow">${lesson.eyebrow}</span>
-      <p class="prompt">${lesson.promptHtml}</p>
+      <div class="prompt">${lesson.promptHtml}</div>
       <textarea data-field="answer" placeholder="Write your update here…" style="min-height:64px; margin:12px 0">${state.answer}</textarea>
       <button class="hint-toggle" data-action="toggle-hint" style="margin-bottom:10px">${BULB}<span style="flex:1">${HINT_TEXT[state.hintVisible]}</span></button>
       ${hint}

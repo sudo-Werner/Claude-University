@@ -5,17 +5,21 @@ from pathlib import Path
 from backend import claude_client, courses
 
 # Default-deny HTML sanitizer: escape everything, then restore a tiny safe allowlist.
-# The lesson fields are meant to carry only <code>, <em>, <strong>, <br>, and
-# <span class="mono"> formatting; anything else (script, img, on* handlers, other
-# tags/attributes) stays escaped and inert.
+# Lessons carry inline formatting (<code>, <em>, <strong>, <br>, <span class="mono">)
+# plus structural block tags the generator emits to lay out a lesson (headings,
+# paragraphs, lists, preformatted code). Only the exact attribute-less tag strings
+# below are restored; anything else — script, img, on* handlers, <a href>, or any
+# tag carrying attributes (e.g. "<p onclick=...>") — stays escaped and inert.
+_INLINE_TAGS = ["code", "em", "strong"]
+_BLOCK_TAGS = ["h1", "h2", "h3", "p", "pre", "ul", "ol", "li"]
 _ALLOWED_HTML = {
-    "&lt;code&gt;": "<code>", "&lt;/code&gt;": "</code>",
-    "&lt;em&gt;": "<em>", "&lt;/em&gt;": "</em>",
-    "&lt;strong&gt;": "<strong>", "&lt;/strong&gt;": "</strong>",
     "&lt;br&gt;": "<br>", "&lt;br/&gt;": "<br>", "&lt;br /&gt;": "<br>",
     '&lt;span class=&quot;mono&quot;&gt;': '<span class="mono">',
     "&lt;/span&gt;": "</span>",
 }
+for _t in _INLINE_TAGS + _BLOCK_TAGS:
+    _ALLOWED_HTML["&lt;%s&gt;" % _t] = "<%s>" % _t
+    _ALLOWED_HTML["&lt;/%s&gt;" % _t] = "</%s>" % _t
 
 
 def sanitize_html(value):
