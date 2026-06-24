@@ -19,7 +19,6 @@ const PROFILE_ENDPOINT = "/api/profile";
 const COURSES_ENDPOINT = "/api/courses";
 const FLUSH_INTERVAL_MS = 15000;
 const SESSION_MIN = 90;
-const STREAK_DAYS = 12; // placeholder until a stats endpoint exists
 
 export async function init({ window, fetch }) {
   const storage = window.localStorage;
@@ -77,7 +76,7 @@ export async function init({ window, fetch }) {
   async function showHome() {
     ui.screen = "home";
     ui.courseId = null;
-    root.innerHTML = shellHTML({ streakDays: STREAK_DAYS });
+    root.innerHTML = shellHTML({});
     const view = root.querySelector("#view");
     const courses = await listCourses({ fetch, endpoint: COURSES_ENDPOINT });
     view.innerHTML = homeHTML(courses);
@@ -138,7 +137,6 @@ export async function init({ window, fetch }) {
       lessonsDone: p.done,
       lessonsTotal: p.total,
       reviewsDue: ui.summary ? ui.summary.reviewsDue : 0,
-      streakDays: STREAK_DAYS,
       masteryCounts: (ui.manifest && ui.manifest.masteryCounts) || {},
     };
   }
@@ -154,14 +152,14 @@ export async function init({ window, fetch }) {
 
   function showCourse() {
     ui.screen = "course";
-    root.innerHTML = shellHTML({ streakDays: STREAK_DAYS, back: "Courses" });
+    root.innerHTML = shellHTML({ back: "Courses" });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showHome);
     paintCourse();
   }
 
   function showCurriculum() {
     ui.screen = "curriculum";
-    root.innerHTML = shellHTML({ streakDays: STREAK_DAYS, back: ui.manifest.title });
+    root.innerHTML = shellHTML({ back: ui.manifest.title });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
     paintCurriculum();
   }
@@ -181,7 +179,7 @@ export async function init({ window, fetch }) {
     const view = root.querySelector("#view");
     if (view) view.innerHTML = `<div class="card lesson loading">Preparing your lesson…</div>`;
     ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId });
-    if (!ui.lesson) { showCourse(); return; }
+    if (lessonFailed(ui.lesson)) { showLessonError(ui.lesson && ui.lesson.error || "Couldn't load this lesson."); return; }
     ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
     log("lesson_view", { courseId: ui.courseId, topicId: lessonId });
     if (!ui.timer.running) startTimer();
@@ -195,7 +193,7 @@ export async function init({ window, fetch }) {
 
   function showLesson() {
     ui.screen = "lesson";
-    root.innerHTML = shellHTML({ streakDays: STREAK_DAYS, back: ui.manifest.title });
+    root.innerHTML = shellHTML({ back: ui.manifest.title });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
     paintLesson();
   }
@@ -278,7 +276,7 @@ export async function init({ window, fetch }) {
     if (ui.reviewQueue.length) {
       const nextId = ui.reviewQueue.shift();
       ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: nextId });
-      if (!ui.lesson) { await refreshSummary(); showCourse(); return; }
+      if (lessonFailed(ui.lesson)) { await refreshSummary(); showCourse(); return; }
       ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
       log("lesson_view", { courseId: ui.courseId, topicId: nextId });
       showLesson();
@@ -294,7 +292,7 @@ export async function init({ window, fetch }) {
     if (!due.length) { showCourse(); return; }
     ui.reviewQueue = due.slice(1);
     ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: due[0] });
-    if (!ui.lesson) { showCourse(); return; }
+    if (lessonFailed(ui.lesson)) { showCourse(); return; }
     ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
     log("lesson_view", { courseId: ui.courseId, topicId: due[0] });
     if (!ui.timer.running) startTimer();
@@ -305,7 +303,7 @@ export async function init({ window, fetch }) {
   function showChat() {
     ui.screen = "chat";
     ui.chat = { messages: [], proposal: null, pending: false };
-    root.innerHTML = shellHTML({ streakDays: STREAK_DAYS, back: "Courses" });
+    root.innerHTML = shellHTML({ back: "Courses" });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showHome);
     paintChat();
   }
@@ -353,6 +351,18 @@ export async function init({ window, fetch }) {
   async function createFromProposal() {
     const course = await createCourse({ fetch, proposal: ui.chat.proposal });
     if (course) { log("course_created", { courseId: course.id }); openCourse(course.id); }
+  }
+
+  function lessonFailed(l) { return !l || l.error; }
+
+  function showLessonError(message) {
+    ui.screen = "lesson";
+    root.innerHTML = shellHTML({ back: ui.manifest ? ui.manifest.title : "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
+    const view = root.querySelector("#view");
+    view.innerHTML = `<div class="card lesson"><div class="prompt">${escapeHtml(message)}</div>` +
+      `<div class="nav"><button class="btn-back" data-action="back">Back</button></div></div>`;
+    view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
   }
 
   function escapeHtml(s) {

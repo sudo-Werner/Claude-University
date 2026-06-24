@@ -131,6 +131,8 @@ def create_app(db_path=None):
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
                 generate=generate, performance=performance,
             )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
         except claude_client.ClaudeError:
             return jsonify({"error": "could not prepare this lesson"}), 502
         if lesson is None:

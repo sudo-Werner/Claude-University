@@ -289,3 +289,36 @@ def test_ensure_lesson_forwards_performance(tmp_path):
                       performance="The learner has been struggling — slow down.")
     assert "Learner performance so far:" in captured["prompt"]
     assert "struggling" in captured["prompt"]
+
+
+def test_valid_check_rejects_empty_fields():
+    assert not gen.valid_check({"type": "mcq", "prompt": "  ", "choices": ["a", "b"], "answer": 0, "explanation": "e"})
+    assert not gen.valid_check({"type": "mcq", "prompt": "p", "choices": ["a", ""], "answer": 0, "explanation": "e"})
+    assert not gen.valid_check({"type": "fill", "prompt": "p", "answer": "  ", "explanation": "e"})
+    assert gen.valid_check({"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"})
+
+
+def test_valid_lesson_rejects_empty_prose():
+    good = {k: "x" for k in gen.LESSON_KEYS}
+    good["checks"] = [dict(_OK_CHECK)]
+    assert gen.valid_lesson(good) is True
+    blank = dict(good); blank["promptHtml"] = "   "
+    assert gen.valid_lesson(blank) is False
+    blank2 = dict(good); blank2["solutionAns"] = ""
+    assert gen.valid_lesson(blank2) is False
+
+
+def test_sanitize_html_allows_hr():
+    out = gen.sanitize_html("<p>a</p><hr><p>b</p><hr/>")
+    assert "<hr>" in out
+    assert out.count("<hr>") == 2  # both <hr> and <hr/> normalize to <hr>
+
+
+def test_chat_sse_emits_reauth_on_auth_error():
+    def failing_stream(prompt):
+        raise claude_client.ClaudeAuthError("Invalid API key")
+        yield
+    chunks = list(gen.chat_sse([{"role": "user", "content": "hi"}], {}, stream_fn=failing_stream))
+    evs = _events(chunks)
+    msg = [d for (e, d) in evs if e == "error"]
+    assert msg and ("re-authenticate" in msg[0].lower() or "log in" in msg[0].lower())

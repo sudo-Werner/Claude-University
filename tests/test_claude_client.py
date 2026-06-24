@@ -63,3 +63,56 @@ def test_stream_yields_text_deltas():
     ]
     got = list(cc.stream("hi", spawn=lambda args: iter(lines)))
     assert "".join(got) == "Hello"
+
+
+def test_auth_failure_reason_detects_401_envelope():
+    envelope = json.dumps({"is_error": True, "api_error_status": 401,
+                           "result": "Invalid API key · Fix external API key"})
+    assert "Invalid API key" in cc._auth_failure_reason(envelope, "", scan_text=True)
+    # structured field is trusted even without text scan (success-path call):
+    assert cc._auth_failure_reason(envelope, "", scan_text=False)
+
+
+def test_auth_failure_reason_text_markers_only_when_scanning():
+    err = "stuff: please run /login to authenticate"
+    assert cc._auth_failure_reason("", err, scan_text=True)
+    # a SUCCESS lesson whose content mentions auth words must NOT be flagged:
+    lesson = json.dumps({"api_error_status": None,
+                         "result": "Lesson: to log in, type your 401 code"})
+    assert cc._auth_failure_reason(lesson, "", scan_text=False) is None
+
+
+def test_run_cli_raises_auth_error_on_401(monkeypatch):
+    class P:
+        returncode = 1
+        stdout = json.dumps({"api_error_status": 401, "result": "Invalid API key"})
+        stderr = ""
+    monkeypatch.setattr(cc.subprocess, "run", lambda *a, **k: P())
+    with pytest.raises(cc.ClaudeAuthError):
+        cc._run_cli(["-p", "x"])
+
+
+def test_run_cli_plain_error_on_nonauth_failure(monkeypatch):
+    class P:
+        returncode = 2
+        stdout = ""
+        stderr = "some other crash"
+    monkeypatch.setattr(cc.subprocess, "run", lambda *a, **k: P())
+    with pytest.raises(cc.ClaudeError) as ei:
+        cc._run_cli(["-p", "x"])
+    assert not isinstance(ei.value, cc.ClaudeAuthError)
+
+
+def test_run_cli_success_passthrough(monkeypatch):
+    class P:
+        returncode = 0
+        stdout = json.dumps({"api_error_status": None, "result": "ok"})
+        stderr = ""
+    monkeypatch.setattr(cc.subprocess, "run", lambda *a, **k: P())
+    assert cc._run_cli(["-p", "x"]) == P.stdout
+
+
+def test_stream_raises_auth_error_on_401_line():
+    line = json.dumps({"type": "result", "api_error_status": 401, "result": "Invalid API key"})
+    with pytest.raises(cc.ClaudeAuthError):
+        list(cc.stream("hi", spawn=lambda args: iter([line])))

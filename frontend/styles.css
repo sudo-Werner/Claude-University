@@ -49,10 +49,6 @@ body{margin:0; background:#f1e7d6}
 .logo{width:31px; height:31px; border-radius:10px; background:linear-gradient(135deg,#7c6aff,#4fc3f7);
   display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; color:#fff;
   box-shadow:0 4px 12px -4px rgba(124,106,255,.6)}
-.streak{display:flex; align-items:center; gap:6px; padding:5px 11px 5px 9px; border-radius:999px;
-  background:rgba(255,232,196,.66); backdrop-filter:blur(14px) saturate(1.4); -webkit-backdrop-filter:blur(14px) saturate(1.4);
-  border:1px solid rgba(255,255,255,.6); font-size:13px; font-weight:600; color:#b5670f; box-shadow:0 4px 14px -8px rgba(120,80,30,.4)}
-.flame{width:18px; height:18px; flex:none}
 
 /* ---- segmented control ---- */
 .tabs{display:flex; gap:4px; padding:4px; border-radius:var(--r-md);
@@ -124,11 +120,6 @@ body{margin:0; background:#f1e7d6}
 .m-item{font-size:12px; color:var(--text-2); background:rgba(255,255,255,.55); border:1px solid rgba(255,255,255,.7);
   border-radius:999px; padding:3px 10px}
 .m-item b{font-weight:700; color:var(--text); margin-right:3px}
-
-.streak-strip{display:flex; align-items:center; gap:12px; border-radius:18px; padding:14px 16px; font-size:13px; color:var(--text-2);
-  background:rgba(255,250,242,.5); backdrop-filter:blur(18px) saturate(1.4); -webkit-backdrop-filter:blur(18px) saturate(1.4);
-  border:1px solid rgba(255,255,255,.55); box-shadow:0 1px 0 rgba(255,255,255,.6) inset}
-.streak-strip b{color:var(--text); font-weight:600}
 
 /* =================  LESSON FLOW  ================= */
 .steps{display:flex; gap:5px; margin-bottom:10px}
@@ -230,7 +221,7 @@ textarea::placeholder{color:#b3a994}
 
 /* =================  DESKTOP LAYOUT (>=760px)  =================
    Phone-first above. On a computer screen the column widens, the dashboard
-   becomes two-column (session left, stats/streak rail right), and the
+   becomes two-column (session left, stats rail right), and the
    reading-heavy screens stay a bounded, centered measure. */
 @media (min-width:760px){
   .page{padding:44px 32px 72px}
@@ -239,14 +230,13 @@ textarea::placeholder{color:#b3a994}
   /* full-width header bar, compact centered tab control */
   .tabs{max-width:340px; margin:0 auto}
 
-  /* dashboard: session card left, stat/streak rail right */
+  /* dashboard: session card left, stat rail right */
   .dash{
     display:grid;
     grid-template-columns:1.65fr 1fr;
     grid-template-areas:
       "greet   greet"
-      "session rail"
-      "streak  streak";
+      "session rail";
     gap:20px;
     align-items:start;
   }
@@ -254,7 +244,6 @@ textarea::placeholder{color:#b3a994}
   .dash > .card{grid-area:session; padding:30px}
   .dash .stat-row{grid-area:rail; flex-direction:column; gap:16px}
   .dash .stat{flex:0 0 auto; padding:20px}
-  .dash .streak-strip{grid-area:streak; padding:16px 20px}
   .session-topic{font-size:27px}
   .session-sub{margin-bottom:22px}
   .stat .big{font-size:30px}

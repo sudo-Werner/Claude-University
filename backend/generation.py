@@ -14,6 +14,7 @@ _INLINE_TAGS = ["code", "em", "strong"]
 _BLOCK_TAGS = ["h1", "h2", "h3", "p", "pre", "ul", "ol", "li"]
 _ALLOWED_HTML = {
     "&lt;br&gt;": "<br>", "&lt;br/&gt;": "<br>", "&lt;br /&gt;": "<br>",
+    "&lt;hr&gt;": "<hr>", "&lt;hr/&gt;": "<hr>", "&lt;hr /&gt;": "<hr>",
     '&lt;span class=&quot;mono&quot;&gt;': '<span class="mono">',
     "&lt;/span&gt;": "</span>",
 }
@@ -59,19 +60,25 @@ def valid_check(item):
     if not isinstance(item, dict) or not isinstance(item.get("prompt"), str) \
             or not isinstance(item.get("explanation"), str):
         return False
+    if not item["prompt"].strip() or not item["explanation"].strip():
+        return False
     if item.get("type") == "mcq":
         choices = item.get("choices")
         answer = item.get("answer")
         return (isinstance(choices, list) and len(choices) >= 2
+                and all(isinstance(c, str) and c.strip() for c in choices)
                 and isinstance(answer, int) and 0 <= answer < len(choices))
     if item.get("type") == "fill":
-        return isinstance(item.get("answer"), str)
+        return isinstance(item.get("answer"), str) and bool(item["answer"].strip())
     return False
 
 
 def valid_lesson(obj):
     if not (isinstance(obj, dict) and all(k in obj for k in LESSON_KEYS)):
         return False
+    for field in ("promptHtml", "hintHtml", "solutionAns", "solutionNote"):
+        if not (isinstance(obj.get(field), str) and obj[field].strip()):
+            return False
     checks = obj.get("checks")
     if not (isinstance(checks, list) and 1 <= len(checks) <= 3):
         return False
@@ -124,6 +131,9 @@ def chat_sse(messages, profile, *, stream_fn):
         for chunk in stream_fn(prompt):
             full.append(chunk)
             yield _sse("delta", chunk)
+    except claude_client.ClaudeAuthError:
+        yield _sse("error", json.dumps({"message": "Claude needs re-authentication on the Pi — run `claude` there to log in again."}))
+        return
     except claude_client.ClaudeError:
         yield _sse("error", json.dumps({"message": "Claude is unavailable right now."}))
         return
