@@ -93,13 +93,15 @@ export async function init({ window, fetch }) {
   async function refreshSummary() {
     const courses = await listCourses({ fetch, endpoint: COURSES_ENDPOINT });
     ui.summary = courses.find((c) => c.id === ui.courseId) || null;
+    // Reload the manifest too: its mastery/masteryCounts change as lessons are
+    // completed, so the dashboard breakdown stays current after a lesson.
+    ui.manifest = (await loadCourse({ fetch, courseId: ui.courseId })) || ui.manifest;
   }
 
   async function openCourse(courseId) {
     ui.courseId = courseId;
-    ui.manifest = await loadCourse({ fetch, courseId });
-    if (!ui.manifest) { showHome(); return; }
     await refreshSummary();
+    if (!ui.manifest) { showHome(); return; }
     log("course_opened", { courseId });
     showCourse();
   }
