@@ -6,6 +6,7 @@ import { lessonHTML } from "../src/views/lesson.js";
 import { diagnosticHTML } from "../src/views/diagnostic.js";
 import { curriculumHTML, lessonStatus, moduleProgress } from "../src/views/curriculum.js";
 import { capstoneHTML } from "../src/views/capstone.js";
+import { loadingHTML, LESSON_STAGES, CAPSTONE_STAGES } from "../src/views/loading.js";
 const DASHBOARD_SEED = {
   topic: "Backpropagation, intuitively",
   sub: "Module 3 · Neural Networks · Lesson 2",
@@ -123,6 +124,15 @@ test("lesson shows a soft error if deepening failed", () => {
 test("lesson shows no grade banner before checking", () => {
   const html = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: false });
   assert.doesNotMatch(html, /class="grade /);
+});
+
+test("loadingHTML renders a skeleton and the first status message", () => {
+  const html = loadingHTML("lesson", LESSON_STAGES[0]);
+  assert.match(html, /skeleton/);
+  assert.match(html, /class="sk /);                 // shimmer blocks present
+  assert.match(html, /load-msg/);
+  assert.match(html, /Reading the topic/);          // first staged message
+  assert.ok(LESSON_STAGES.length >= 3 && CAPSTONE_STAGES.length >= 3);
 });
 
 test("diagnostic renders all six questions and gates Continue", () => {

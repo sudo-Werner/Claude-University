@@ -11,6 +11,7 @@ import { dashboardHTML } from "./views/dashboard.js";
 import { lessonHTML } from "./views/lesson.js";
 import { curriculumHTML } from "./views/curriculum.js";
 import { capstoneHTML } from "./views/capstone.js";
+import { loadingHTML, LESSON_STAGES, DEEPEN_STAGES, CAPSTONE_STAGES } from "./views/loading.js";
 import { diagnosticHTML } from "./views/diagnostic.js";
 import { chatHTML } from "./views/chat.js";
 import { gradeCheck } from "./views/checks.js";
@@ -188,7 +189,7 @@ export async function init({ window, fetch }) {
     root.innerHTML = shellHTML({ back: ui.manifest ? ui.manifest.title : "Courses" });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showCurriculum);
     const view = root.querySelector("#view");
-    view.innerHTML = `<div class="card lesson loading">Gathering real-world connections…</div>`;
+    startLoading(view, "capstone", CAPSTONE_STAGES);
     log("capstone_opened", { courseId: ui.courseId, topicId: scope });
     const cap = await loadCapstone({ fetch, courseId: ui.courseId, scope });
     if (ui.screen !== "capstone") return;
@@ -203,12 +204,26 @@ export async function init({ window, fetch }) {
     view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
   }
 
+  // #3b: render a skeleton + cycle the "what Claude is doing" status. The interval
+  // self-clears once its status node leaves the DOM (i.e. the view was repainted or
+  // the user navigated away), so no caller bookkeeping is needed.
+  function startLoading(view, kind, stages) {
+    view.innerHTML = loadingHTML(kind, stages[0]);
+    const msg = view.querySelector(".load-msg");
+    let i = 1;
+    const id = window.setInterval(() => {
+      if (!msg || !msg.isConnected) { window.clearInterval(id); return; } // repainted/navigated away
+      msg.textContent = stages[i % stages.length];
+      i += 1;
+    }, 1800);
+  }
+
   // ---- lesson ----
   async function openLesson(lessonId) {
     if (!lessonId) return;
     ui.reviewQueue = [];
     const view = root.querySelector("#view");
-    if (view) view.innerHTML = `<div class="card lesson loading">Preparing your lesson…</div>`;
+    if (view) startLoading(view, "lesson", LESSON_STAGES);
     ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId });
     if (lessonFailed(ui.lesson)) { showLessonError(ui.lesson && ui.lesson.error || "Couldn't load this lesson."); return; }
     ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
@@ -231,7 +246,7 @@ export async function init({ window, fetch }) {
     const lessonId = ui.lesson.id;
     log("lesson_deepened", { courseId: ui.courseId, topicId: lessonId });
     const view = root.querySelector("#view");
-    if (view) view.innerHTML = `<div class="card lesson loading">Rewriting this lesson with more depth…</div>`;
+    if (view) startLoading(view, "lesson", DEEPEN_STAGES);
     const deeper = await deepenLesson({ fetch, courseId: ui.courseId, lessonId });
     if (ui.screen !== "lesson" || !ui.lesson || ui.lesson.id !== lessonId) return;
     if (lessonFailed(deeper)) {

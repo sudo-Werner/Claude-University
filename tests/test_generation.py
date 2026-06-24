@@ -520,3 +520,15 @@ def test_ensure_capstone_unknown_module_returns_none(tmp_path):
         "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
     cid = manifest["id"]
     assert gen.ensure_capstone(root, cid, "m99", {}, generate=lambda p: {}) is None
+
+
+# ---- #3 Slice A: readability/engagement style guidance in the default prompt ----
+
+def test_lesson_prompt_has_readability_style_guidance():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="c-l1", lesson_title="L",
+                          module_title="M", position=1, total=3)
+    low = p.lower()
+    assert "worked example" in low          # solutionNote as a worked example
+    assert "encouraging" in low             # warm, specific check feedback
+    assert "<strong>" in p                  # bold the key term (chunking/scannability)
+    assert "short" in low                   # short paragraphs/sentences

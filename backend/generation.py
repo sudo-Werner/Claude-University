@@ -114,13 +114,26 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         f'  id: "{lesson_id}"\n'
         "  courseId, topic (short), step (integer 1), totalSteps (integer 1), "
         'eyebrow ("EXERCISE"), promptHtml (the question as HTML, may use <code>), '
-        "hintHtml (a hint as HTML), solutionAns (the answer), solutionNote (one-sentence why),\n"
+        "hintHtml (a hint as HTML), solutionAns (the answer), "
+        "solutionNote (a brief worked example: show the reasoning/steps, not just restate the answer),\n"
         "  checks: a list of 1-3 concept-check items. Each item is either "
         '{"type":"mcq","prompt":"<question, may use <code>>","choices":["A","B","C"],'
-        '"answer":<integer index of the correct choice>,"explanation":"<one sentence why>"} '
+        '"answer":<integer index of the correct choice>,'
+        '"explanation":"<specific, encouraging one-sentence why>"} '
         'or {"type":"fill","prompt":"<question>","answer":"<the exact expected answer>",'
-        '"explanation":"<one sentence why>"}.\n'
-        "Shape every learner-facing field to the learner preferences above."
+        '"explanation":"<specific, encouraging one-sentence why>"}.\n'
+        "Shape every learner-facing field to the learner preferences above.\n\n"
+        # Slice A: evidence-backed readability/engagement guidance (conversational tone,
+        # chunking/scannability, worked examples, warm feedback) applied to every lesson.
+        "Write so it is genuinely easy and engaging to read:\n"
+        "- Speak directly to the learner as 'you', like a friendly tutor. Plain language, "
+        "short sentences, no jargon dumps.\n"
+        "- Chunk the promptHtml into short paragraphs; wrap the single most important term in "
+        "<strong>; use a <ul> for any list of points instead of cramming them into one sentence.\n"
+        "- Make the solutionNote a short worked example — walk through the key step of the "
+        "reasoning so the learner sees HOW, not just the final answer.\n"
+        "- Keep every check explanation specific and encouraging: name what is right and the one "
+        "thing to watch, never a bare 'wrong'."
         + directive_line
     )
 
