@@ -75,9 +75,9 @@ def _course(tmp_path):
 def _ev(conn, etype, lesson, payload, occurred):
     conn.execute(
         "INSERT INTO events (client_event_id, session_id, device, topic_id, course_id, "
-        "event_type, occurred_at, payload) VALUES (?,?,?,?,?,?,?,?)",
+        "event_type, occurred_at, received_at, payload) VALUES (?,?,?,?,?,?,?,?,?)",
         (f"{etype}-{lesson}-{occurred}", "s1", "web", lesson, "demo", etype,
-         occurred, json.dumps(payload)),
+         occurred, occurred, json.dumps(payload)),
     )
     conn.commit()
 
