@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery
 
 
 def create_app(db_path=None):
@@ -104,7 +104,12 @@ def create_app(db_path=None):
         manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
         if manifest is None:
             return jsonify({"error": "course not found"}), 404
-        return jsonify(manifest)
+        conn = db.get_connection(path)
+        try:
+            m = mastery.lesson_mastery(conn, courses.CONTENT_DIR, course_id)
+        finally:
+            conn.close()
+        return jsonify({**manifest, "mastery": m, "masteryCounts": mastery.mastery_counts(m)})
 
     @app.get("/api/courses/<course_id>/lessons/<lesson_id>")
     def get_lesson(course_id, lesson_id):
@@ -116,13 +121,15 @@ def create_app(db_path=None):
         conn = db.get_connection(path)
         try:
             prof = profile.latest_profile(conn)
+            performance = mastery.performance_summary(conn, courses.CONTENT_DIR, course_id)
         finally:
             conn.close()
         prof_data = (prof or {}).get("data") if isinstance(prof, dict) else None
         generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_lesson)
         try:
             lesson = generation.ensure_lesson(
-                courses.CONTENT_DIR, course_id, lesson_id, prof_data, generate=generate
+                courses.CONTENT_DIR, course_id, lesson_id, prof_data,
+                generate=generate, performance=performance,
             )
         except claude_client.ClaudeError:
             return jsonify({"error": "could not prepare this lesson"}), 502
