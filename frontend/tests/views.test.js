@@ -26,13 +26,13 @@ const idleTimer = {
   clock: "0:00 / 90:00",
 };
 
-test("shell shows the streak; back control only when given", () => {
-  const home = shellHTML({ streakDays: 12 });
-  assert.match(home, /12/);
+test("shell shows back control only when given", () => {
+  const home = shellHTML({});
   assert.match(home, /id="view"/);
   assert.doesNotMatch(home, /data-action="nav-back"/);
+  assert.doesNotMatch(home, /streak/i);
 
-  const inCourse = shellHTML({ streakDays: 12, back: "Courses" });
+  const inCourse = shellHTML({ back: "Courses" });
   assert.match(inCourse, /data-action="nav-back"/);
   assert.match(inCourse, /Courses/);
 });
@@ -47,7 +47,6 @@ test("dashboard renders the seeded session and stats", () => {
   assert.match(html, /30<\/span>/); // progress number
   assert.match(html, /12 of 40 lessons/);
   assert.match(html, />8<\/span>/); // reviews due
-  assert.match(html, /12-day streak/);
   assert.match(html, /data-action="start-session"/);
 });
 
@@ -174,6 +173,19 @@ test("curriculumHTML tolerates missing mastery", () => {
   const html = curriculumHTML(SAMPLE_MANIFEST, undefined, null);
   assert.match(html, /0 of 3 lessons/);
   assert.match(html, /data-lesson="demo-l1"/);
+});
+
+test("shell no longer renders a streak pill", () => {
+  const html = shellHTML({ back: "Courses" });
+  assert.doesNotMatch(html, /streak/i);
+});
+
+test("dashboard no longer renders a streak strip", () => {
+  const html = dashboardHTML(
+    { topic: "T", sub: "S", durationMin: 90, progressPct: 0, lessonsDone: 0,
+      lessonsTotal: 2, reviewsDue: 0, masteryCounts: {} },
+    { fills: [0,0,0], activePhaseIndex: 0, statusLabel: "", clock: "" });
+  assert.doesNotMatch(html, /streak/i);
 });
 
 test("lessonHTML renders player nav with Prev/Next enabled per nav flags", () => {

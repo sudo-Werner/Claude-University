@@ -1,7 +1,5 @@
 const CLOCK_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#a59b89" stroke-width="2"/><path d="M12 7v5l3 2" stroke="#a59b89" stroke-width="2" stroke-linecap="round"/></svg>`;
 const PLAY_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="#fff"><path d="M7 5l12 7-12 7V5z"/></svg>`;
-const FLAME = `<svg class="flame" viewBox="0 0 24 24" fill="none"><path d="M12 2c1 3-1 4-1 6a3 3 0 006 0c0-1.5-1-2.5-1-4 2 1.5 4 4 4 8a8 8 0 11-16 0c0-4 3-6 4-8 .5 1 1 1.5 2 2 1-1 1.5-2 1-4z" fill="#e0892f"/></svg>`;
-
 const MASTERY_LABELS = { attempted: "Attempted", familiar: "Familiar", proficient: "Proficient", mastered: "Mastered" };
 
 function masteryHTML(counts) {
@@ -61,7 +59,6 @@ export function dashboardHTML(data, timerView) {
       </section>
     </div>
     ${masteryHTML(data.masteryCounts)}
-    <div class="streak-strip">${FLAME}<div><b>${data.streakDays}-day streak.</b> One session today keeps it alive.</div></div>
     </div>
   `;
 }

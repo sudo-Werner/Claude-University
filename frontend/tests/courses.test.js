@@ -34,7 +34,7 @@ test("listCourses returns [] when fetch responds with non-ok status", async () =
   assert.deepEqual(await listCourses({ fetch }), []);
 });
 
-test("loadLesson fetches by course and lesson id, null on miss", async () => {
+test("loadLesson fetches by course and lesson id, error shape on miss", async () => {
   let url;
   const ok = async (u) => {
     url = u;
@@ -45,7 +45,12 @@ test("loadLesson fetches by course and lesson id, null on miss", async () => {
   assert.equal(lesson.id, "ml-m3-l2");
 
   const missing = async () => ({ ok: false, status: 404 });
-  assert.equal(await loadLesson({ fetch: missing, courseId: "x", lessonId: "y" }), null);
+  const result = await loadLesson({ fetch: missing, courseId: "x", lessonId: "y" });
+  assert.ok(result && result.error, "expected an error shape on miss");
+
+  const withBody = async () => ({ ok: false, status: 503, json: async () => ({ error: "Claude auth expired" }) });
+  const result2 = await loadLesson({ fetch: withBody, courseId: "x", lessonId: "y" });
+  assert.equal(result2.error, "Claude auth expired");
 });
 
 test("loadReviews returns the due array", async () => {

@@ -13,7 +13,11 @@ export async function loadCourse({ fetch, courseId }) {
 
 export async function loadLesson({ fetch, courseId, lessonId }) {
   const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}`);
-  if (!resp.ok) return null;
+  if (!resp.ok) {
+    let message = "Couldn't load this lesson. Please try again.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
   return resp.json();
 }
 
