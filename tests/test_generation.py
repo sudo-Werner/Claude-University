@@ -39,6 +39,27 @@ def test_sanitize_html_still_blocks_dangerous_markup():
     assert "<p>" not in out
 
 
+def test_sanitize_html_does_not_double_escape_entities():
+    # The generator writes HTML, so it escapes its own code: `<` -> `&lt;`.
+    # We must NOT re-escape that into `&amp;lt;` (which renders as literal "&lt;").
+    src = "<code>if diameter &lt; 9.80 mm or diameter &gt; 10.20 mm</code>"
+    out = gen.sanitize_html(src)
+    assert "&amp;lt;" not in out   # not double-escaped
+    assert "&amp;gt;" not in out
+    assert "&lt;" in out           # renders in the browser as a literal "<"
+    assert "&gt;" in out
+    assert "<code>" in out and "</code>" in out
+
+
+def test_sanitize_html_entity_restore_stays_inert():
+    # Even if the model escapes a whole tag as entities, restoring the single
+    # entity keeps it inert text (it renders as "<script>", not a live element).
+    out = gen.sanitize_html("&lt;script&gt;alert(1)&lt;/script&gt;")
+    assert "<script" not in out          # never a live tag
+    assert "&lt;script&gt;" in out       # shown as text
+    assert "&amp;lt;" not in out         # but not double-escaped
+
+
 def test_detect_proposal_parses_course_fence():
     text = 'Sounds good!\n```course\n{"title": "Stats", "modules": []}\n```'
     p = gen.detect_proposal(text)

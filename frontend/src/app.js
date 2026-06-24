@@ -75,6 +75,7 @@ export async function init({ window, fetch }) {
 
   // ---- home ----
   async function showHome() {
+    pauseTimer();
     ui.screen = "home";
     ui.courseId = null;
     root.innerHTML = shellHTML({});
@@ -152,6 +153,7 @@ export async function init({ window, fetch }) {
   }
 
   function showCourse() {
+    pauseTimer();
     ui.screen = "course";
     root.innerHTML = shellHTML({ back: "Courses" });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showHome);
@@ -159,6 +161,7 @@ export async function init({ window, fetch }) {
   }
 
   function showCurriculum() {
+    pauseTimer();
     ui.screen = "curriculum";
     root.innerHTML = shellHTML({ back: ui.manifest.title });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
@@ -302,6 +305,7 @@ export async function init({ window, fetch }) {
 
   // ---- course creation chat ----
   function showChat() {
+    pauseTimer();
     ui.screen = "chat";
     ui.chat = { messages: [], proposal: null, pending: false };
     root.innerHTML = shellHTML({ back: "Courses" });
@@ -357,6 +361,7 @@ export async function init({ window, fetch }) {
   function lessonFailed(l) { return !l || l.error; }
 
   function showLessonError(message) {
+    pauseTimer();
     ui.screen = "lesson";
     root.innerHTML = shellHTML({ back: ui.manifest ? ui.manifest.title : "Courses" });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
@@ -366,18 +371,25 @@ export async function init({ window, fetch }) {
     view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
   }
 
+  // The session clock counts only while you're actively in a lesson. start/resume
+  // is idempotent; pauseTimer freezes elapsed when you leave the lesson screen.
   function startTimer() {
+    if (ui.timer.running) return;
     ui.timer.running = true;
-    log("session_timer_start", { courseId: ui.courseId });
+    if (ui.timer.elapsed === 0) log("session_timer_start", { courseId: ui.courseId });
     ui.timer.intervalId = window.setInterval(() => {
       ui.timer.elapsed += 1;
       if (ui.timer.elapsed >= TOTAL_SECONDS) {
-        window.clearInterval(ui.timer.intervalId);
-        ui.timer.running = false;
+        pauseTimer();
         log("session_timer_complete", { courseId: ui.courseId });
       }
-      if (ui.screen === "course") paintCourse();
     }, 1000);
+  }
+
+  function pauseTimer() {
+    if (ui.timer.intervalId) window.clearInterval(ui.timer.intervalId);
+    ui.timer.intervalId = null;
+    ui.timer.running = false;
   }
 
   const profile = await loadProfile({ fetch, endpoint: PROFILE_ENDPOINT });

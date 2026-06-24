@@ -22,11 +22,24 @@ for _t in _INLINE_TAGS + _BLOCK_TAGS:
     _ALLOWED_HTML["&lt;%s&gt;" % _t] = "<%s>" % _t
     _ALLOWED_HTML["&lt;/%s&gt;" % _t] = "</%s>" % _t
 
+# The generator emits HTML, so it escapes its own special characters (a `<` in
+# code becomes the entity `&lt;`). _html.escape would re-escape the leading `&`
+# into `&amp;lt;`, which renders as the literal text "&lt;". Undo that one level
+# of over-escaping for the standard character entities. Safe: the result is still
+# an inert entity (e.g. `&lt;` renders as the character "<", never a live tag),
+# so default-deny is preserved.
+_ENTITY_RESTORE = {
+    "&amp;lt;": "&lt;", "&amp;gt;": "&gt;", "&amp;amp;": "&amp;",
+    "&amp;quot;": "&quot;", "&amp;#39;": "&#39;", "&amp;#x27;": "&#x27;",
+}
+
 
 def sanitize_html(value):
     out = _html.escape(str(value), quote=True)
     for escaped, allowed in _ALLOWED_HTML.items():
         out = out.replace(escaped, allowed)
+    for double, single in _ENTITY_RESTORE.items():
+        out = out.replace(double, single)
     return out
 
 
