@@ -113,6 +113,23 @@ def test_get_course_includes_mastery(client, tmp_path, monkeypatch):
     assert set(body["masteryCounts"].keys()) == {"attempted", "familiar", "proficient", "mastered"}
 
 
+def test_lesson_route_returns_reauth_on_auth_error(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client, generation
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest = courses.write_course(root, {
+        "title": "Auth Demo", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]; lid = manifest["modules"][0]["lessons"][0]["id"]
+    # no lesson file on disk -> generation path; force an auth failure
+    def boom(prompt, **kw):
+        raise claude_client.ClaudeAuthError("Invalid API key")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    resp = client.get(f"/api/courses/{cid}/lessons/{lid}")
+    assert resp.status_code == 503
+    assert resp.get_json().get("code") == "reauth"
+
+
 def test_reviews_endpoint_lists_due(client, tmp_path, monkeypatch):
     from backend import courses, events, db
     root = tmp_path / "courses"
