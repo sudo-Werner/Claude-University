@@ -44,6 +44,7 @@ export function dashboardHTML(data, timerView) {
       <div class="phase-labels">${labels}</div>
       <div class="timer-status"><span>${timerView.statusLabel}</span><span class="clock">${timerView.clock}</span></div>
       <button class="btn-primary" data-action="start-session">${PLAY_ICON} Start session</button>
+      <button class="btn-secondary" data-action="curriculum" style="margin-top:8px">View all lessons</button>
     </section>
     <div class="stat-row">
       <section class="stat">
