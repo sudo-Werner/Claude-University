@@ -87,7 +87,7 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "  courseId, topic (short), step (integer 1), totalSteps (integer 1), "
         'eyebrow ("EXERCISE"), promptHtml (the question as HTML, may use <code>), '
         "hintHtml (a hint as HTML), solutionAns (the answer), solutionNote (one-sentence why),\n"
-        "  checks: a list of 2-3 concept-check items. Each item is either "
+        "  checks: a list of 1-3 concept-check items. Each item is either "
         '{"type":"mcq","prompt":"<question, may use <code>>","choices":["A","B","C"],'
         '"answer":<integer index of the correct choice>,"explanation":"<one sentence why>"} '
         'or {"type":"fill","prompt":"<question>","answer":"<the exact expected answer>",'
