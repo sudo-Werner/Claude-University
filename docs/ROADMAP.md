@@ -92,12 +92,13 @@ features + research. Status:
   (commit 5fb6e7e)
 - ✅ **#1 Real-world evidence capstone** — module/course-end "Real-world connections"
   (search-based Explore links, no hallucinated URLs). Shipped + Pi-verified. (commit 65007f7)
-- ⏳ **#3 readability/engagement + #3b loading states** — researched; PROPOSAL written
-  (`specs/2026-06-24-readability-loading-proposal.md`), awaiting Werner's go to build
-  Slice A (prompt) + B (skeleton/staged loading); Slice C (streaming) deferred.
-- ⚠️ **Loose end:** Werner's real ML course has 2 lessons generated BEFORE the #2 fix;
-  their cached JSON may still show `&lt;` artifacts. Fix = regenerate them (changes
-  their content). Awaiting Werner's call.
+- ✅ **#3 readability/engagement + #3b loading states** — Werner chose Slice A + B.
+  Slice A: the default `lesson_prompt` now yields conversational/chunked/worked-example
+  content with warm, specific check feedback. Slice B: shimmer skeleton + staged "what
+  Claude is doing" status on every generation wait (lesson/deepen/capstone). Shipped +
+  Pi-verified (commit 246b399). **Slice C (token streaming) deferred** per the proposal.
+- ✅ **Loose end resolved:** the ML course's only artifact-bearing lesson (l1) was
+  regenerated clean (0 artifacts, validated); l2/l3 were already clean.
 
 ## Known issues (discovered during build)
 - ✅ **FIXED 2026-06-24 (commit 6fc932b):** lesson body rendered raw HTML tags as literal text.
