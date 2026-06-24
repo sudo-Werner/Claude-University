@@ -78,11 +78,14 @@ def valid_lesson(obj):
     return all(valid_check(c) for c in checks)
 
 
-def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, position, total):
+def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, position, total,
+                  performance=""):
+    perf_line = f"Learner performance so far: {performance}\n" if performance else ""
     return (
         "You are writing one self-contained lesson for a personalized course.\n"
         f"Course context: {brief}\n"
         f"Learner preferences (JSON): {json.dumps(profile or {})}\n"
+        f"{perf_line}"
         f"This is lesson {position} of {total}. Module: {module_title}. "
         f"Lesson title: {lesson_title}.\n\n"
         "Write a single exercise-style lesson. Reply with ONLY a JSON object (no prose, no fence) "
@@ -130,7 +133,7 @@ def chat_sse(messages, profile, *, stream_fn):
     yield _sse("done", "{}")
 
 
-def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate):
+def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, performance=""):
     existing = courses.load_lesson(content_dir, course_id, lesson_id)
     if existing is not None:
         return existing
@@ -150,6 +153,7 @@ def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate):
         module_title=meta["moduleTitle"],
         position=position,
         total=len(flat),
+        performance=performance,
     )
     lesson = generate(prompt)
     if isinstance(lesson, dict):
