@@ -1,0 +1,41 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { gradeCheck, checksHTML } from "../src/views/checks.js";
+
+test("gradeCheck mcq compares the selected index", () => {
+  const c = { type: "mcq", choices: ["a", "b"], answer: 1, explanation: "why" };
+  assert.equal(gradeCheck(c, 1).correct, true);
+  assert.equal(gradeCheck(c, 0).correct, false);
+  assert.equal(gradeCheck(c, "1").correct, true); // string index from the DOM
+});
+
+test("gradeCheck fill matches case/space-insensitively", () => {
+  const c = { type: "fill", answer: "Four", explanation: "why" };
+  assert.equal(gradeCheck(c, "  four ").correct, true);
+  assert.equal(gradeCheck(c, "five").correct, false);
+});
+
+test("checksHTML renders mcq choices and a fill input", () => {
+  const html = checksHTML(
+    [{ type: "mcq", prompt: "pick", choices: ["a", "b"], answer: 0, explanation: "e" },
+     { type: "fill", prompt: "type", answer: "x", explanation: "e" }],
+    { checkAnswers: {}, checkResults: {} },
+  );
+  assert.match(html, /data-check="0"[^>]*data-choice="0"/);
+  assert.match(html, /data-check-input="1"/);
+  assert.match(html, /Check your understanding/);
+});
+
+test("checksHTML shows the explanation and marker once answered", () => {
+  const html = checksHTML(
+    [{ type: "fill", prompt: "type", answer: "x", explanation: "because x" }],
+    { checkAnswers: { 0: "x" }, checkResults: { 0: { correct: true } } },
+  );
+  assert.match(html, /because x/);
+  assert.match(html, /Correct/);
+});
+
+test("checksHTML renders nothing for no checks", () => {
+  assert.equal(checksHTML([], {}), "");
+  assert.equal(checksHTML(undefined, {}), "");
+});
