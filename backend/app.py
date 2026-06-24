@@ -161,6 +161,31 @@ def create_app(db_path=None):
             return jsonify({"error": "lesson not found"}), 404
         return jsonify(result)
 
+    @app.post("/api/courses/<course_id>/lessons/<lesson_id>/deepen")
+    def deepen_lesson_route(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
+        conn = db.get_connection(path)
+        try:
+            prof = profile.latest_profile(conn)
+            performance = mastery.performance_summary(conn, courses.CONTENT_DIR, course_id)
+        finally:
+            conn.close()
+        prof_data = (prof or {}).get("data")
+        generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_lesson)
+        try:
+            lesson = generation.deepen_lesson(
+                courses.CONTENT_DIR, course_id, lesson_id, prof_data,
+                generate=generate, performance=performance,
+            )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not deepen this lesson"}), 502
+        if lesson is None:
+            return jsonify({"error": "lesson not found"}), 404
+        return jsonify(lesson)
+
     @app.get("/api/courses/<course_id>/reviews")
     def get_reviews(course_id):
         if not _ID_RE.match(course_id):

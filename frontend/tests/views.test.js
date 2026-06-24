@@ -107,6 +107,18 @@ test("lesson grade banner escapes an error message (no raw HTML)", () => {
   assert.match(html, /&lt;img/);
 });
 
+test("lesson offers an Explain more deeply button", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.match(html, /data-action="deepen-lesson"/);
+  assert.match(html, /Explain it more deeply/);
+});
+
+test("lesson shows a soft error if deepening failed", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false, deepenError: "Couldn't rewrite this lesson right now." });
+  assert.match(html, /grade-soft/);
+  assert.match(html, /Couldn't rewrite this lesson/);
+});
+
 test("lesson shows no grade banner before checking", () => {
   const html = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: false });
   assert.doesNotMatch(html, /class="grade /);

@@ -65,6 +65,8 @@ export function lessonHTML(lesson, state, nav = {}) {
     <section class="card lesson">
       <span class="eyebrow">${lesson.eyebrow}</span>
       <div class="prompt">${lesson.promptHtml}</div>
+      <button class="deepen" data-action="deepen-lesson">Rusty on this? Explain it more deeply</button>
+      ${state.deepenError ? `<div class="grade grade-soft">${esc(state.deepenError)}</div>` : ""}
       <textarea data-field="answer" placeholder="Write your update here…" style="min-height:64px; margin:12px 0">${state.answer}</textarea>
       <button class="check-answer" data-action="check-answer"${state.answer.trim() && !state.grading ? "" : " disabled"}>${state.grade && !state.grade.error ? "Check again" : "Check my answer"}</button>
       ${gradeBlock(state)}

@@ -397,3 +397,52 @@ def test_grade_answer_missing_lesson_returns_none(tmp_path):
                                 "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
     cid = manifest["id"]
     assert gen.grade_answer(root, cid, "no-such-lesson", "x", generate=lambda p: {}) is None
+
+
+# ---- #5 per-lesson depth adaptation ----
+
+def test_lesson_prompt_includes_directive_when_given():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="c-l1", lesson_title="L",
+                          module_title="M", position=1, total=3, directive="GO DEEPER PLEASE")
+    assert "GO DEEPER PLEASE" in p
+    p2 = gen.lesson_prompt(brief="b", profile={}, lesson_id="c-l1", lesson_title="L",
+                           module_title="M", position=1, total=3)
+    assert "GO DEEPER" not in p2
+
+
+def test_deepen_lesson_regenerates_and_overwrites(tmp_path):
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "T", "subtitle": "s", "brief": "b",
+                                "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]; lid = manifest["modules"][0]["lessons"][0]["id"]
+    original = {"id": lid, "courseId": cid, "topic": "t", "step": 1, "totalSteps": 1,
+               "eyebrow": "EXERCISE", "promptHtml": "<p>shallow</p>", "hintHtml": "h",
+               "solutionAns": "a", "solutionNote": "n", "checks": [dict(_OK_CHECK)]}
+    path = root / cid / "lessons" / f"{lid}.json"
+    path.write_text(_json.dumps(original))
+
+    captured = {}
+    def fake_generate(prompt):
+        captured["prompt"] = prompt
+        return {"id": "wrong", "courseId": "wrong", "topic": "deeper", "step": 9, "totalSteps": 9,
+                "eyebrow": "EXERCISE", "promptHtml": "<p>now with fundamentals</p>",
+                "hintHtml": "h2", "solutionAns": "a2", "solutionNote": "n2", "checks": [dict(_OK_CHECK)]}
+
+    lesson = gen.deepen_lesson(root, cid, lid, {}, generate=fake_generate)
+    assert "rusty" in captured["prompt"].lower() or "fundamentals" in captured["prompt"].lower()
+    assert lesson["promptHtml"] == "<p>now with fundamentals</p>"
+    assert lesson["id"] == lid and lesson["courseId"] == cid  # reconciled to authoritative
+    assert lesson["step"] == 1 and lesson["totalSteps"] == 1
+    # file overwritten with the deeper version
+    on_disk = _json.loads(path.read_text())
+    assert on_disk["promptHtml"] == "<p>now with fundamentals</p>"
+
+
+def test_deepen_lesson_unknown_lesson_returns_none(tmp_path):
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "T", "subtitle": "s", "brief": "b",
+                                "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]
+    assert gen.deepen_lesson(root, cid, "no-such-lesson", {}, generate=lambda p: {}) is None

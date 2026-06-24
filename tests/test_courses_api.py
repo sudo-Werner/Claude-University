@@ -204,3 +204,46 @@ def test_grade_endpoint_reauth_on_auth_error(client, tmp_path, monkeypatch):
     resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/grade", json={"answer": "x"})
     assert resp.status_code == 503
     assert resp.get_json().get("code") == "reauth"
+
+
+def test_deepen_endpoint_regenerates_lesson(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    deeper = {"id": "x", "courseId": "x", "topic": "t", "step": 9, "totalSteps": 9,
+              "eyebrow": "EXERCISE", "promptHtml": "<p>deeper now</p>", "hintHtml": "h",
+              "solutionAns": "a", "solutionNote": "n",
+              "checks": [{"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}]}
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: deeper)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/deepen")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["promptHtml"] == "<p>deeper now</p>"
+    assert body["id"] == lesson_id  # reconciled
+
+
+def test_deepen_endpoint_reauth_on_auth_error(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    def boom(prompt, **kw):
+        raise claude_client.ClaudeAuthError("Invalid API key")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/deepen")
+    assert resp.status_code == 503
+    assert resp.get_json().get("code") == "reauth"
+
+
+def test_deepen_endpoint_404_for_unknown_lesson(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: {})
+    resp = client.post(f"/api/courses/{cid}/lessons/nope/deepen")
+    assert resp.status_code == 404

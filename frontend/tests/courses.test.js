@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -82,4 +82,22 @@ test("gradeAnswer returns an error shape on non-ok", async () => {
   const fetch = async () => ({ ok: false, status: 502, json: async () => ({ error: "down" }) });
   const r = await gradeAnswer({ fetch, courseId: "c", lessonId: "c-l1", answer: "x" });
   assert.equal(r.error, "down");
+});
+
+test("deepenLesson POSTs to the deepen endpoint and returns the new lesson", async () => {
+  let url, opts;
+  const fetch = async (u, o) => {
+    url = u; opts = o;
+    return { ok: true, json: async () => ({ id: "c-l1", promptHtml: "<p>deeper</p>" }) };
+  };
+  const r = await deepenLesson({ fetch, courseId: "c", lessonId: "c-l1" });
+  assert.equal(url, "/api/courses/c/lessons/c-l1/deepen");
+  assert.equal(opts.method, "POST");
+  assert.equal(r.promptHtml, "<p>deeper</p>");
+});
+
+test("deepenLesson returns an error shape on non-ok", async () => {
+  const fetch = async () => ({ ok: false, status: 503, json: async () => ({ error: "reauth" }) });
+  const r = await deepenLesson({ fetch, courseId: "c", lessonId: "c-l1" });
+  assert.equal(r.error, "reauth");
 });

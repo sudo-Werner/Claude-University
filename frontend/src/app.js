@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson } from "./courses.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
@@ -195,6 +195,29 @@ export async function init({ window, fetch }) {
     if (next) openLesson(next.id);
   }
 
+  // #5: the learner says they're rusty — regenerate THIS lesson deeper (assume less
+  // prior knowledge, add fundamentals) and overwrite the cache. Logged so we can see
+  // which lessons were pitched too high (the depth-scoping signal). Long wait, so show
+  // a loading card; discard the result if the learner navigated away meanwhile.
+  async function deepenCurrentLesson() {
+    if (!ui.lesson) return;
+    const lessonId = ui.lesson.id;
+    log("lesson_deepened", { courseId: ui.courseId, topicId: lessonId });
+    const view = root.querySelector("#view");
+    if (view) view.innerHTML = `<div class="card lesson loading">Rewriting this lesson with more depth…</div>`;
+    const deeper = await deepenLesson({ fetch, courseId: ui.courseId, lessonId });
+    if (ui.screen !== "lesson" || !ui.lesson || ui.lesson.id !== lessonId) return;
+    if (lessonFailed(deeper)) {
+      ui.lessonState = { ...ui.lessonState, deepenError: (deeper && deeper.error) || "Couldn't rewrite this lesson right now." };
+      showLesson();
+      return;
+    }
+    ui.lesson = deeper;
+    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
+    log("lesson_view", { courseId: ui.courseId, topicId: lessonId });
+    showLesson();
+  }
+
   function showLesson() {
     ui.screen = "lesson";
     root.innerHTML = shellHTML({ back: ui.manifest.title });
@@ -271,6 +294,8 @@ export async function init({ window, fetch }) {
         answerCheck(i, inp ? inp.value : "");
       });
     });
+    const deepenBtn = view.querySelector('[data-action="deepen-lesson"]');
+    if (deepenBtn) deepenBtn.addEventListener("click", deepenCurrentLesson);
     const curBtn = view.querySelector('[data-action="curriculum"]');
     if (curBtn) curBtn.addEventListener("click", showCurriculum);
     const prevBtn = view.querySelector('[data-action="prev-lesson"]');

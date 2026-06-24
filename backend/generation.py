@@ -99,8 +99,9 @@ def valid_lesson(obj):
 
 
 def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, position, total,
-                  performance=""):
+                  performance="", directive=""):
     perf_line = f"Learner performance so far: {performance}\n" if performance else ""
+    directive_line = f"\n{directive}\n" if directive else ""
     return (
         "You are writing one self-contained lesson for a personalized course.\n"
         f"Course context: {brief}\n"
@@ -120,6 +121,7 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         'or {"type":"fill","prompt":"<question>","answer":"<the exact expected answer>",'
         '"explanation":"<one sentence why>"}.\n'
         "Shape every learner-facing field to the learner preferences above."
+        + directive_line
     )
 
 
@@ -200,10 +202,12 @@ def chat_sse(messages, profile, *, stream_fn):
     yield _sse("done", "{}")
 
 
-def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, performance=""):
-    existing = courses.load_lesson(content_dir, course_id, lesson_id)
-    if existing is not None:
-        return existing
+def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, generate,
+                               performance="", directive=""):
+    """Generate one lesson, reconcile authoritative fields, sanitize, validate, and
+    cache it (overwriting any existing file). Shared by ensure_lesson (cache-miss
+    generation) and deepen_lesson (forced regeneration with a depth directive).
+    Returns None if the manifest or the lesson's manifest entry is missing."""
     manifest = courses.load_manifest(content_dir, course_id)
     if manifest is None:
         return None
@@ -226,6 +230,7 @@ def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, perfo
         position=position,
         total=len(flat),
         performance=performance,
+        directive=directive,
     )
     lesson = generate(prompt)
     if not isinstance(lesson, dict):
@@ -254,3 +259,30 @@ def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, perfo
     path = Path(content_dir) / course_id / "lessons" / f"{lesson_id}.json"
     path.write_text(json.dumps(lesson, indent=2, ensure_ascii=False))
     return lesson
+
+
+def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, performance=""):
+    existing = courses.load_lesson(content_dir, course_id, lesson_id)
+    if existing is not None:
+        return existing
+    return _generate_and_store_lesson(
+        content_dir, course_id, lesson_id, profile, generate=generate, performance=performance,
+    )
+
+
+# #5 — the learner says they are rusty; regenerate this one lesson deeper, assuming
+# less prior knowledge, and overwrite the cache so the deeper version sticks.
+_DEEPEN_DIRECTIVE = (
+    "IMPORTANT: the learner has said they are rusty on this and want more depth. "
+    "Assume less prior knowledge: briefly re-establish the fundamentals and any "
+    "prerequisite ideas this lesson builds on, define the key terms, and walk through "
+    "the reasoning in smaller, explicit steps with a concrete worked example before "
+    "asking them to apply it. Keep the same single-exercise shape and JSON keys."
+)
+
+
+def deepen_lesson(content_dir, course_id, lesson_id, profile, *, generate, performance=""):
+    return _generate_and_store_lesson(
+        content_dir, course_id, lesson_id, profile, generate=generate,
+        performance=performance, directive=_DEEPEN_DIRECTIVE,
+    )

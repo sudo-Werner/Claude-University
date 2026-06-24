@@ -35,6 +35,16 @@ export async function gradeAnswer({ fetch, courseId, lessonId, answer }) {
   return resp.json();
 }
 
+export async function deepenLesson({ fetch, courseId, lessonId }) {
+  const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/deepen`, { method: "POST" });
+  if (!resp.ok) {
+    let message = "Couldn't rewrite this lesson right now.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}
+
 export async function loadReviews({ fetch, courseId }) {
   const resp = await fetch(`/api/courses/${courseId}/reviews`);
   if (!resp.ok) return [];
