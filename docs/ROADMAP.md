@@ -50,16 +50,22 @@ lessons — adaptivity lives in the generation prompt, not in mutating the manif
 mastery badges wait for Slice 7's curriculum view.
 **Depends on:** Slices 4–5 (needs the performance signal).
 
-### Slice 7 — Curriculum structure & lesson-player UX ← NEXT
-**Closes:** done-items 6 and the UX half of 4–5.
-**Scope (per research):** a **course-overview accordion** (modules expand to lessons with
-completion checkmarks + per-section progress); a **two-panel lesson player** (content + a
-curriculum sidebar with current-item highlight, Prev/Next, mark-complete, "X of Y"); a home
-**"Continue Learning"** treatment. Keep the warm glass theme. Add minimal course metadata
-(`objectives[]`, `difficulty`) only where it earns its place.
-**Depends on:** Slices 4–6 (so the player reflects mastery/reviews).
+### Slice 7 — Curriculum structure & lesson-player UX ✅ SHIPPED 2026-06-24
+**Closes:** done-item 6 + the UX half of 4–5. Deployed + Pi-verified: a **curriculum accordion**
+(modules→lessons with completion ✓, mastery badges, per-module + overall progress, tap any lesson to
+open it — generating just-in-time on first open) reachable from the course dashboard's "View all
+lessons"; a **lesson player nav bar** (Curriculum · Prev · Next, with "Step X of Y", Prev/Next
+disabled at the ends). Pure frontend — completion/badges read from the Slice-6 mastery map; no
+backend change. E2E confirmed on a 2-module course (jump to a non-next lesson, Prev/Next, completion
+✓ + badge appearing after finishing a lesson).
+**Adapted from the roadmap's "two-panel player":** the app is a deliberate ~448px phone-first
+warm-glass column, so the curriculum is a dedicated accordion screen + a nav bar rather than a
+desktop side panel. **Deferred (YAGNI):** generated metadata (`objectives[]`, `difficulty`); a
+desktop wide layout; a separate home "Continue Learning" hero (the dashboard session card + grid
+"Continue →" already cover it); mark-complete (lessons complete via the recall rating).
+**Depends on:** Slices 4–6 (the player reflects mastery/reviews).
 
-### Slice 8 — Content-quality safeguards + loose ends
+### Slice 8 — Content-quality safeguards + loose ends ← NEXT
 **Closes:** done-items 7, 8.
 **Scope:** a lightweight check that generated lessons are sane (schema already enforced; add a
 self-review/regenerate-on-obvious-failure pass); make the Pi's Claude-subscription login resilient
