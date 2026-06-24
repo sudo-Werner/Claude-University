@@ -51,6 +51,39 @@ def test_sanitize_html_does_not_double_escape_entities():
     assert "<code>" in out and "</code>" in out
 
 
+def test_sanitize_html_restores_typographic_entities():
+    # The reported bug: the model writes smart quotes / dashes as named entities;
+    # they were double-escaped to "&amp;ldquo;" and shown as literal "&ldquo;".
+    src = "&ldquo;Artificial Intelligence&rdquo; is broad&mdash;really broad&hellip;"
+    out = gen.sanitize_html(src)
+    assert "&amp;ldquo;" not in out and "&amp;rdquo;" not in out
+    assert "&amp;mdash;" not in out and "&amp;hellip;" not in out
+    assert "&ldquo;" in out and "&rdquo;" in out
+    assert "&mdash;" in out and "&hellip;" in out
+
+
+def test_sanitize_html_restores_numeric_entities():
+    out = gen.sanitize_html("&#8220;quoted&#8221; and &#x201C;hex&#x201D;")
+    assert "&amp;#8220;" not in out and "&amp;#x201C;" not in out
+    assert "&#8220;" in out and "&#x201C;" in out
+
+
+def test_sanitize_html_keeps_literal_ampersand_escaped():
+    # A real, standalone ampersand (not part of an entity) must stay &amp; so it
+    # renders as "&" — only "&amp;NAME;" gets un-doubled.
+    out = gen.sanitize_html("Salt & pepper, R&D, AT&T")
+    assert "Salt &amp; pepper" in out
+    assert "R&amp;D" in out and "AT&amp;T" in out
+
+
+def test_restore_entities_migration_helper_is_idempotent():
+    # Fixes already-cached double-escaped content without re-escaping correct content.
+    assert gen.restore_entities("&amp;ldquo;hi&amp;rdquo;") == "&ldquo;hi&rdquo;"
+    assert gen.restore_entities("<code>x</code> &lt;tag&gt;") == "<code>x</code> &lt;tag&gt;"
+    once = gen.restore_entities("&amp;mdash;")
+    assert gen.restore_entities(once) == once  # idempotent
+
+
 def test_sanitize_html_entity_restore_stays_inert():
     # Even if the model escapes a whole tag as entities, restoring the single
     # entity keeps it inert text (it renders as "<script>", not a live element).

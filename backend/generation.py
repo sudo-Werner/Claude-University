@@ -1,5 +1,6 @@
 import html as _html
 import json
+import re as _re
 from pathlib import Path
 
 from backend import claude_client, courses
@@ -22,25 +23,31 @@ for _t in _INLINE_TAGS + _BLOCK_TAGS:
     _ALLOWED_HTML["&lt;%s&gt;" % _t] = "<%s>" % _t
     _ALLOWED_HTML["&lt;/%s&gt;" % _t] = "</%s>" % _t
 
-# The generator emits HTML, so it escapes its own special characters (a `<` in
-# code becomes the entity `&lt;`). _html.escape would re-escape the leading `&`
-# into `&amp;lt;`, which renders as the literal text "&lt;". Undo that one level
-# of over-escaping for the standard character entities. Safe: the result is still
-# an inert entity (e.g. `&lt;` renders as the character "<", never a live tag),
-# so default-deny is preserved.
-_ENTITY_RESTORE = {
-    "&amp;lt;": "&lt;", "&amp;gt;": "&gt;", "&amp;amp;": "&amp;",
-    "&amp;quot;": "&quot;", "&amp;#39;": "&#39;", "&amp;#x27;": "&#x27;",
-}
+# The generator emits HTML, so it escapes its own special characters: a `<` in code
+# becomes `&lt;`, a smart quote becomes `&ldquo;`, an em dash `&mdash;`, etc. _html.escape
+# then re-escapes the leading `&` into `&amp;`, so `&ldquo;` becomes `&amp;ldquo;` — which
+# renders as the literal text "&ldquo;". Un-double ANY character entity (named like
+# &ldquo;/&mdash;, decimal &#8220;, or hex &#x201C;) back to its single-escaped form.
+# Safe: a restored entity still renders as a CHARACTER, never a live tag (e.g. `&lt;`
+# shows "<", it cannot start markup), so default-deny is preserved. Only `&amp;NAME;` is
+# touched — a standalone literal `&amp;` (a real ampersand) and a single-escaped `&lt;`
+# from genuinely raw markup are left escaped.
+_DOUBLE_ENTITY = _re.compile(r"&amp;(#\d+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]+);")
 
 
 def sanitize_html(value):
     out = _html.escape(str(value), quote=True)
     for escaped, allowed in _ALLOWED_HTML.items():
         out = out.replace(escaped, allowed)
-    for double, single in _ENTITY_RESTORE.items():
-        out = out.replace(double, single)
+    out = _DOUBLE_ENTITY.sub(r"&\1;", out)
     return out
+
+
+def restore_entities(value):
+    """Un-double over-escaped character entities in already-sanitized cached text
+    (a migration helper for content saved before the entity-restore was broadened).
+    Idempotent; never re-escapes, so it is safe to run on correct content."""
+    return _DOUBLE_ENTITY.sub(r"&\1;", str(value))
 
 
 COURSE_SYSTEM_PROMPT = (
