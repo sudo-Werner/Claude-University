@@ -100,6 +100,17 @@ features + research. Status:
 - ✅ **Loose end resolved:** the ML course's only artifact-bearing lesson (l1) was
   regenerated clean (0 artifacts, validated); l2/l3 were already clean.
 
+## Second review round (2026-06-24, Werner reviewing the live system)
+- ✅ **Entity bug (broader #2):** the model's typographic entities (`&ldquo;`/`&rdquo;`/
+  `&mdash;`/numeric) were still double-escaped and shown literally. `sanitize_html` now
+  un-doubles ANY character entity (regex), strictly a superset of the old fix; the ML
+  course's cached l3 was repaired in place via `generation.restore_entities`. (commit 4d299de)
+- ✅ **Visual aids (Werner picked all 4):** sanitizer widened (still default-deny) for the
+  `<table>` family + exact `<div class="callout">`/`<div class="box">`; prompt now offers
+  Unicode `<pre>` diagrams (≤32 chars/line), ≤3-col comparison tables, callouts — gated by
+  anti-decoration rules from multimedia-learning research (`docs/research/2026-06-24-visual-aids.md`).
+  Pi-verified: a comparison lesson rendered a clean 3-col table. (commit c35c300)
+
 ## Known issues (discovered during build)
 - ✅ **FIXED 2026-06-24 (commit 6fc932b):** lesson body rendered raw HTML tags as literal text.
   Widened the sanitizer allowlist to safe attribute-less block tags (h1–h3, p, pre, ul/ol, li),
