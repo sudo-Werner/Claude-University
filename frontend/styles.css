@@ -339,3 +339,38 @@ textarea::placeholder{color:#b3a994}
 .check-feedback.ok{background:rgba(37,180,120,.12); color:#0f7a4f}
 .check-feedback.no{background:rgba(208,0,102,.10); color:#a0064e}
 
+/* =================  CURRICULUM SCREEN  ================= */
+.curriculum{display:flex; flex-direction:column; gap:12px}
+.c-module{background:var(--glass-stat); backdrop-filter:blur(22px) saturate(1.5); -webkit-backdrop-filter:blur(22px) saturate(1.5);
+  border:1px solid var(--border-glass); border-radius:var(--r-md); overflow:hidden}
+.c-mhead{display:flex; align-items:center; justify-content:space-between; padding:14px 16px 10px}
+.c-mtitle{font-size:14px; font-weight:700; color:var(--text)}
+.c-mprog{font-size:12px; color:var(--text-mut)}
+.c-lessons{display:flex; flex-direction:column; gap:1px; padding:0 0 8px}
+.c-lesson{display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:10px 16px;
+  border:none; background:transparent; color:var(--text); font:14px/1.3 inherit; cursor:pointer; transition:background .12s}
+.c-lesson:hover{background:rgba(255,255,255,.35)}
+.c-lesson.current{background:rgba(124,106,255,.10); font-weight:600}
+.c-lesson.done{color:var(--text-2)}
+.c-mark{width:18px; height:18px; border-radius:999px; border:2px solid var(--border-field);
+  display:flex; align-items:center; justify-content:center; flex-shrink:0; color:transparent}
+.c-mark.done{border-color:#25b478; background:#25b478; color:#fff}
+.c-mark.current{border-color:var(--purple); border-width:2px; background:transparent; color:transparent}
+.c-ltitle{flex:1}
+.c-badge{font-size:10px; font-weight:600; padding:3px 8px; border-radius:999px;
+  background:rgba(124,106,255,.14); color:var(--purple); border:1px solid rgba(124,106,255,.25)}
+.c-badge.mastered{background:rgba(37,180,120,.14); color:#0f7a4f; border-color:rgba(37,180,120,.3)}
+.c-badge.proficient{background:rgba(47,143,208,.14); color:var(--blue-text); border-color:rgba(47,143,208,.3)}
+.c-badge.familiar{background:rgba(124,106,255,.14); color:var(--purple); border-color:rgba(124,106,255,.25)}
+.c-badge.attempted{background:rgba(131,122,108,.12); color:var(--text-mut); border-color:rgba(131,122,108,.2)}
+
+/* =================  LESSON PLAYER NAV  ================= */
+.player-nav{display:flex; align-items:center; justify-content:space-between; margin-top:18px; gap:8px}
+.pn-curric{flex:0 0 auto}
+.pn-move{display:flex; gap:8px}
+.pn-btn{padding:9px 16px; border:1px solid var(--border-glass); border-radius:var(--r-sm);
+  background:var(--glass-inner); color:var(--text); font:600 13px/1 inherit; cursor:pointer; transition:all .12s}
+.pn-btn:hover:not(:disabled){background:rgba(255,255,255,.65)}
+.pn-btn:active:not(:disabled){transform:translateY(1px)}
+.pn-btn:disabled{color:var(--text-faint); cursor:not-allowed; opacity:.5}
+

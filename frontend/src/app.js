@@ -8,6 +8,7 @@ import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
 import { lessonHTML } from "./views/lesson.js";
+import { curriculumHTML } from "./views/curriculum.js";
 import { diagnosticHTML } from "./views/diagnostic.js";
 import { chatHTML } from "./views/chat.js";
 import { gradeCheck } from "./views/checks.js";
@@ -106,6 +107,26 @@ export async function init({ window, fetch }) {
     showCourse();
   }
 
+  function flatLessons() {
+    const out = [];
+    const mods = (ui.manifest && ui.manifest.modules) || [];
+    mods.forEach((m) => (m.lessons || []).forEach((l) => out.push(l)));
+    return out;
+  }
+
+  function currentLessonId() {
+    if (ui.lesson) return ui.lesson.id;
+    return ui.summary && ui.summary.nextLesson ? ui.summary.nextLesson.id : null;
+  }
+
+  function adjacentLesson(offset) {
+    const flat = flatLessons();
+    const i = flat.findIndex((l) => ui.lesson && l.id === ui.lesson.id);
+    if (i < 0) return null;
+    const j = i + offset;
+    return j >= 0 && j < flat.length ? flat[j] : null;
+  }
+
   function sessionData() {
     const next = ui.summary && ui.summary.nextLesson;
     const p = ui.summary ? ui.summary.progress : { done: 0, total: 0, pct: 0 };
@@ -127,6 +148,8 @@ export async function init({ window, fetch }) {
     view.innerHTML = dashboardHTML(sessionData(), timerView(ui.timer.elapsed));
     view.querySelector('[data-action="start-session"]').addEventListener("click", startLesson);
     view.querySelector('[data-action="review"]').addEventListener("click", startReviewSession);
+    const cur = view.querySelector('[data-action="curriculum"]');
+    if (cur) cur.addEventListener("click", showCurriculum);
   }
 
   function showCourse() {
@@ -136,19 +159,38 @@ export async function init({ window, fetch }) {
     paintCourse();
   }
 
+  function showCurriculum() {
+    ui.screen = "curriculum";
+    root.innerHTML = shellHTML({ streakDays: STREAK_DAYS, back: ui.manifest.title });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
+    paintCurriculum();
+  }
+
+  function paintCurriculum() {
+    const view = root.querySelector("#view");
+    view.innerHTML = curriculumHTML(ui.manifest, (ui.manifest && ui.manifest.mastery) || {}, currentLessonId());
+    view.querySelectorAll("[data-lesson]").forEach((row) => {
+      row.addEventListener("click", () => openLesson(row.getAttribute("data-lesson")));
+    });
+  }
+
   // ---- lesson ----
-  async function startLesson() {
-    const next = ui.summary && ui.summary.nextLesson;
-    if (!next) return;
+  async function openLesson(lessonId) {
+    if (!lessonId) return;
     ui.reviewQueue = [];
     const view = root.querySelector("#view");
     if (view) view.innerHTML = `<div class="card lesson loading">Preparing your lesson…</div>`;
-    ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: next.id });
+    ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId });
     if (!ui.lesson) { showCourse(); return; }
     ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
-    log("lesson_view", { courseId: ui.courseId, topicId: next.id });
+    log("lesson_view", { courseId: ui.courseId, topicId: lessonId });
     if (!ui.timer.running) startTimer();
     showLesson();
+  }
+
+  function startLesson() {
+    const next = ui.summary && ui.summary.nextLesson;
+    if (next) openLesson(next.id);
   }
 
   function showLesson() {
@@ -160,7 +202,8 @@ export async function init({ window, fetch }) {
 
   function paintLesson() {
     const view = root.querySelector("#view");
-    view.innerHTML = lessonHTML(ui.lesson, ui.lessonState);
+    const nav = { hasPrev: !!adjacentLesson(-1), hasNext: !!adjacentLesson(1) };
+    view.innerHTML = lessonHTML(ui.lesson, ui.lessonState, nav);
     const ta = view.querySelector('[data-field="answer"]');
     ta.addEventListener("input", () => {
       ui.lessonState.answer = ta.value;
@@ -209,6 +252,12 @@ export async function init({ window, fetch }) {
         answerCheck(i, inp ? inp.value : "");
       });
     });
+    const curBtn = view.querySelector('[data-action="curriculum"]');
+    if (curBtn) curBtn.addEventListener("click", showCurriculum);
+    const prevBtn = view.querySelector('[data-action="prev-lesson"]');
+    if (prevBtn) prevBtn.addEventListener("click", () => { const a = adjacentLesson(-1); if (a) openLesson(a.id); });
+    const nextBtn = view.querySelector('[data-action="next-lesson"]');
+    if (nextBtn) nextBtn.addEventListener("click", () => { const a = adjacentLesson(1); if (a) openLesson(a.id); });
   }
 
   function answerCheck(i, answer) {
