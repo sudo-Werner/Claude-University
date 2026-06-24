@@ -77,6 +77,28 @@ quality/maintenance pass (scan for bloat/dead code/non-SOTA patterns; keep the P
 **Decision:** a true LLM self-review pass was rejected as Pi-heavy/YAGNI; the cheap heuristic +
 existing retry deliver "regenerate-on-obvious-failure" without doubling per-lesson cost.
 
+## Post-roadmap review features (from Werner's 2026-06-24 review of the live system)
+Werner reviewed the finished system and raised 6 items. Triaged into 2 bugs + 3
+features + research. Status:
+- ✅ **#2 (bug) HTML `&lt;`/`&gt;` artifacts** — sanitizer was re-escaping the model's own
+  entities. Fixed (entity-restore) + Pi-verified. (commit cb7310a)
+- ✅ **#6 (bug) timer didn't pause off-lesson** — now counts only on the lesson screen.
+  Fixed + Pi-verified. (commit cb7310a)
+- ✅ **#4 Answer grading (Option B)** — "Check my answer" grades the typed answer
+  (correct/close/incorrect + note), decoupled from reveal, re-checkable. Shipped +
+  Pi-verified. (commit bc4dc1d)
+- ✅ **#5 Per-lesson depth adaptation** — "Rusty on this? Explain it more deeply"
+  regenerates the lesson deeper and overwrites the cache. Shipped + Pi-verified.
+  (commit 5fb6e7e)
+- ✅ **#1 Real-world evidence capstone** — module/course-end "Real-world connections"
+  (search-based Explore links, no hallucinated URLs). Shipped + Pi-verified. (commit 65007f7)
+- ⏳ **#3 readability/engagement + #3b loading states** — researched; PROPOSAL written
+  (`specs/2026-06-24-readability-loading-proposal.md`), awaiting Werner's go to build
+  Slice A (prompt) + B (skeleton/staged loading); Slice C (streaming) deferred.
+- ⚠️ **Loose end:** Werner's real ML course has 2 lessons generated BEFORE the #2 fix;
+  their cached JSON may still show `&lt;` artifacts. Fix = regenerate them (changes
+  their content). Awaiting Werner's call.
+
 ## Known issues (discovered during build)
 - ✅ **FIXED 2026-06-24 (commit 6fc932b):** lesson body rendered raw HTML tags as literal text.
   Widened the sanitizer allowlist to safe attribute-less block tags (h1–h3, p, pre, ul/ol, li),
