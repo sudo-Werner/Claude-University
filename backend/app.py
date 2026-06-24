@@ -186,6 +186,31 @@ def create_app(db_path=None):
             return jsonify({"error": "lesson not found"}), 404
         return jsonify(lesson)
 
+    @app.get("/api/courses/<course_id>/capstone/<scope>")
+    def get_capstone(course_id, scope):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        if scope != "course" and not _ID_RE.match(scope):
+            return jsonify({"error": "not found"}), 404
+        conn = db.get_connection(path)
+        try:
+            prof = profile.latest_profile(conn)
+        finally:
+            conn.close()
+        prof_data = (prof or {}).get("data")
+        generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_capstone)
+        try:
+            capstone = generation.ensure_capstone(
+                courses.CONTENT_DIR, course_id, scope, prof_data, generate=generate,
+            )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not prepare the real-world connections"}), 502
+        if capstone is None:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(capstone)
+
     @app.get("/api/courses/<course_id>/reviews")
     def get_reviews(course_id):
         if not _ID_RE.match(course_id):

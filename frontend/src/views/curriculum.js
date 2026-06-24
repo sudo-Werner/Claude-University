@@ -37,11 +37,16 @@ function lessonRow(lesson, mastery, currentId) {
 function moduleBlock(module, mastery, currentId) {
   const p = moduleProgress(module, mastery);
   const rows = (module.lessons || []).map((l) => lessonRow(l, mastery, currentId)).join("");
+  // #1: once every lesson in the module is done, offer its real-world capstone.
+  const complete = p.total > 0 && p.done === p.total;
+  const capstone = complete
+    ? `<button class="c-capstone" data-capstone="${esc(module.id)}">Real-world connections →</button>`
+    : "";
   return (
     `<section class="c-module">` +
     `<div class="c-mhead"><span class="c-mtitle">${esc(module.title)}</span>` +
     `<span class="c-mprog">${p.done}/${p.total}</span></div>` +
-    `<div class="c-lessons">${rows}</div></section>`
+    `<div class="c-lessons">${rows}</div>${capstone}</section>`
   );
 }
 
@@ -50,9 +55,14 @@ export function curriculumHTML(manifest, mastery, currentId) {
   const flat = flatten(manifest);
   const done = flat.filter((l) => m[l.id]).length;
   const modules = (manifest.modules || []).map((mod) => moduleBlock(mod, m, currentId)).join("");
+  // #1: when the whole course is done, offer a course-wide real-world capstone.
+  const courseDone = flat.length > 0 && done === flat.length;
+  const courseCapstone = courseDone
+    ? `<button class="c-capstone course" data-capstone="course">Real-world connections for the whole course →</button>`
+    : "";
   return (
     `<div class="curriculum">` +
     `<div class="greeting"><h1>${esc(manifest.title)}</h1>` +
-    `<span>${done} of ${flat.length} lessons</span></div>${modules}</div>`
+    `<span>${done} of ${flat.length} lessons</span></div>${modules}${courseCapstone}</div>`
   );
 }

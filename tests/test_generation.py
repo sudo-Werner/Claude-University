@@ -446,3 +446,77 @@ def test_deepen_lesson_unknown_lesson_returns_none(tmp_path):
                                 "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
     cid = manifest["id"]
     assert gen.deepen_lesson(root, cid, "no-such-lesson", {}, generate=lambda p: {}) is None
+
+
+# ---- #1 real-world evidence capstone ----
+
+_OK_ITEM = {"title": "AlphaFold", "detail": "It predicts protein structures.", "source": "DeepMind"}
+
+
+def test_valid_capstone_accepts_well_formed():
+    assert gen.valid_capstone({"intro": "Here is where this shows up.",
+                               "items": [dict(_OK_ITEM), dict(_OK_ITEM)]}) is True
+
+
+def test_valid_capstone_rejects_bad_shape():
+    assert gen.valid_capstone({"items": [dict(_OK_ITEM), dict(_OK_ITEM)]}) is False  # no intro
+    assert gen.valid_capstone({"intro": "x", "items": [dict(_OK_ITEM)]}) is False     # too few items
+    assert gen.valid_capstone({"intro": "x", "items": [{"title": "", "detail": "d"}, dict(_OK_ITEM)]}) is False
+    assert gen.valid_capstone({"intro": "x", "items": [{"title": "t"}, dict(_OK_ITEM)]}) is False  # no detail
+    assert gen.valid_capstone({"intro": "x", "items": [{"title": "t", "detail": "d"}, dict(_OK_ITEM)]}) is False  # no source
+    assert gen.valid_capstone("nope") is False
+
+
+def test_capstone_prompt_includes_scope_and_concepts():
+    p = gen.capstone_prompt(scope_label="the module", scope_title="Neural Nets",
+                            concept_titles=["Backprop", "Gradients"], brief="ML course", profile={})
+    assert "Neural Nets" in p
+    assert "Backprop" in p and "Gradients" in p
+    assert "JSON" in p
+
+
+def test_ensure_capstone_module_scope_generates_caches_sanitizes(tmp_path):
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "T", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "Mod A", "lessons": [{"title": "L1"}, {"title": "L2"}]}]})
+    cid = manifest["id"]; mid = manifest["modules"][0]["id"]
+    captured = {}
+    def fake_generate(prompt):
+        captured["prompt"] = prompt
+        return {"intro": "Real world!", "items": [
+            {"title": "Sys <script>x</script>", "detail": "Used in <em>industry</em>.", "source": "Wikipedia"},
+            dict(_OK_ITEM)]}
+    cap = gen.ensure_capstone(root, cid, mid, {}, generate=fake_generate)
+    assert cap["scope"] == mid and cap["title"] == "Mod A"
+    assert "L1" in captured["prompt"] and "L2" in captured["prompt"]
+    assert "<script" not in cap["items"][0]["title"]          # title escaped
+    assert "<em>industry</em>" in cap["items"][0]["detail"]   # safe inline tag kept
+    # cached: second call does not regenerate
+    cap2 = gen.ensure_capstone(root, cid, mid, {}, generate=lambda p: (_ for _ in ()).throw(AssertionError("regenerated")))
+    assert cap2["scope"] == mid
+
+
+def test_ensure_capstone_course_scope_uses_module_titles(tmp_path):
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "Whole Course", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "Alpha", "lessons": [{"title": "L1"}]},
+                    {"title": "Beta", "lessons": [{"title": "L2"}]}]})
+    cid = manifest["id"]
+    captured = {}
+    def fake_generate(prompt):
+        captured["prompt"] = prompt
+        return {"intro": "i", "items": [dict(_OK_ITEM), dict(_OK_ITEM)]}
+    cap = gen.ensure_capstone(root, cid, "course", {}, generate=fake_generate)
+    assert cap["scope"] == "course" and cap["title"] == "Whole Course"
+    assert "Alpha" in captured["prompt"] and "Beta" in captured["prompt"]
+
+
+def test_ensure_capstone_unknown_module_returns_none(tmp_path):
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "T", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]
+    assert gen.ensure_capstone(root, cid, "m99", {}, generate=lambda p: {}) is None

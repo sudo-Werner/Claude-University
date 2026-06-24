@@ -247,3 +247,66 @@ def test_deepen_endpoint_404_for_unknown_lesson(client, tmp_path, monkeypatch):
     monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: {})
     resp = client.post(f"/api/courses/{cid}/lessons/nope/deepen")
     assert resp.status_code == 404
+
+
+def _capstone_course(courses, root):
+    manifest = courses.write_course(root, {
+        "title": "Cap Course", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "Mod A", "lessons": [{"title": "L1"}, {"title": "L2"}]}]})
+    return manifest, manifest["modules"][0]["id"]
+
+
+def test_capstone_endpoint_module_scope(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, mid = _capstone_course(courses, root)
+    cid = manifest["id"]
+    payload = {"intro": "Real world.", "items": [
+        {"title": "AlphaFold", "detail": "predicts proteins", "source": "DeepMind"},
+        {"title": "GPS", "detail": "uses it", "source": "Wikipedia"}]}
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: payload)
+    resp = client.get(f"/api/courses/{cid}/capstone/{mid}")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["scope"] == mid and body["title"] == "Mod A"
+    assert len(body["items"]) == 2
+
+
+def test_capstone_endpoint_course_scope(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _capstone_course(courses, root)
+    cid = manifest["id"]
+    payload = {"intro": "i", "items": [
+        {"title": "a", "detail": "d", "source": "s"}, {"title": "b", "detail": "d", "source": "s"}]}
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: payload)
+    resp = client.get(f"/api/courses/{cid}/capstone/course")
+    assert resp.status_code == 200
+    assert resp.get_json()["scope"] == "course"
+
+
+def test_capstone_endpoint_unknown_module_404(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _capstone_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: {})
+    resp = client.get(f"/api/courses/{cid}/capstone/m99")
+    assert resp.status_code == 404
+
+
+def test_capstone_endpoint_reauth(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, mid = _capstone_course(courses, root)
+    cid = manifest["id"]
+    def boom(prompt, **kw):
+        raise claude_client.ClaudeAuthError("Invalid API key")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    resp = client.get(f"/api/courses/{cid}/capstone/{mid}")
+    assert resp.status_code == 503
+    assert resp.get_json().get("code") == "reauth"

@@ -169,6 +169,101 @@ def grade_answer(content_dir, course_id, lesson_id, answer, *, generate):
     return {"verdict": result["verdict"], "note": sanitize_html(result["note"])}
 
 
+# ---- #1 real-world evidence capstone: how the concepts show up in the real world ----
+# The model supplies real-world example names + descriptions + a SOURCE NAME (not a URL);
+# the frontend turns each into a live web-search link. This avoids hallucinated/dead links
+# while still giving the learner a one-click path to real evidence.
+
+def valid_capstone(obj):
+    if not isinstance(obj, dict):
+        return False
+    if not (isinstance(obj.get("intro"), str) and obj["intro"].strip()):
+        return False
+    items = obj.get("items")
+    if not (isinstance(items, list) and 2 <= len(items) <= 6):
+        return False
+    for it in items:
+        if not isinstance(it, dict):
+            return False
+        if not (isinstance(it.get("title"), str) and it["title"].strip()):
+            return False
+        if not (isinstance(it.get("detail"), str) and it["detail"].strip()):
+            return False
+        # source is required — the frontend's "Explore" search link is built from it
+        if not (isinstance(it.get("source"), str) and it["source"].strip()):
+            return False
+    return True
+
+
+def capstone_prompt(*, scope_label, scope_title, concept_titles, brief, profile):
+    concepts = "; ".join(t for t in concept_titles if t)
+    return (
+        f"You are writing a short 'real-world connections' capstone for a learner who just "
+        f'finished {scope_label} titled "{scope_title}" in a personal course.\n'
+        f"Course context: {brief}\n"
+        f"Learner preferences (JSON): {json.dumps(profile or {})}\n"
+        f"What they covered: {concepts}\n\n"
+        "Show how these ideas show up in the real world — concrete systems, products, research, "
+        "or events the learner would recognize — to solidify what they learned. Reply with ONLY a "
+        "JSON object, no prose, no fence:\n"
+        '{"intro":"<one or two sentences connecting their study to the real world>",'
+        '"items":[{"title":"<a real, recognizable example: a named system, product, paper, or '
+        'event>","detail":"<1-2 sentences, addressed to \'you\', on how the concept applies '
+        'there>","source":"<a short well-known SOURCE NAME to look it up, e.g. \'PyTorch docs\', '
+        "'Wikipedia', 'DeepMind' — a name, NOT a URL>\"}]}"
+        " Provide 3 to 5 items grounded in real, recognizable things — never invent products or "
+        "papers. Use a source NAME, never a URL (the app builds the link)."
+    )
+
+
+def ensure_capstone(content_dir, course_id, scope, profile, *, generate):
+    path = Path(content_dir) / course_id / "capstones" / f"{scope}.json"
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except ValueError:
+            pass  # regenerate a corrupt cache
+    manifest = courses.load_manifest(content_dir, course_id)
+    if manifest is None:
+        return None
+    modules = manifest.get("modules", [])
+    if scope == "course":
+        scope_label = "this course"
+        scope_title = manifest.get("title", "")
+        concept_titles = [m.get("title", "") for m in modules]
+    else:
+        module = next((m for m in modules if m.get("id") == scope), None)
+        if module is None:
+            return None
+        scope_label = "the module"
+        scope_title = module.get("title", "")
+        concept_titles = [l.get("title", "") for l in module.get("lessons", [])]
+    prompt = capstone_prompt(
+        scope_label=scope_label, scope_title=scope_title, concept_titles=concept_titles,
+        brief=manifest.get("brief", ""), profile=profile,
+    )
+    capstone = generate(prompt)
+    if not isinstance(capstone, dict):
+        raise claude_client.ClaudeError("capstone generator returned a non-dict result")
+    if not valid_capstone(capstone):
+        raise claude_client.ClaudeError("generated capstone failed validation")
+    capstone["scope"] = scope
+    capstone["title"] = scope_title
+    capstone["intro"] = sanitize_html(capstone.get("intro", ""))
+    for it in capstone.get("items", []):
+        if not isinstance(it, dict):
+            continue
+        if isinstance(it.get("detail"), str):
+            it["detail"] = sanitize_html(it["detail"])
+        if isinstance(it.get("title"), str):
+            it["title"] = _html.escape(it["title"], quote=True)
+        if isinstance(it.get("source"), str):
+            it["source"] = _html.escape(it["source"], quote=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(capstone, indent=2, ensure_ascii=False))
+    return capstone
+
+
 def build_chat_prompt(messages, profile):
     lines = [COURSE_SYSTEM_PROMPT, "", f"Learner preferences (JSON): {json.dumps(profile or {})}", ""]
     for m in messages:

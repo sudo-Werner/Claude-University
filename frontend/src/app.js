@@ -4,12 +4,13 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone } from "./courses.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
 import { lessonHTML } from "./views/lesson.js";
 import { curriculumHTML } from "./views/curriculum.js";
+import { capstoneHTML } from "./views/capstone.js";
 import { diagnosticHTML } from "./views/diagnostic.js";
 import { chatHTML } from "./views/chat.js";
 import { gradeCheck } from "./views/checks.js";
@@ -174,6 +175,32 @@ export async function init({ window, fetch }) {
     view.querySelectorAll("[data-lesson]").forEach((row) => {
       row.addEventListener("click", () => openLesson(row.getAttribute("data-lesson")));
     });
+    view.querySelectorAll("[data-capstone]").forEach((b) => {
+      b.addEventListener("click", () => showCapstone(b.getAttribute("data-capstone")));
+    });
+  }
+
+  // #1: real-world connections capstone for a completed module (scope = module id)
+  // or the whole course (scope = "course"). Generated on first open, cached after.
+  async function showCapstone(scope) {
+    pauseTimer();
+    ui.screen = "capstone";
+    root.innerHTML = shellHTML({ back: ui.manifest ? ui.manifest.title : "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showCurriculum);
+    const view = root.querySelector("#view");
+    view.innerHTML = `<div class="card lesson loading">Gathering real-world connections…</div>`;
+    log("capstone_opened", { courseId: ui.courseId, topicId: scope });
+    const cap = await loadCapstone({ fetch, courseId: ui.courseId, scope });
+    if (ui.screen !== "capstone") return;
+    if (!cap || cap.error) {
+      view.innerHTML =
+        `<div class="card"><div class="prompt">${esc((cap && cap.error) || "Couldn't load this right now.")}</div>` +
+        `<div class="nav"><button class="btn-back" data-action="back">Back</button></div></div>`;
+      view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
+      return;
+    }
+    view.innerHTML = capstoneHTML(cap);
+    view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
   }
 
   // ---- lesson ----

@@ -353,6 +353,21 @@ textarea::placeholder{color:#b3a994}
 .c-badge.familiar{background:rgba(124,106,255,.14); color:var(--purple); border-color:rgba(124,106,255,.25)}
 .c-badge.attempted{background:rgba(131,122,108,.12); color:var(--text-mut); border-color:rgba(131,122,108,.2)}
 
+/* #1 real-world capstone — entry button in the curriculum + the capstone view */
+.c-capstone{display:block; width:100%; text-align:left; padding:11px 16px; cursor:pointer;
+  border:none; border-top:1px solid var(--border-field); background:rgba(37,180,120,.10);
+  font:600 13px/1.3 inherit; color:#0f7a4f; transition:background .15s}
+.c-capstone:hover{background:rgba(37,180,120,.18)}
+.c-capstone.course{margin-top:4px; border:1px solid rgba(37,180,120,.3); border-radius:var(--r-md); background:rgba(37,180,120,.12)}
+.cap-intro{font-family:var(--serif); font-size:15px; line-height:1.6; color:var(--read); margin:8px 0 16px}
+.cap-item{padding:13px 0; border-top:1px solid var(--border-field)}
+.cap-ihead{display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:5px}
+.cap-ititle{font-size:15px; font-weight:700; color:var(--text)}
+.cap-src{font-size:11px; font-weight:600; color:var(--text-mut); white-space:nowrap}
+.cap-detail{font-family:var(--serif); font-size:14px; line-height:1.55; color:var(--text-2); margin-bottom:8px}
+.cap-explore{display:inline-block; font:600 13px/1 inherit; color:var(--blue-text); text-decoration:none}
+.cap-explore:hover{text-decoration:underline; text-underline-offset:2px}
+
 /* =================  LESSON PLAYER NAV  ================= */
 .player-nav{display:flex; align-items:center; justify-content:space-between; margin-top:18px; gap:8px}
 .pn-curric{flex:0 0 auto}

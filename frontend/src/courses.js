@@ -35,6 +35,16 @@ export async function gradeAnswer({ fetch, courseId, lessonId, answer }) {
   return resp.json();
 }
 
+export async function loadCapstone({ fetch, courseId, scope }) {
+  const resp = await fetch(`/api/courses/${courseId}/capstone/${scope}`);
+  if (!resp.ok) {
+    let message = "Couldn't load the real-world connections right now.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}
+
 export async function deepenLesson({ fetch, courseId, lessonId }) {
   const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/deepen`, { method: "POST" });
   if (!resp.ok) {

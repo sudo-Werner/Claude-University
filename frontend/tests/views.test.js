@@ -5,6 +5,7 @@ import { dashboardHTML } from "../src/views/dashboard.js";
 import { lessonHTML } from "../src/views/lesson.js";
 import { diagnosticHTML } from "../src/views/diagnostic.js";
 import { curriculumHTML, lessonStatus, moduleProgress } from "../src/views/curriculum.js";
+import { capstoneHTML } from "../src/views/capstone.js";
 const DASHBOARD_SEED = {
   topic: "Backpropagation, intuitively",
   sub: "Module 3 · Neural Networks · Lesson 2",
@@ -226,6 +227,53 @@ test("curriculumHTML tolerates missing mastery", () => {
   const html = curriculumHTML(SAMPLE_MANIFEST, undefined, null);
   assert.match(html, /0 of 3 lessons/);
   assert.match(html, /data-lesson="demo-l1"/);
+});
+
+test("curriculum offers a capstone only for completed modules", () => {
+  // partial mastery: no module complete -> no capstone affordance at all
+  assert.doesNotMatch(curriculumHTML(SAMPLE_MANIFEST, SAMPLE_MASTERY, "demo-l2"), /data-capstone/);
+  // module m1 fully done, m2 not -> m1 capstone shown, m2 not, no course capstone
+  const partial = { "demo-l1": "mastered", "demo-l2": "proficient" };
+  const html = curriculumHTML(SAMPLE_MANIFEST, partial, "demo-l3");
+  assert.match(html, /data-capstone="m1"/);
+  assert.doesNotMatch(html, /data-capstone="m2"/);
+  assert.doesNotMatch(html, /data-capstone="course"/);
+});
+
+test("curriculum offers the course capstone once everything is done", () => {
+  const all = { "demo-l1": "mastered", "demo-l2": "mastered", "demo-l3": "mastered" };
+  const html = curriculumHTML(SAMPLE_MANIFEST, all, null);
+  assert.match(html, /data-capstone="m1"/);
+  assert.match(html, /data-capstone="m2"/);
+  assert.match(html, /data-capstone="course"/);
+});
+
+test("capstoneHTML renders intro, items, and a search-based explore link", () => {
+  const cap = {
+    scope: "m1", title: "Basics", intro: "Here is where it shows up.",
+    items: [
+      { title: "AlphaFold", detail: "It predicts protein structures.", source: "DeepMind" },
+      { title: "GPS", detail: "Relies on it.", source: "Wikipedia" },
+    ],
+  };
+  const html = capstoneHTML(cap);
+  assert.match(html, /Real-world connections/);
+  assert.match(html, /AlphaFold/);
+  assert.match(html, /predicts protein structures/);
+  assert.match(html, /DeepMind/);
+  // explore link is a constructed web search (never a model-supplied URL)
+  assert.match(html, /href="https:\/\/duckduckgo\.com\/\?q=/);
+  assert.match(html, /AlphaFold%20DeepMind/);
+  assert.match(html, /data-action="back"/);
+});
+
+test("capstone explore link decodes HTML entities before encoding the query", () => {
+  // server escapes "AT&T" -> "AT&amp;T"; the search query must be the real text.
+  const cap = { scope: "m1", title: "T", intro: "i",
+    items: [{ title: "AT&amp;T", detail: "uses it", source: "Wikipedia" }] };
+  const html = capstoneHTML(cap);
+  assert.match(html, /q=AT%26T%20Wikipedia/);   // & encoded once, not &amp;
+  assert.doesNotMatch(html, /amp%3B/);          // no leftover entity in the query
 });
 
 test("shell no longer renders a streak pill", () => {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -100,4 +100,18 @@ test("deepenLesson returns an error shape on non-ok", async () => {
   const fetch = async () => ({ ok: false, status: 503, json: async () => ({ error: "reauth" }) });
   const r = await deepenLesson({ fetch, courseId: "c", lessonId: "c-l1" });
   assert.equal(r.error, "reauth");
+});
+
+test("loadCapstone fetches by course and scope", async () => {
+  let url;
+  const fetch = async (u) => { url = u; return { ok: true, json: async () => ({ scope: "m1", items: [] }) }; };
+  const cap = await loadCapstone({ fetch, courseId: "c", scope: "m1" });
+  assert.equal(url, "/api/courses/c/capstone/m1");
+  assert.equal(cap.scope, "m1");
+});
+
+test("loadCapstone returns an error shape on non-ok", async () => {
+  const fetch = async () => ({ ok: false, status: 502, json: async () => ({ error: "down" }) });
+  const r = await loadCapstone({ fetch, courseId: "c", scope: "course" });
+  assert.equal(r.error, "down");
 });
