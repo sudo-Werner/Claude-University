@@ -1,6 +1,6 @@
 export const PHASE_SECONDS = [900, 3600, 900];
 export const TOTAL_SECONDS = PHASE_SECONDS.reduce((a, b) => a + b, 0);
-const PHASE_NAMES = ["Warm-up", "Peak focus", "Cool-down"];
+export const PHASE_NAMES = ["Warm-up", "Peak focus", "Cool-down"];
 
 function mmss(totalSeconds) {
   const m = Math.floor(totalSeconds / 60);
@@ -34,5 +34,5 @@ export function timerView(elapsedSeconds) {
     ? "<b>Session complete</b>"
     : `<b>${PHASE_NAMES[activePhaseIndex]}</b> in progress`;
 
-  return { fills, activePhaseIndex, statusLabel, clock: `${mmss(e)} / 90:00` };
+  return { fills, activePhaseIndex, statusLabel, clock: `${mmss(e)} / ${mmss(TOTAL_SECONDS)}` };
 }

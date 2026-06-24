@@ -1,3 +1,5 @@
+import { PHASE_NAMES, PHASE_SECONDS } from "../timer.js";
+
 const CLOCK_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#a59b89" stroke-width="2"/><path d="M12 7v5l3 2" stroke="#a59b89" stroke-width="2" stroke-linecap="round"/></svg>`;
 const PLAY_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="#fff"><path d="M7 5l12 7-12 7V5z"/></svg>`;
 const MASTERY_LABELS = { attempted: "Attempted", familiar: "Familiar", proficient: "Proficient", mastered: "Mastered" };
@@ -12,8 +14,7 @@ function masteryHTML(counts) {
 }
 
 const PHASE_COLORS = ["#3aa0e0", "#7c6aff", "#25b478"];
-const PHASE_NAMES = ["Warm-up", "Peak focus", "Cool-down"];
-const PHASE_DUR = ["15m", "60m", "15m"];
+const PHASE_DUR = PHASE_SECONDS.map((s) => `${s / 60}m`);
 const PHASE_FLEX = [15, 60, 15];
 
 export function dashboardHTML(data, timerView) {
@@ -25,7 +26,7 @@ export function dashboardHTML(data, timerView) {
   ).join("");
   const labels = PHASE_FLEX.map(
     (flex, i) =>
-      `<div class="${i === timerView.activePhaseIndex ? "active-warm" : ""}" style="flex:${flex} 1 0"><div class="name">${PHASE_NAMES[i]}</div><div class="dur">${PHASE_DUR[i]}</div></div>`,
+      `<div class="${i === timerView.activePhaseIndex ? "active-warm" : ""}" style="flex:${flex} 1 0${i === timerView.activePhaseIndex ? `; --phase-clr:${PHASE_COLORS[i]}` : ""}"><div class="name">${PHASE_NAMES[i]}</div><div class="dur">${PHASE_DUR[i]}</div></div>`,
   ).join("");
 
   return `

@@ -1,15 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canReveal, solutionState } from "../src/reveal.js";
+import { solutionState } from "../src/reveal.js";
 
 test("empty answer cannot reveal", () => {
-  assert.equal(canReveal(""), false);
-  assert.equal(canReveal("   "), false);
   assert.equal(solutionState({ answer: "", revealed: false }), "locked");
+  assert.equal(solutionState({ answer: "   ", revealed: false }), "locked");
 });
 
 test("non-empty answer is ready", () => {
-  assert.equal(canReveal("w - 0.04"), true);
   assert.equal(solutionState({ answer: "w - 0.04", revealed: false }), "ready");
 });
 

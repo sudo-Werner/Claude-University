@@ -1,4 +1,4 @@
-export function canReveal(answer) {
+function canReveal(answer) {
   return typeof answer === "string" && answer.trim().length > 0;
 }
 
