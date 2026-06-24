@@ -12,12 +12,20 @@ from backend import claude_client, courses
 # below are restored; anything else — script, img, on* handlers, <a href>, or any
 # tag carrying attributes (e.g. "<p onclick=...>") — stays escaped and inert.
 _INLINE_TAGS = ["code", "em", "strong"]
-_BLOCK_TAGS = ["h1", "h2", "h3", "p", "pre", "ul", "ol", "li"]
+# Block tags include the comparison-table family (#visual-aids); all attribute-less,
+# so a cell carrying an attribute (e.g. "<td onclick=...>") stays escaped and inert.
+_BLOCK_TAGS = ["h1", "h2", "h3", "p", "pre", "ul", "ol", "li",
+               "table", "thead", "tbody", "tr", "th", "td"]
 _ALLOWED_HTML = {
     "&lt;br&gt;": "<br>", "&lt;br/&gt;": "<br>", "&lt;br /&gt;": "<br>",
     "&lt;hr&gt;": "<hr>", "&lt;hr/&gt;": "<hr>", "&lt;hr /&gt;": "<hr>",
     '&lt;span class=&quot;mono&quot;&gt;': '<span class="mono">',
     "&lt;/span&gt;": "</span>",
+    # Visual-aid containers: only these EXACT class strings are restored. An unlisted
+    # class ("<div class=evil>") or any attribute-bearing div stays escaped/inert.
+    '&lt;div class=&quot;callout&quot;&gt;': '<div class="callout">',
+    '&lt;div class=&quot;box&quot;&gt;': '<div class="box">',
+    "&lt;/div&gt;": "</div>",
 }
 for _t in _INLINE_TAGS + _BLOCK_TAGS:
     _ALLOWED_HTML["&lt;%s&gt;" % _t] = "<%s>" % _t
@@ -140,7 +148,22 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "- Make the solutionNote a short worked example — walk through the key step of the "
         "reasoning so the learner sees HOW, not just the final answer.\n"
         "- Keep every check explanation specific and encouraging: name what is right and the one "
-        "thing to watch, never a bare 'wrong'."
+        "thing to watch, never a bare 'wrong'.\n\n"
+        # Visual aids (#visual-aids): evidence says a visual helps ONLY when it carries
+        # structure/process/comparison prose can't; decorative visuals measurably hurt.
+        "Add a visual aid ONLY when it shows structure, a process/sequence, or a comparison that "
+        "prose alone conveys poorly — never decorative. When one genuinely helps, use exactly one "
+        "of these (they are the only visual markup that renders):\n"
+        "- A small diagram inside <pre>: use Unicode box-drawing characters (│ ─ ┌ ┐ └ ┘ ├ → ↓) for "
+        "boxes/arrows/trees/number-lines. Keep every line <= 32 characters (it renders on a narrow "
+        "phone). Good for nesting, flows, and relationships.\n"
+        '- A comparison <table> with a header row and AT MOST 3 columns: '
+        "<table><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table>. "
+        "Tables and their cells must carry NO attributes.\n"
+        '- A short framed aside for a key idea or warning: <div class="callout">...</div> (use it '
+        'sparingly), or <div class="box">...</div> for a neutral framed note. Use those EXACT class '
+        "strings; no other div/class/attribute will render.\n"
+        "Prefer an annotated worked example over an abstract diagram. If in doubt, use prose."
         + directive_line
     )
 

@@ -131,9 +131,23 @@ body{margin:0; background:#f1e7d6}
 .prompt ul,.prompt ol{margin:0 0 10px; padding-left:22px}
 .prompt li{margin:4px 0}
 .prompt pre{background:var(--glass-inner); border:1px solid rgba(255,255,255,.5); border-radius:12px;
-  padding:12px 14px; margin:0 0 12px; overflow-x:auto}
+  padding:12px 14px; margin:0 0 12px; overflow-x:auto;
+  font-family:var(--mono); font-size:12.5px; line-height:1.25; color:var(--text-2); white-space:pre}
 .prompt pre code{font-size:13px; line-height:1.5; color:var(--text-2); white-space:pre}
 code,.mono{font-family:var(--mono); color:var(--blue-text)}
+
+/* #visual-aids — comparison tables + callout/box containers */
+.prompt table{width:100%; border-collapse:collapse; margin:0 0 12px; font-size:13px;
+  background:var(--glass-inner); border-radius:10px; overflow:hidden}
+.prompt th,.prompt td{padding:8px 10px; text-align:left; border:1px solid var(--border-field);
+  line-height:1.4; vertical-align:top}
+.prompt th{font-weight:700; color:var(--text); background:rgba(124,106,255,.10)}
+.prompt td{color:var(--text-2)}
+.prompt .callout{background:rgba(124,106,255,.10); border:1px solid rgba(124,106,255,.30);
+  border-left:3px solid var(--purple); border-radius:10px; padding:11px 13px; margin:0 0 12px;
+  font-size:14px; line-height:1.55; color:var(--read)}
+.prompt .box{background:var(--glass-inner); border:1px solid var(--border-field);
+  border-radius:10px; padding:11px 13px; margin:0 0 12px; font-size:14px; line-height:1.55; color:var(--read)}
 
 /* quiz option row */
 .opt{display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:13px 14px; border-radius:14px;

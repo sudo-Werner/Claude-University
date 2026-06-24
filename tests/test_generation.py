@@ -39,6 +39,43 @@ def test_sanitize_html_still_blocks_dangerous_markup():
     assert "<p>" not in out
 
 
+def test_sanitize_html_allows_table_family():
+    src = ("<table><thead><tr><th>Approach</th><th>Knowledge</th></tr></thead>"
+           "<tbody><tr><td>Rules</td><td>hand-written</td></tr></tbody></table>")
+    out = gen.sanitize_html(src)
+    for tag in ("<table>", "</table>", "<thead>", "<tbody>", "<tr>", "</tr>",
+                "<th>", "</th>", "<td>", "</td>"):
+        assert tag in out, tag
+
+
+def test_sanitize_html_allows_callout_and_box_divs():
+    out = gen.sanitize_html('<div class="callout"><strong>Key</strong> idea</div>'
+                            '<div class="box">framed</div>')
+    assert '<div class="callout">' in out
+    assert '<div class="box">' in out
+    assert "</div>" in out
+    assert "<strong>Key</strong>" in out
+
+
+def test_sanitize_html_blocks_unlisted_div_classes_and_attributes():
+    # Default-deny holds for the new tags: arbitrary classes, attribute-bearing
+    # divs, and attribute-bearing table cells stay escaped/inert.
+    out = gen.sanitize_html(
+        '<div class="evil">x</div>'
+        '<div onclick="x()" class="callout">y</div>'
+        '<div class="callout" onmouseover="x">z</div>'
+        '<td onclick="x()">c</td>'
+        '<table onload="x">t</table>'
+    )
+    assert '<div class="evil"' not in out      # unlisted class not restored
+    assert "<div onclick" not in out            # attribute-bearing div stays escaped
+    assert '<div class="callout" onmouseover' not in out
+    assert "<td onclick" not in out
+    assert "<table onload" not in out
+    # the escaped forms are present as inert text (proof they were NOT restored)
+    assert "&lt;div class=&quot;evil&quot;&gt;" in out
+
+
 def test_sanitize_html_does_not_double_escape_entities():
     # The generator writes HTML, so it escapes its own code: `<` -> `&lt;`.
     # We must NOT re-escape that into `&amp;lt;` (which renders as literal "&lt;").
@@ -565,3 +602,13 @@ def test_lesson_prompt_has_readability_style_guidance():
     assert "encouraging" in low             # warm, specific check feedback
     assert "<strong>" in p                  # bold the key term (chunking/scannability)
     assert "short" in low                   # short paragraphs/sentences
+
+
+def test_lesson_prompt_has_visual_aid_guidance():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="c-l1", lesson_title="L",
+                          module_title="M", position=1, total=3)
+    low = p.lower()
+    assert "<table>" in p                       # comparison tables offered
+    assert 'class="callout"' in p               # the exact callout container
+    assert "decorative" in low                  # anti-decoration guardrail
+    assert "<pre>" in p                         # diagrams in pre
