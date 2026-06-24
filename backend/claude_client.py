@@ -5,7 +5,10 @@ import tempfile
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/home/werner/.local/bin/claude")
-_TIMEOUT = 120
+# A rich lesson — especially a "go deeper" regeneration that asks for fundamentals +
+# a worked example + a visual aid — legitimately takes ~110s via the Max CLI (measured
+# 114s on the Pi). 120s was too tight and timed out mid-generation. Give 2x headroom.
+_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "240"))
 
 
 class ClaudeError(Exception):
