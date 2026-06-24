@@ -99,6 +99,20 @@ def test_routes_reject_illegal_ids(client):
     assert client.get("/api/courses/machine-learning/lessons/..%2fsecret").status_code == 404
 
 
+def test_get_course_includes_mastery(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"
+    root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _fixture_course(courses, root)
+    resp = client.get(f"/api/courses/{manifest['id']}")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert "mastery" in body
+    assert "masteryCounts" in body
+    assert set(body["masteryCounts"].keys()) == {"attempted", "familiar", "proficient", "mastered"}
+
+
 def test_reviews_endpoint_lists_due(client, tmp_path, monkeypatch):
     from backend import courses, events, db
     root = tmp_path / "courses"

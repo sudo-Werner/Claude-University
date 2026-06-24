@@ -116,6 +116,7 @@ export async function init({ window, fetch }) {
       lessonsTotal: p.total,
       reviewsDue: ui.summary ? ui.summary.reviewsDue : 0,
       streakDays: STREAK_DAYS,
+      masteryCounts: (ui.manifest && ui.manifest.masteryCounts) || {},
     };
   }
 

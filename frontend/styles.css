@@ -117,6 +117,14 @@ body{margin:0; background:#f1e7d6}
 .bar>i{display:block; height:100%; border-radius:999px; background:var(--grad)}
 .stat-note{font-size:12px; color:var(--text-mut)}
 
+.mastery{background:var(--glass-stat); backdrop-filter:blur(22px) saturate(1.5); -webkit-backdrop-filter:blur(22px) saturate(1.5);
+  border:1px solid rgba(255,255,255,.62); border-radius:var(--r-lg); padding:14px 16px; box-shadow:var(--sh-stat)}
+.m-label{font-size:11px; font-weight:700; letter-spacing:.09em; color:var(--text-mut); text-transform:uppercase; margin-bottom:10px}
+.m-row{display:flex; flex-wrap:wrap; gap:8px}
+.m-item{font-size:12px; color:var(--text-2); background:rgba(255,255,255,.55); border:1px solid rgba(255,255,255,.7);
+  border-radius:999px; padding:3px 10px}
+.m-item b{font-weight:700; color:var(--text); margin-right:3px}
+
 .streak-strip{display:flex; align-items:center; gap:12px; border-radius:18px; padding:14px 16px; font-size:13px; color:var(--text-2);
   background:rgba(255,250,242,.5); backdrop-filter:blur(18px) saturate(1.4); -webkit-backdrop-filter:blur(18px) saturate(1.4);
   border:1px solid rgba(255,255,255,.55); box-shadow:0 1px 0 rgba(255,255,255,.6) inset}

@@ -255,3 +255,37 @@ def test_ensure_lesson_sanitizes_check_html(tmp_path):
     assert "<img" not in chk["prompt"] and "&lt;img" in chk["prompt"]   # unsafe escaped
     assert "<code>fine</code>" in chk["explanation"]                     # allowlisted kept
     assert "<b>a</b>" not in chk["choices"][0] and "&lt;b&gt;a" in chk["choices"][0]
+
+
+def test_lesson_prompt_includes_performance_when_given():
+    p = gen.lesson_prompt(
+        brief="b", profile={}, lesson_id="x-l1", lesson_title="T",
+        module_title="M", position=2, total=3,
+        performance="The learner is performing strongly — go deeper.",
+    )
+    assert "Learner performance so far:" in p
+    assert "performing strongly" in p
+
+
+def test_lesson_prompt_omits_performance_when_empty():
+    p = gen.lesson_prompt(
+        brief="b", profile={}, lesson_id="x-l1", lesson_title="T",
+        module_title="M", position=1, total=1,
+    )
+    assert "Learner performance so far:" not in p
+
+
+def test_ensure_lesson_forwards_performance(tmp_path):
+    root = _course(tmp_path)
+    captured = {}
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["checks"] = [dict(_OK_CHECK)]
+
+    def fake_generate(prompt):
+        captured["prompt"] = prompt
+        return dict(made)
+
+    gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=fake_generate,
+                      performance="The learner has been struggling — slow down.")
+    assert "Learner performance so far:" in captured["prompt"]
+    assert "struggling" in captured["prompt"]
