@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, loadReviews } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -63,4 +63,23 @@ test("loadReviews returns the due array", async () => {
 
 test("loadReviews returns [] on non-ok", async () => {
   assert.deepEqual(await loadReviews({ fetch: async () => ({ ok: false, status: 500 }), courseId: "c" }), []);
+});
+
+test("gradeAnswer posts the answer and returns the verdict", async () => {
+  let url, opts;
+  const fetch = async (u, o) => {
+    url = u; opts = o;
+    return { ok: true, json: async () => ({ verdict: "correct", note: "Spot on." }) };
+  };
+  const r = await gradeAnswer({ fetch, courseId: "c", lessonId: "c-l1", answer: "42" });
+  assert.equal(url, "/api/courses/c/lessons/c-l1/grade");
+  assert.equal(opts.method, "POST");
+  assert.deepEqual(JSON.parse(opts.body), { answer: "42" });
+  assert.equal(r.verdict, "correct");
+});
+
+test("gradeAnswer returns an error shape on non-ok", async () => {
+  const fetch = async () => ({ ok: false, status: 502, json: async () => ({ error: "down" }) });
+  const r = await gradeAnswer({ fetch, courseId: "c", lessonId: "c-l1", answer: "x" });
+  assert.equal(r.error, "down");
 });

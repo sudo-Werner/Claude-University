@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer } from "./courses.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
@@ -225,6 +225,23 @@ export async function init({ window, fetch }) {
       if (!ui.lessonState.solutionRevealed)
         log("solution_revealed", { courseId: ui.courseId, topicId: ui.lesson.id });
       ui.lessonState.solutionRevealed = true;
+      paintLesson();
+    });
+    // #4: Claude grades the typed answer on demand (decoupled from reveal, so the
+    // learner can check, revise, and re-check before giving up). Transient — not
+    // logged. Capture lessonState identity + screen so a result that lands after
+    // the learner has navigated away is discarded rather than painted over.
+    const checkBtn = view.querySelector('[data-action="check-answer"]');
+    if (checkBtn) checkBtn.addEventListener("click", async () => {
+      const answer = ui.lessonState.answer.trim();
+      if (!answer || ui.lessonState.grading) return;
+      ui.lessonState.grading = true;
+      paintLesson();
+      const lessonState = ui.lessonState;
+      const grade = await gradeAnswer({ fetch, courseId: ui.courseId, lessonId: ui.lesson.id, answer });
+      if (ui.lessonState !== lessonState || ui.screen !== "lesson") return;
+      lessonState.grading = false;
+      lessonState.grade = grade;
       paintLesson();
     });
     view.querySelector('[data-action="back"]').addEventListener("click", showCourse);

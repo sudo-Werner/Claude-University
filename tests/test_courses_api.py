@@ -154,3 +154,53 @@ def test_reviews_endpoint_lists_due(client, tmp_path, monkeypatch):
     listed = client.get("/api/courses").get_json()["courses"]
     found = next(c for c in listed if c["id"] == manifest["id"])
     assert found["reviewsDue"] == 1
+
+
+def test_grade_endpoint_returns_verdict(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "run_structured",
+                        lambda prompt, **kw: {"verdict": "close", "note": "Good start; tighten X."})
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/grade",
+                       json={"answer": "my attempt"})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["verdict"] == "close"
+    assert "tighten" in body["note"].lower()
+
+
+def test_grade_endpoint_rejects_empty_answer(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/grade", json={"answer": "   "})
+    assert resp.status_code == 400
+
+
+def test_grade_endpoint_missing_lesson_404(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    resp = client.post(f"/api/courses/{cid}/lessons/nope/grade", json={"answer": "x"})
+    assert resp.status_code == 404
+
+
+def test_grade_endpoint_reauth_on_auth_error(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    def boom(prompt, **kw):
+        raise claude_client.ClaudeAuthError("Invalid API key")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/grade", json={"answer": "x"})
+    assert resp.status_code == 503
+    assert resp.get_json().get("code") == "reauth"

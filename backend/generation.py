@@ -123,6 +123,50 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
     )
 
 
+# ---- #4 answer grading: Claude judges the learner's typed free-text answer ----
+
+_GRADE_VERDICTS = ("correct", "close", "incorrect")
+
+
+def valid_grade(obj):
+    if not isinstance(obj, dict) or obj.get("verdict") not in _GRADE_VERDICTS:
+        return False
+    note = obj.get("note")
+    return isinstance(note, str) and bool(note.strip())
+
+
+def grade_prompt(*, prompt_html, solution_ans, solution_note, answer):
+    return (
+        "You are a warm, honest tutor grading a learner's free-text answer to one "
+        "exercise on their personal learning platform. Judge understanding, not wording.\n\n"
+        f"Exercise (HTML): {prompt_html}\n"
+        f"Reference answer: {solution_ans}\n"
+        f"Why it is right: {solution_note}\n"
+        f"Learner's answer: {answer}\n\n"
+        "Decide whether the learner's answer is correct, close (right idea, a gap or "
+        "error), or incorrect. Reply with ONLY a JSON object, no prose, no fence:\n"
+        '{"verdict":"correct"|"close"|"incorrect","note":"<one or two encouraging '
+        "sentences addressed to 'you': what you got right, then the single most "
+        'important thing to fix or add>"}'
+    )
+
+
+def grade_answer(content_dir, course_id, lesson_id, answer, *, generate):
+    lesson = courses.load_lesson(content_dir, course_id, lesson_id)
+    if lesson is None:
+        return None
+    prompt = grade_prompt(
+        prompt_html=lesson.get("promptHtml", ""),
+        solution_ans=lesson.get("solutionAns", ""),
+        solution_note=lesson.get("solutionNote", ""),
+        answer=answer,
+    )
+    result = generate(prompt)
+    if not isinstance(result, dict):
+        raise claude_client.ClaudeError("grader returned a non-dict result")
+    return {"verdict": result["verdict"], "note": sanitize_html(result["note"])}
+
+
 def build_chat_prompt(messages, profile):
     lines = [COURSE_SYSTEM_PROMPT, "", f"Learner preferences (JSON): {json.dumps(profile or {})}", ""]
     for m in messages:

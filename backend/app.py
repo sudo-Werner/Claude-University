@@ -140,6 +140,27 @@ def create_app(db_path=None):
             return jsonify({"error": "lesson not found"}), 404
         return jsonify(lesson)
 
+    @app.post("/api/courses/<course_id>/lessons/<lesson_id>/grade")
+    def grade_lesson(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
+        body = request.get_json(silent=True) or {}
+        answer = (body.get("answer") or "").strip()
+        if not answer:
+            return jsonify({"error": "answer is required"}), 400
+        generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_grade)
+        try:
+            result = generation.grade_answer(
+                courses.CONTENT_DIR, course_id, lesson_id, answer, generate=generate,
+            )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not grade this answer"}), 502
+        if result is None:
+            return jsonify({"error": "lesson not found"}), 404
+        return jsonify(result)
+
     @app.get("/api/courses/<course_id>/reviews")
     def get_reviews(course_id):
         if not _ID_RE.match(course_id):

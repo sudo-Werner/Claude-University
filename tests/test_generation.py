@@ -343,3 +343,57 @@ def test_chat_sse_emits_reauth_on_auth_error():
     evs = _events(chunks)
     msg = [d for (e, d) in evs if e == "error"]
     assert msg and ("re-authenticate" in msg[0].lower() or "log in" in msg[0].lower())
+
+
+# ---- #4 answer grading ----
+
+def test_valid_grade_accepts_known_verdicts():
+    for v in ("correct", "close", "incorrect"):
+        assert gen.valid_grade({"verdict": v, "note": "good effort"}) is True
+
+
+def test_valid_grade_rejects_bad_shape():
+    assert gen.valid_grade({"verdict": "maybe", "note": "x"}) is False
+    assert gen.valid_grade({"verdict": "correct", "note": "  "}) is False
+    assert gen.valid_grade({"note": "no verdict"}) is False
+    assert gen.valid_grade("nope") is False
+
+
+def test_grade_prompt_includes_answer_and_reference():
+    p = gen.grade_prompt(prompt_html="<p>What is 2+2?</p>", solution_ans="4",
+                         solution_note="addition", answer="four-ish")
+    assert "What is 2+2?" in p
+    assert "4" in p
+    assert "four-ish" in p
+    assert "JSON" in p
+
+
+def test_grade_answer_returns_verdict_and_sanitizes_note(tmp_path):
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "T", "subtitle": "s", "brief": "b",
+                                "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]; lid = manifest["modules"][0]["lessons"][0]["id"]
+    lesson = {"id": lid, "courseId": cid, "topic": "t", "step": 1, "totalSteps": 1,
+              "eyebrow": "EXERCISE", "promptHtml": "<p>q</p>", "hintHtml": "h",
+              "solutionAns": "a", "solutionNote": "n", "checks": [dict(_OK_CHECK)]}
+    (root / cid / "lessons" / f"{lid}.json").write_text(_json.dumps(lesson))
+
+    captured = {}
+    def fake_generate(prompt):
+        captured["prompt"] = prompt
+        return {"verdict": "close", "note": "Nice <script>alert(1)</script> try"}
+
+    result = gen.grade_answer(root, cid, lid, "my answer", generate=fake_generate)
+    assert result["verdict"] == "close"
+    assert "<script" not in result["note"]
+    assert "my answer" in captured["prompt"]
+
+
+def test_grade_answer_missing_lesson_returns_none(tmp_path):
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "T", "subtitle": "s", "brief": "b",
+                                "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]
+    assert gen.grade_answer(root, cid, "no-such-lesson", "x", generate=lambda p: {}) is None

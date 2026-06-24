@@ -21,6 +21,20 @@ export async function loadLesson({ fetch, courseId, lessonId }) {
   return resp.json();
 }
 
+export async function gradeAnswer({ fetch, courseId, lessonId, answer }) {
+  const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/grade`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ answer }),
+  });
+  if (!resp.ok) {
+    let message = "Couldn't check your answer right now.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}
+
 export async function loadReviews({ fetch, courseId }) {
   const resp = await fetch(`/api/courses/${courseId}/reviews`);
   if (!resp.ok) return [];

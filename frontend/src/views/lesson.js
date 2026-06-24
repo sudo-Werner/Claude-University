@@ -1,5 +1,6 @@
 import { solutionState } from "../reveal.js";
 import { checksHTML } from "./checks.js";
+import { esc } from "../escape.js";
 
 const BULB = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0012 3z" stroke="#e0892f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const LOCK = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 11V8a4 4 0 018 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
@@ -12,6 +13,26 @@ const REVEAL_TEXT = {
   shown: "Solution shown",
 };
 const HINT_TEXT = { true: "Hide hint", false: "Show hint" };
+
+// #4 — Claude's verdict on the learner's typed answer. Warm, specific microcopy
+// (research: empathetic feedback beats "Wrong").
+const GRADE_LABEL = { correct: "Correct", close: "Almost there", incorrect: "Not quite" };
+
+function gradeBlock(state) {
+  if (state.grading) {
+    return `<div class="grade grade-loading" aria-live="polite">
+        <span class="grade-spin"></span><span>Checking your answer…</span>
+      </div>`;
+  }
+  const g = state.grade;
+  if (!g) return "";
+  if (g.error) return `<div class="grade grade-soft">${esc(g.error)}</div>`;
+  const v = GRADE_LABEL[g.verdict] ? g.verdict : "close";
+  return `<div class="grade grade-${v}" aria-live="polite">
+      <div class="grade-verdict">${GRADE_LABEL[v]}</div>
+      <div class="grade-note">${g.note || ""}</div>
+    </div>`;
+}
 
 export function lessonHTML(lesson, state, nav = {}) {
   const segs = Array.from({ length: lesson.totalSteps }, (_, i) => {
@@ -45,7 +66,9 @@ export function lessonHTML(lesson, state, nav = {}) {
       <span class="eyebrow">${lesson.eyebrow}</span>
       <div class="prompt">${lesson.promptHtml}</div>
       <textarea data-field="answer" placeholder="Write your update here…" style="min-height:64px; margin:12px 0">${state.answer}</textarea>
-      <button class="hint-toggle" data-action="toggle-hint" style="margin-bottom:10px">${BULB}<span style="flex:1">${HINT_TEXT[state.hintVisible]}</span></button>
+      <button class="check-answer" data-action="check-answer"${state.answer.trim() && !state.grading ? "" : " disabled"}>${state.grade && !state.grade.error ? "Check again" : "Check my answer"}</button>
+      ${gradeBlock(state)}
+      <button class="hint-toggle" data-action="toggle-hint" style="margin:10px 0">${BULB}<span style="flex:1">${HINT_TEXT[state.hintVisible]}</span></button>
       ${hint}
       <button class="reveal ${sol}" data-action="reveal-solution">${LOCK}<span style="flex:1">${REVEAL_TEXT[sol]}</span></button>
       ${solutionPanel}

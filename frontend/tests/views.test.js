@@ -71,6 +71,47 @@ test("lesson shows the solution panel once revealed", () => {
   assert.match(html, /<div class="hint"/); // hint panel visible
 });
 
+test("lesson enables Check my answer once there is an answer", () => {
+  const empty = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.match(empty, /data-action="check-answer"[^>]*disabled/);
+  const answered = lessonHTML(SAMPLE_LESSON, { answer: "w - 0.04", hintVisible: false, solutionRevealed: false });
+  assert.match(answered, /data-action="check-answer"(?![^>]*disabled)/);
+});
+
+test("grading works independently of revealing the solution", () => {
+  // The grade banner appears from grading state alone — no reveal required.
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "w - 0.04", hintVisible: false, solutionRevealed: false, grading: true });
+  assert.match(html, /grade-loading/);
+  assert.match(html, /Checking your answer/);
+  assert.doesNotMatch(html, /class="solution"/); // solution still hidden
+});
+
+test("lesson renders the verdict banner once graded", () => {
+  const html = lessonHTML(SAMPLE_LESSON, {
+    answer: "w - 0.04", hintVisible: false, solutionRevealed: false,
+    grade: { verdict: "close", note: "Right idea; mind the sign." },
+  });
+  assert.match(html, /grade-close/);
+  assert.match(html, /Almost there/);
+  assert.match(html, /mind the sign/);
+  assert.match(html, />Check again</); // button invites a re-check
+});
+
+test("lesson grade banner escapes an error message (no raw HTML)", () => {
+  const html = lessonHTML(SAMPLE_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: false,
+    grade: { error: "<img src=x onerror=alert(1)>" },
+  });
+  assert.match(html, /grade-soft/);
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.match(html, /&lt;img/);
+});
+
+test("lesson shows no grade banner before checking", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: false });
+  assert.doesNotMatch(html, /class="grade /);
+});
+
 test("diagnostic renders all six questions and gates Continue", () => {
   const none = diagnosticHTML({});
   assert.equal((none.match(/data-q="/g) || []).length >= 6, true);

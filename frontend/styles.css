@@ -182,6 +182,25 @@ textarea::placeholder{color:#b3a994}
 .solution .ans{font:15px var(--mono); color:#13633f; margin-bottom:6px}
 .solution .note{font-family:var(--serif); font-size:14px; line-height:1.55; color:var(--text-2)}
 
+/* #4 check-answer button + grade banner — Claude's verdict on the typed answer */
+.check-answer{width:100%; padding:11px; border-radius:var(--r-sm); cursor:pointer; font:600 14px/1 inherit;
+  border:1px solid rgba(124,106,255,.38); background:rgba(124,106,255,.12); color:var(--purple-deep); transition:background .15s}
+.check-answer:hover:not(:disabled){background:rgba(124,106,255,.2)}
+.check-answer:disabled{opacity:.5; cursor:default}
+.grade{border-radius:13px; padding:12px 14px; margin-top:10px; border:1px solid transparent}
+.grade-verdict{font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; margin-bottom:5px}
+.grade-note{font-family:var(--serif); font-size:14px; line-height:1.55; color:var(--text-2)}
+.grade-correct{background:rgba(37,180,120,.15); border-color:rgba(37,180,120,.38)}
+.grade-correct .grade-verdict{color:#1c8c5c}
+.grade-close{background:rgba(255,184,100,.18); border-color:rgba(224,160,80,.42)}
+.grade-close .grade-verdict{color:#a05c12}
+.grade-incorrect{background:rgba(208,0,102,.10); border-color:rgba(208,0,102,.28)}
+.grade-incorrect .grade-verdict{color:#a0064e}
+.grade-soft{background:var(--glass-inner); border-color:var(--border-field); font-size:13px; color:var(--text-dim)}
+.grade-loading{background:var(--glass-inner); border-color:var(--border-field); display:flex; align-items:center; gap:9px; font-size:13px; color:var(--text-dim)}
+.grade-spin{width:14px; height:14px; border-radius:50%; border:2px solid rgba(124,106,255,.3); border-top-color:var(--purple); animation:grade-spin .7s linear infinite; flex:none}
+@keyframes grade-spin{to{transform:rotate(360deg)}}
+
 /* lesson nav */
 .nav{display:flex; gap:10px; align-items:center}
 .nav .btn-primary{flex:1; width:auto; padding:15px 20px}
