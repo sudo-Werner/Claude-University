@@ -9,7 +9,7 @@ const DASHBOARD_SEED = {
   topic: "Backpropagation, intuitively",
   sub: "Module 3 · Neural Networks · Lesson 2",
   durationMin: 90, progressPct: 30, lessonsDone: 12, lessonsTotal: 40,
-  reviewsDue: 8, streakDays: 12,
+  reviewsDue: 8,
 };
 const SAMPLE_LESSON = {
   step: 4, totalSteps: 5, topic: "Backpropagation", eyebrow: "EXERCISE",
@@ -118,7 +118,7 @@ test("lesson renders the checks section once the solution is revealed", () => {
 test("dashboard shows a mastery breakdown when there is mastery data", () => {
   const html = dashboardHTML(
     { topic: "T", sub: "S", durationMin: 90, progressPct: 50, lessonsDone: 2,
-      lessonsTotal: 4, reviewsDue: 0, streakDays: 0,
+      lessonsTotal: 4, reviewsDue: 0,
       masteryCounts: { attempted: 1, familiar: 0, proficient: 1, mastered: 0 } },
     { fills: [0,0,0], activePhaseIndex: 0, statusLabel: "", clock: "" },
   );
@@ -129,7 +129,7 @@ test("dashboard shows a mastery breakdown when there is mastery data", () => {
 test("dashboard omits the mastery breakdown when all counts are zero", () => {
   const html = dashboardHTML(
     { topic: "T", sub: "S", durationMin: 90, progressPct: 0, lessonsDone: 0,
-      lessonsTotal: 4, reviewsDue: 0, streakDays: 0,
+      lessonsTotal: 4, reviewsDue: 0,
       masteryCounts: { attempted: 0, familiar: 0, proficient: 0, mastered: 0 } },
     { fills: [0,0,0], activePhaseIndex: 0, statusLabel: "", clock: "" },
   );
