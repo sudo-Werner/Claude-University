@@ -612,3 +612,65 @@ def test_lesson_prompt_has_visual_aid_guidance():
     assert 'class="callout"' in p               # the exact callout container
     assert "decorative" in low                  # anti-decoration guardrail
     assert "<pre>" in p                         # diagrams in pre
+
+
+# ---- accredited sources / course Library (Phase 1) ----
+
+def test_source_type_from_domain():
+    assert gen.source_type("https://cs231n.stanford.edu/slides/lecture_4.pdf") == "university"
+    assert gen.source_type("https://www.cl.cam.ac.uk/teaching/x") == "university"
+    assert gen.source_type("https://arxiv.org/abs/1404.7828") == "peer-reviewed"
+    assert gen.source_type("https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4863083/") == "peer-reviewed"
+    assert gen.source_type("https://link.springer.com/content/pdf/x.pdf") == "textbook"
+    assert gen.source_type("https://pytorch.org/docs/stable/notes/autograd.html") == "official-docs"
+    assert gen.source_type("https://someblog.example.com/post") == "reference"
+
+
+def test_valid_bibliography_shape():
+    ok = {"sources": [
+        {"title": "A", "url": "https://arxiv.org/abs/1", "note": "n"},
+        {"title": "B", "url": "https://mit.edu/x", "note": "n"},
+        {"title": "C", "url": "https://pytorch.org/docs", "note": "n"}]}
+    assert gen.valid_bibliography(ok) is True
+    assert gen.valid_bibliography({"sources": [{"title": "A", "url": "https://x", "note": "n"}] * 1}) is False  # too few
+    assert gen.valid_bibliography({"sources": [{"title": "", "url": "https://a", "note": "n"}] * 3}) is False
+    assert gen.valid_bibliography({"sources": [{"title": "A", "url": "ftp://a", "note": "n"}] * 3}) is False  # not http(s)
+    assert gen.valid_bibliography("nope") is False
+
+
+def test_bibliography_prompt_asks_for_accredited_web_sources():
+    p = gen.bibliography_prompt(title="Intro ML", brief="beginner", module_titles=["Basics", "Neural nets"])
+    low = p.lower()
+    assert "intro ml" in low
+    assert "web search" in low or "search the web" in low
+    assert "accredited" in low or "authoritative" in low
+    assert "Basics" in p
+
+
+def test_ensure_bibliography_filters_to_really_retrieved_urls(tmp_path):
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "T", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]
+    # captured = what search really returned; the model also cites a URL NOT retrieved -> dropped
+    captured = [
+        {"title": "Stanford CS231n", "url": "https://cs231n.stanford.edu/"},
+        {"title": "arXiv survey", "url": "https://arxiv.org/abs/1404.7828"}]
+    model_obj = {"sources": [
+        {"title": "Stanford CS231n <script>x</script>", "url": "https://cs231n.stanford.edu/", "note": "course"},
+        {"title": "arXiv survey", "url": "https://arxiv.org/abs/1404.7828", "note": "overview"},
+        {"title": "Made-up", "url": "https://not-retrieved.example.com/x", "note": "hallucinated"}]}
+    def fake_sourced(prompt):
+        return model_obj, captured
+    lib = gen.ensure_bibliography(root, cid, generate_sourced=fake_sourced)
+    urls = [s["url"] for s in lib["sources"]]
+    assert "https://not-retrieved.example.com/x" not in urls   # dropped: not really retrieved
+    assert "https://cs231n.stanford.edu/" in urls and "https://arxiv.org/abs/1404.7828" in urls
+    types = {s["url"]: s["type"] for s in lib["sources"]}
+    assert types["https://cs231n.stanford.edu/"] == "university"
+    assert types["https://arxiv.org/abs/1404.7828"] == "peer-reviewed"
+    assert "<script" not in lib["sources"][0]["title"]          # title sanitized
+    # cached: second call returns without regenerating
+    lib2 = gen.ensure_bibliography(root, cid, generate_sourced=lambda p: (_ for _ in ()).throw(AssertionError("regen")))
+    assert lib2["courseId"] == cid

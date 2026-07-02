@@ -7,6 +7,7 @@ import { diagnosticHTML } from "../src/views/diagnostic.js";
 import { curriculumHTML, lessonStatus, moduleProgress } from "../src/views/curriculum.js";
 import { capstoneHTML } from "../src/views/capstone.js";
 import { loadingHTML, LESSON_STAGES, CAPSTONE_STAGES } from "../src/views/loading.js";
+import { libraryHTML } from "../src/views/library.js";
 const DASHBOARD_SEED = {
   topic: "Backpropagation, intuitively",
   sub: "Module 3 · Neural Networks · Lesson 2",
@@ -133,6 +134,26 @@ test("loadingHTML renders a skeleton and the first status message", () => {
   assert.match(html, /load-msg/);
   assert.match(html, /Reading the topic/);          // first staged message
   assert.ok(LESSON_STAGES.length >= 3 && CAPSTONE_STAGES.length >= 3);
+});
+
+test("libraryHTML groups sources by type with badges and real links", () => {
+  const lib = { courseId: "c", title: "Intro ML", sources: [
+    { title: "Stanford CS231n", url: "https://cs231n.stanford.edu/", type: "university", note: "course notes" },
+    { title: "arXiv survey", url: "https://arxiv.org/abs/1404.7828", type: "peer-reviewed", note: "overview" },
+  ] };
+  const html = libraryHTML(lib);
+  assert.match(html, /Library/);
+  assert.match(html, /University/);
+  assert.match(html, /Peer-reviewed/);
+  assert.match(html, /href="https:\/\/cs231n\.stanford\.edu\/"[^>]*target="_blank"/);
+  assert.match(html, /rel="noopener noreferrer"/);
+  assert.match(html, /src-university/);
+  assert.match(html, /data-action="back"/);
+});
+
+test("libraryHTML handles an empty source list", () => {
+  const html = libraryHTML({ courseId: "c", title: "X", sources: [] });
+  assert.match(html, /No accredited sources/);
 });
 
 test("diagnostic renders all six questions and gates Continue", () => {

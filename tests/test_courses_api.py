@@ -310,3 +310,45 @@ def test_capstone_endpoint_reauth(client, tmp_path, monkeypatch):
     resp = client.get(f"/api/courses/{cid}/capstone/{mid}")
     assert resp.status_code == 503
     assert resp.get_json().get("code") == "reauth"
+
+
+def test_library_endpoint_returns_filtered_sources(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    captured = [{"title": "arXiv", "url": "https://arxiv.org/abs/1404.7828"}]
+    obj = {"sources": [
+        {"title": "arXiv", "url": "https://arxiv.org/abs/1404.7828", "note": "survey"},
+        {"title": "Fake", "url": "https://nope.example.com/x", "note": "hallucinated"}]}
+    monkeypatch.setattr(claude_client, "run_sourced", lambda prompt, **kw: (obj, captured))
+    resp = client.get(f"/api/courses/{cid}/library")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    urls = [s["url"] for s in body["sources"]]
+    assert "https://arxiv.org/abs/1404.7828" in urls
+    assert "https://nope.example.com/x" not in urls
+    assert body["sources"][0]["type"] == "peer-reviewed"
+
+
+def test_library_endpoint_reauth(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    def boom(prompt, **kw):
+        raise claude_client.ClaudeAuthError("Invalid API key")
+    monkeypatch.setattr(claude_client, "run_sourced", boom)
+    resp = client.get(f"/api/courses/{cid}/library")
+    assert resp.status_code == 503
+    assert resp.get_json().get("code") == "reauth"
+
+
+def test_library_endpoint_404_unknown_course(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    resp = client.get("/api/courses/no-such-course/library")
+    assert resp.status_code == 404

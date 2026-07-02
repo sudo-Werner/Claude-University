@@ -116,3 +116,55 @@ def test_stream_raises_auth_error_on_401_line():
     line = json.dumps({"type": "result", "api_error_status": 401, "result": "Invalid API key"})
     with pytest.raises(cc.ClaudeAuthError):
         list(cc.stream("hi", spawn=lambda args: iter([line])))
+
+
+# ---- run_sourced: web-search generation that captures real {title,url} + final JSON ----
+
+def _sourced_lines():
+    return [
+        json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "server_tool_use", "name": "WebSearch", "input": {"query": "backprop"}}]}}),
+        json.dumps({"type": "user", "message": {"content": [
+            {"type": "web_search_tool_result", "content": [
+                {"type": "web_search_result", "title": "Stanford CS231n", "url": "https://cs231n.stanford.edu/"},
+                {"type": "web_search_result", "title": "Deep Learning survey", "url": "https://arxiv.org/abs/1404.7828"}]}]}}),
+        json.dumps({"type": "result",
+                    "result": '{"sources":[{"title":"Deep Learning survey","url":"https://arxiv.org/abs/1404.7828","note":"n"}]}'}),
+    ]
+
+
+def test_run_sourced_captures_sources_and_parses_result():
+    obj, sources = cc.run_sourced("p", spawn=lambda args: iter(_sourced_lines()))
+    assert obj["sources"][0]["url"] == "https://arxiv.org/abs/1404.7828"
+    urls = {s["url"] for s in sources}
+    assert "https://cs231n.stanford.edu/" in urls
+    assert "https://arxiv.org/abs/1404.7828" in urls
+    assert all("title" in s and "url" in s for s in sources)
+
+
+def test_run_sourced_enables_web_search_tools():
+    seen = {}
+    def spawn(args):
+        seen["args"] = args
+        return iter(_sourced_lines())
+    cc.run_sourced("p", spawn=spawn)
+    a = seen["args"]
+    assert "--allowedTools" in a and "WebSearch" in a and "WebFetch" in a
+    assert "stream-json" in a
+
+
+def test_run_sourced_applies_validator_and_retries():
+    attempts = iter([
+        [json.dumps({"type": "result", "result": "no json"})],
+        _sourced_lines(),
+    ])
+    def spawn(args):
+        return iter(next(attempts))
+    obj, sources = cc.run_sourced("p", validate=lambda o: "sources" in o, spawn=spawn)
+    assert "sources" in obj
+
+
+def test_run_sourced_raises_auth_error_on_401_line():
+    line = json.dumps({"api_error_status": 401, "result": "Invalid API key"})
+    with pytest.raises(cc.ClaudeAuthError):
+        cc.run_sourced("p", spawn=lambda args: iter([line]))

@@ -307,6 +307,132 @@ def ensure_capstone(content_dir, course_id, scope, profile, *, generate):
     return capstone
 
 
+# ---- accredited sources / course Library (Phase 1) ----
+# The teaching is grounded in REAL sources retrieved via web search. We display a source
+# only if the URL the model cites was actually in the captured search results, and we derive
+# the accreditation "type" from the domain (reliable) rather than trusting the model.
+
+_SOURCE_TYPE_RANK = ["university", "peer-reviewed", "textbook", "official-docs", "reference"]
+
+_UNIVERSITY = (".edu", ".edu.", ".ac.uk", ".ac.", "stanford.", "mit.", "berkeley.",
+               "cmu.", "ox.ac.uk", "cam.ac.uk", "harvard.", "princeton.", "ethz.ch")
+_PEER_REVIEWED = ("arxiv.org", "biorxiv.org", "ncbi.nlm.nih.gov", ".nih.gov", "hal.science",
+                  "hal.", "doi.org", "acm.org", "ieee.org", "nature.com", "sciencedirect.com",
+                  "jstor.org", "plos.org", "pubmed", "semanticscholar.org")
+_TEXTBOOK = ("link.springer.com", "springer.com", "oreilly.com", "cambridge.org", "oup.com",
+             "manning.com", "packtpub.com", "wiley.com", "taylorfrancis.com", "mitpress.")
+_OFFICIAL_DOCS = ("docs.", "python.org", "pytorch.org", "tensorflow.org", "scikit-learn.org",
+                  "developer.mozilla.org", "kubernetes.io", "readthedocs.io", "numpy.org",
+                  "pandas.pydata.org", "developer.")
+
+
+def _url_host(url):
+    m = _re.match(r"https?://([^/]+)", url.strip(), _re.I)
+    return m.group(1).lower() if m else ""
+
+
+def source_type(url):
+    host = _url_host(url)
+    if any(k in host for k in _UNIVERSITY):
+        return "university"
+    if any(k in host for k in _PEER_REVIEWED):
+        return "peer-reviewed"
+    if any(k in host for k in _TEXTBOOK):
+        return "textbook"
+    if any(k in host for k in _OFFICIAL_DOCS):
+        return "official-docs"
+    return "reference"
+
+
+def _norm_url(url):
+    u = str(url).strip().lower()
+    for p in ("https://", "http://"):
+        if u.startswith(p):
+            u = u[len(p):]
+            break
+    if u.startswith("www."):
+        u = u[4:]
+    return u.rstrip("/")
+
+
+def valid_bibliography(obj):
+    if not isinstance(obj, dict):
+        return False
+    sources = obj.get("sources")
+    if not (isinstance(sources, list) and 3 <= len(sources) <= 12):
+        return False
+    for s in sources:
+        if not isinstance(s, dict):
+            return False
+        if not (isinstance(s.get("title"), str) and s["title"].strip()):
+            return False
+        if not (isinstance(s.get("note"), str) and s["note"].strip()):
+            return False
+        url = s.get("url")
+        if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
+            return False
+    return True
+
+
+def bibliography_prompt(*, title, brief, module_titles):
+    mods = "; ".join(t for t in module_titles if t)
+    return (
+        f'You are the librarian for a personal university, compiling the reading list for a '
+        f'course titled "{title}".\n'
+        f"Course context: {brief}\n"
+        f"Modules covered: {mods}\n\n"
+        "Use web search to find the most authoritative, ACCREDITED sources on this subject — "
+        "university course material (.edu), peer-reviewed papers, official documentation, and "
+        "established textbooks. Prefer primary/authoritative sources over blogs. Only include a "
+        "source you actually found via search, with its real URL. Reply with ONLY a JSON object, "
+        "no prose, no fence:\n"
+        '{"sources":[{"title":"<the source title>","url":"<the exact URL from search>",'
+        '"note":"<one sentence on what it covers and why it is authoritative>"}]}'
+        " Provide 4 to 10 of the best sources."
+    )
+
+
+def ensure_bibliography(content_dir, course_id, *, generate_sourced):
+    path = Path(content_dir) / course_id / "library.json"
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except ValueError:
+            pass  # regenerate a corrupt cache
+    manifest = courses.load_manifest(content_dir, course_id)
+    if manifest is None:
+        return None
+    module_titles = [m.get("title", "") for m in manifest.get("modules", [])]
+    prompt = bibliography_prompt(
+        title=manifest.get("title", ""), brief=manifest.get("brief", ""),
+        module_titles=module_titles,
+    )
+    obj, captured = generate_sourced(prompt)
+    if not isinstance(obj, dict):
+        raise claude_client.ClaudeError("bibliography generator returned a non-dict result")
+    retrieved = {_norm_url(s.get("url", "")) for s in captured if isinstance(s, dict)}
+    kept = []
+    for s in obj.get("sources", []):
+        if not isinstance(s, dict):
+            continue
+        url = s.get("url", "")
+        if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
+            continue
+        if _norm_url(url) not in retrieved:
+            continue  # the trust guarantee: only show URLs the search actually returned
+        kept.append({
+            "title": sanitize_html(s.get("title", "")),
+            "url": url,
+            "type": source_type(url),
+            "note": sanitize_html(s.get("note", "")),
+        })
+    kept.sort(key=lambda s: _SOURCE_TYPE_RANK.index(s["type"]))
+    library = {"courseId": course_id, "title": manifest.get("title", ""), "sources": kept}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(library, indent=2, ensure_ascii=False))
+    return library
+
+
 def build_chat_prompt(messages, profile):
     lines = [COURSE_SYSTEM_PROMPT, "", f"Learner preferences (JSON): {json.dumps(profile or {})}", ""]
     for m in messages:

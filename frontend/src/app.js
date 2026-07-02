@@ -4,13 +4,14 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary } from "./courses.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
 import { lessonHTML } from "./views/lesson.js";
 import { curriculumHTML } from "./views/curriculum.js";
 import { capstoneHTML } from "./views/capstone.js";
+import { libraryHTML } from "./views/library.js";
 import { loadingHTML, LESSON_STAGES, DEEPEN_STAGES, CAPSTONE_STAGES } from "./views/loading.js";
 import { diagnosticHTML } from "./views/diagnostic.js";
 import { chatHTML } from "./views/chat.js";
@@ -152,6 +153,31 @@ export async function init({ window, fetch }) {
     view.querySelector('[data-action="review"]').addEventListener("click", startReviewSession);
     const cur = view.querySelector('[data-action="curriculum"]');
     if (cur) cur.addEventListener("click", showCurriculum);
+    const lib = view.querySelector('[data-action="library"]');
+    if (lib) lib.addEventListener("click", showLibrary);
+  }
+
+  // #accredited-sources — the course Library: real, web-retrieved accredited sources.
+  // Generated on first open (a web-search pass, ~50-60s), cached after.
+  async function showLibrary() {
+    pauseTimer();
+    ui.screen = "library";
+    root.innerHTML = shellHTML({ back: ui.manifest ? ui.manifest.title : "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
+    const view = root.querySelector("#view");
+    startLoading(view, "capstone", ["Searching for accredited sources…", "Checking universities & journals…", "Compiling the reading list…", "Almost ready…"]);
+    log("library_opened", { courseId: ui.courseId });
+    const library = await loadLibrary({ fetch, courseId: ui.courseId });
+    if (ui.screen !== "library") return;
+    if (!library || library.error) {
+      view.innerHTML =
+        `<div class="card"><div class="prompt">${esc((library && library.error) || "Couldn't load this right now.")}</div>` +
+        `<div class="nav"><button class="btn-back" data-action="back">Back</button></div></div>`;
+      view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
+      return;
+    }
+    view.innerHTML = libraryHTML(library);
+    view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
   }
 
   function showCourse() {

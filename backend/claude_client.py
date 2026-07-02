@@ -165,3 +165,51 @@ def stream(prompt, *, model=DEFAULT_MODEL, spawn=_spawn_cli):
         text = _extract_stream_text(line)
         if text:
             yield text
+
+
+def _collect_sources(obj, out, seen):
+    """Recursively harvest every {title, url} pair (web-search results) from a parsed
+    stream event. Broad on purpose — the caller filters to what the model actually cites,
+    so over-capturing real URLs is harmless; under-capturing would drop valid citations."""
+    if isinstance(obj, dict):
+        u, t = obj.get("url"), obj.get("title")
+        if (isinstance(u, str) and isinstance(t, str)
+                and u.startswith(("http://", "https://")) and u not in seen):
+            seen.add(u)
+            out.append({"title": t, "url": u})
+        for v in obj.values():
+            _collect_sources(v, out, seen)
+    elif isinstance(obj, list):
+        for v in obj:
+            _collect_sources(v, out, seen)
+
+
+def run_sourced(prompt, *, model=DEFAULT_MODEL, validate=None, spawn=_spawn_cli):
+    """Web-search-grounded structured generation. Runs the CLI with WebSearch/WebFetch
+    and stream-json, returning (parsed_final_json, captured_sources) where captured_sources
+    are the real {title, url} pairs retrieved from the actual search results."""
+    args_for = lambda p: [
+        "-p", p, "--allowedTools", "WebSearch", "WebFetch",
+        "--output-format", "stream-json", "--verbose", "--model", model,
+    ]
+    for attempt in range(2):
+        sources, seen, result_text = [], set(), ""
+        for line in spawn(args_for(prompt)):
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(ev, dict) and ev.get("api_error_status") in (401, 403):
+                raise ClaudeAuthError(ev.get("result") or "Claude authentication failed.")
+            _collect_sources(ev, sources, seen)
+            if isinstance(ev, dict) and ev.get("type") == "result" and ev.get("result"):
+                result_text = ev["result"]
+        obj = extract_json(result_text)
+        if obj is not None and (validate is None or validate(obj)):
+            return obj, sources
+        prompt = (
+            prompt
+            + "\n\nYour previous reply was not valid JSON matching the required shape. "
+            "Reply again with ONLY the JSON object, no prose, no code fence."
+        )
+    raise ClaudeError("sourced generation failed after retry")

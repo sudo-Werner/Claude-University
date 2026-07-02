@@ -35,6 +35,16 @@ export async function gradeAnswer({ fetch, courseId, lessonId, answer }) {
   return resp.json();
 }
 
+export async function loadLibrary({ fetch, courseId }) {
+  const resp = await fetch(`/api/courses/${courseId}/library`);
+  if (!resp.ok) {
+    let message = "Couldn't compile the library right now.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}
+
 export async function loadCapstone({ fetch, courseId, scope }) {
   const resp = await fetch(`/api/courses/${courseId}/capstone/${scope}`);
   if (!resp.ok) {

@@ -211,6 +211,23 @@ def create_app(db_path=None):
             return jsonify({"error": "not found"}), 404
         return jsonify(capstone)
 
+    @app.get("/api/courses/<course_id>/library")
+    def get_library(course_id):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        generate_sourced = lambda prompt: claude_client.run_sourced(prompt, validate=generation.valid_bibliography)
+        try:
+            library = generation.ensure_bibliography(
+                courses.CONTENT_DIR, course_id, generate_sourced=generate_sourced,
+            )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not compile the course library"}), 502
+        if library is None:
+            return jsonify({"error": "course not found"}), 404
+        return jsonify(library)
+
     @app.get("/api/courses/<course_id>/reviews")
     def get_reviews(course_id):
         if not _ID_RE.match(course_id):

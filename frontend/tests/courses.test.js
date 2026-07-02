@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -114,4 +114,18 @@ test("loadCapstone returns an error shape on non-ok", async () => {
   const fetch = async () => ({ ok: false, status: 502, json: async () => ({ error: "down" }) });
   const r = await loadCapstone({ fetch, courseId: "c", scope: "course" });
   assert.equal(r.error, "down");
+});
+
+test("loadLibrary fetches the course library", async () => {
+  let url;
+  const fetch = async (u) => { url = u; return { ok: true, json: async () => ({ courseId: "c", sources: [] }) }; };
+  const lib = await loadLibrary({ fetch, courseId: "c" });
+  assert.equal(url, "/api/courses/c/library");
+  assert.equal(lib.courseId, "c");
+});
+
+test("loadLibrary returns an error shape on non-ok", async () => {
+  const fetch = async () => ({ ok: false, status: 503, json: async () => ({ error: "reauth" }) });
+  const r = await loadLibrary({ fetch, courseId: "c" });
+  assert.equal(r.error, "reauth");
 });

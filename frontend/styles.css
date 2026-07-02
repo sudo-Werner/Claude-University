@@ -398,6 +398,24 @@ textarea::placeholder{color:#b3a994}
 .cap-explore{display:inline-block; font:600 13px/1 inherit; color:var(--blue-text); text-decoration:none}
 .cap-explore:hover{text-decoration:underline; text-underline-offset:2px}
 
+/* #accredited-sources — the course Library (bibliography) */
+.lib-intro{font-family:var(--serif); font-size:14px; line-height:1.55; color:var(--text-2); margin:8px 0 18px}
+.src-group{margin-bottom:18px}
+.src-group-label{font-size:11px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--text-mut); margin-bottom:9px}
+.src-item{padding:11px 0; border-top:1px solid var(--border-field)}
+.src-head{display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:4px}
+.src-title{font-size:15px; font-weight:600; color:var(--blue-text); text-decoration:none; line-height:1.35}
+.src-title:hover{text-decoration:underline; text-underline-offset:2px}
+.src-note{font-family:var(--serif); font-size:13.5px; line-height:1.5; color:var(--text-2); margin-bottom:4px}
+.src-url{font:11px var(--mono); color:var(--text-faint); word-break:break-all}
+.src-badge{flex:none; font-size:10px; font-weight:600; padding:3px 8px; border-radius:999px; white-space:nowrap;
+  background:rgba(131,122,108,.12); color:var(--text-mut); border:1px solid rgba(131,122,108,.2)}
+.src-badge.src-university{background:rgba(124,106,255,.14); color:var(--purple); border-color:rgba(124,106,255,.25)}
+.src-badge.src-peer-reviewed{background:rgba(37,180,120,.14); color:#0f7a4f; border-color:rgba(37,180,120,.3)}
+.src-badge.src-textbook{background:rgba(224,137,47,.16); color:#a05c12; border-color:rgba(224,137,47,.3)}
+.src-badge.src-official-docs{background:rgba(47,143,208,.14); color:var(--blue-text); border-color:rgba(47,143,208,.3)}
+.src-empty{font-size:14px; color:var(--text-mut)}
+
 /* =================  LESSON PLAYER NAV  ================= */
 .player-nav{display:flex; align-items:center; justify-content:space-between; margin-top:18px; gap:8px}
 .pn-curric{flex:0 0 auto}
