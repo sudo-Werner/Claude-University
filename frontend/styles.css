@@ -435,3 +435,23 @@ textarea::placeholder{color:#b3a994}
 .pn-btn:active:not(:disabled){transform:translateY(1px)}
 .pn-btn:disabled{color:var(--text-faint); cursor:not-allowed; opacity:.5}
 
+
+/* lesson workspace — notes + side-chat panel */
+.workspace{padding:14px 16px}
+.ws-toggle{width:100%; text-align:left; background:none; border:none; cursor:pointer; font:600 13px/1 inherit; color:var(--purple); display:flex; align-items:center; gap:8px}
+.ws-caret{font-size:11px}
+.ws-tabs{display:flex; gap:6px; margin:12px 0 10px}
+.ws-tab{flex:1; padding:8px; border-radius:var(--r-sm); cursor:pointer; font:600 13px/1 inherit; border:1px solid var(--border-field); background:var(--glass-field); color:var(--text-dim)}
+.ws-tab.on{background:rgba(124,106,255,.14); color:var(--purple); border-color:rgba(124,106,255,.3)}
+.ws-notes textarea{width:100%; min-height:120px; resize:vertical}
+.ws-status{font-size:11px; color:var(--text-faint); margin-top:6px; text-align:right}
+.ws-chat{display:flex; flex-direction:column; gap:10px}
+.ws-thread{display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto}
+.ws-msg{font-size:14px; line-height:1.5; padding:9px 12px; border-radius:12px; white-space:pre-wrap; word-break:break-word}
+.ws-you{background:rgba(124,106,255,.12); color:var(--text-2); align-self:flex-end; max-width:85%}
+.ws-ai{background:var(--glass-inner); color:var(--read); align-self:flex-start; max-width:90%}
+.ws-typing{color:var(--text-mut)}
+.ws-compose{display:flex; gap:8px; align-items:flex-end}
+.ws-compose textarea{flex:1; min-height:44px; resize:vertical}
+.ws-send{padding:10px 14px; border:none; border-radius:var(--r-sm); cursor:pointer; font:600 13px/1 inherit; color:#fff; background:var(--grad)}
+.ws-send:disabled{opacity:.5; cursor:default}

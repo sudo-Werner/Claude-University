@@ -1,7 +1,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseSSELines } from "../src/chat.js";
+import { parseSSELines, streamChat } from "../src/chat.js";
 import { chatHTML } from "../src/views/chat.js";
+
+function bodyFrom(str) {
+  const bytes = new TextEncoder().encode(str);
+  let sent = false;
+  return { getReader: () => ({ read: async () => (sent ? { done: true } : (sent = true, { value: bytes, done: false })) }) };
+}
+
+test("streamChat posts to a custom endpoint and tolerates a missing onProposal", async () => {
+  let url;
+  const fetch = async (u) => { url = u; return { body: bodyFrom("event: delta\ndata: hi\n\nevent: done\ndata: {}\n\n") }; };
+  let text = "", done = false;
+  await streamChat({
+    fetch, endpoint: "/api/courses/c/lessons/l1/chat", messages: [],
+    onDelta: (d) => { text += d; }, onDone: () => { done = true; },
+  });
+  assert.equal(url, "/api/courses/c/lessons/l1/chat");
+  assert.equal(text, "hi");
+  assert.equal(done, true);
+});
 
 test("parseSSELines extracts complete events and keeps the partial tail", () => {
   const buffer =

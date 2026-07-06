@@ -179,6 +179,29 @@ test("lesson omits the sources section when there are none", () => {
   assert.doesNotMatch(html, /lesson-sources/);
 });
 
+test("lesson shows a collapsed workspace toggle by default", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.match(html, /data-action="ws-toggle"/);
+  assert.match(html, /Notes/);
+  assert.doesNotMatch(html, /data-field="ws-notes"/); // collapsed: no textarea yet
+});
+
+test("open workspace shows notes textarea with escaped value", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false,
+    ws: { open: true, tab: "notes", notes: "<b>hi</b>", chat: [], pending: false, saveStatus: "saved" } });
+  assert.match(html, /data-field="ws-notes"/);
+  assert.match(html, /&lt;b&gt;hi&lt;\/b&gt;/); // value escaped
+  assert.match(html, /saved/);
+});
+
+test("open workspace chat tab escapes message content", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false,
+    ws: { open: true, tab: "chat", notes: "", chat: [{ role: "user", content: "<script>x</script>" }], pending: false, saveStatus: "" } });
+  assert.match(html, /data-action="ws-send"/);
+  assert.doesNotMatch(html, /<script>x/);
+  assert.match(html, /&lt;script&gt;x&lt;\/script&gt;/);
+});
+
 test("diagnostic renders all six questions and gates Continue", () => {
   const none = diagnosticHTML({});
   assert.equal((none.match(/data-q="/g) || []).length >= 6, true);

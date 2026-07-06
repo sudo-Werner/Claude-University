@@ -53,6 +53,42 @@ function lessonSourcesHTML(sources) {
   );
 }
 
+// ---- lesson workspace: collapsible Notes | Chat panel below the lesson ----
+function wsNotesHTML(w) {
+  const status = { saving: "saving…", saved: "saved", offline: "offline" }[w.saveStatus] || "";
+  return (
+    `<div class="ws-notes">` +
+    `<textarea data-field="ws-notes" placeholder="Jot your notes…">${esc(w.notes || "")}</textarea>` +
+    `<div class="ws-status">${status}</div></div>`
+  );
+}
+
+function wsChatHTML(w) {
+  const thread = (w.chat || [])
+    .map((m) => `<div class="ws-msg ws-${m.role === "user" ? "you" : "ai"}">${esc(m.content)}</div>`)
+    .join("");
+  const pending = w.pending ? `<div class="ws-msg ws-ai ws-typing">…</div>` : "";
+  return (
+    `<div class="ws-chat"><div class="ws-thread">${thread}${pending}</div>` +
+    `<div class="ws-compose"><textarea data-field="ws-chat" placeholder="Ask a side question…"${w.pending ? " disabled" : ""}></textarea>` +
+    `<button class="ws-send" data-action="ws-send"${w.pending ? " disabled" : ""}>Send</button></div></div>`
+  );
+}
+
+function workspaceHTML(ws) {
+  const w = ws || {};
+  const caret = w.open ? "▾" : "▸";
+  const head = `<button class="ws-toggle" data-action="ws-toggle"><span class="ws-caret">${caret}</span> Notes &amp; side-chat</button>`;
+  if (!w.open) return `<section class="card workspace">${head}</section>`;
+  const tabs =
+    `<div class="ws-tabs">` +
+    `<button class="ws-tab ${w.tab === "chat" ? "" : "on"}" data-action="ws-tab" data-tab="notes">Notes</button>` +
+    `<button class="ws-tab ${w.tab === "chat" ? "on" : ""}" data-action="ws-tab" data-tab="chat">Chat</button>` +
+    `</div>`;
+  const body = w.tab === "chat" ? wsChatHTML(w) : wsNotesHTML(w);
+  return `<section class="card workspace">${head}${tabs}${body}</section>`;
+}
+
 export function lessonHTML(lesson, state, nav = {}) {
   const segs = Array.from({ length: lesson.totalSteps }, (_, i) => {
     if (i + 1 < lesson.step) return '<i class="done"></i>';
@@ -110,6 +146,7 @@ export function lessonHTML(lesson, state, nav = {}) {
           : `<span class="nav-hint">Reveal the solution to finish</span>`
       }
     </div>
+    ${workspaceHTML(state.ws)}
     </div>
   `;
 }

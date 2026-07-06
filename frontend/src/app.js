@@ -17,6 +17,7 @@ import { diagnosticHTML } from "./views/diagnostic.js";
 import { chatHTML } from "./views/chat.js";
 import { gradeCheck } from "./views/checks.js";
 import { streamChat } from "./chat.js";
+import { loadWorkspace, saveWorkspace } from "./notes.js";
 
 const EVENTS_ENDPOINT = "/api/events";
 const PROFILE_ENDPOINT = "/api/profile";
@@ -291,6 +292,79 @@ export async function init({ window, fetch }) {
     root.innerHTML = shellHTML({ back: ui.manifest.title });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
     paintLesson();
+    seedWorkspace(ui.lesson, ui.lessonState);
+  }
+
+  // ---- lesson workspace (notes + side-chat) ----
+  const WS_PREFS = "ws-prefs"; // remembers open/closed + active tab across lessons
+  function wsPrefs() {
+    try { return JSON.parse(storage.getItem(WS_PREFS)) || { open: false, tab: "notes" }; }
+    catch (e) { return { open: false, tab: "notes" }; }
+  }
+  function setWsPrefs(patch) {
+    try { storage.setItem(WS_PREFS, JSON.stringify({ ...wsPrefs(), ...patch })); } catch (e) {}
+  }
+  async function seedWorkspace(lesson, lessonState) {
+    if (!lesson || lessonState.ws) return; // already seeded for this state
+    const prefs = wsPrefs();
+    const wsData = await loadWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: lesson.id });
+    if (ui.lessonState !== lessonState) return; // navigated away while loading
+    lessonState.ws = { open: !!prefs.open, tab: prefs.tab || "notes",
+                       notes: wsData.notes || "", chat: wsData.chat || [], pending: false, saveStatus: "" };
+    if (ui.screen === "lesson") paintLesson();
+  }
+  let wsSaveTimer = null;
+  function scheduleNotesSave() {
+    if (wsSaveTimer) window.clearTimeout(wsSaveTimer);
+    ui.lessonState.ws.saveStatus = "saving";
+    wsSaveTimer = window.setTimeout(saveWsNow, 1000);
+  }
+  async function saveWsNow() {
+    const ls = ui.lessonState, ws = ls.ws;
+    if (!ws) return;
+    const res = await saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat });
+    if (ui.lessonState !== ls) return;
+    ws.saveStatus = res.ok ? "saved" : "offline";
+    const el = root.querySelector(".ws-status");
+    if (el) el.textContent = { saving: "saving…", saved: "saved", offline: "offline" }[ws.saveStatus] || "";
+  }
+  async function sendWsChat() {
+    const ls = ui.lessonState, ws = ls.ws;
+    const ta = root.querySelector('[data-field="ws-chat"]');
+    const text = ta ? ta.value.trim() : "";
+    if (!text || ws.pending) return;
+    ws.chat.push({ role: "user", content: text });
+    ws.pending = true;
+    const reply = { role: "assistant", content: "" };
+    paintLesson();
+    await streamChat({
+      fetch,
+      endpoint: `/api/courses/${ui.courseId}/lessons/${ui.lesson.id}/chat`,
+      messages: ws.chat.map((m) => ({ role: m.role, content: m.content })),
+      onDelta: (d) => {
+        if (ui.lessonState !== ls) return;
+        reply.content += d;
+        const thread = root.querySelector(".ws-thread");
+        if (thread) {
+          let live = thread.querySelector(".ws-live");
+          if (!live) { live = doc.createElement("div"); live.className = "ws-msg ws-ai ws-live"; thread.appendChild(live); }
+          live.textContent = reply.content;
+        }
+      },
+      onDone: () => {
+        if (ui.lessonState !== ls) return;
+        ws.pending = false;
+        if (reply.content.trim()) ws.chat.push(reply);
+        paintLesson();
+        saveWsNow();
+      },
+      onError: (e) => {
+        if (ui.lessonState !== ls) return;
+        ws.pending = false;
+        ws.chat.push({ role: "assistant", content: "⚠️ " + ((e && e.message) || "Claude is unavailable right now.") });
+        paintLesson();
+      },
+    });
   }
 
   function paintLesson() {
@@ -370,6 +444,31 @@ export async function init({ window, fetch }) {
     if (prevBtn) prevBtn.addEventListener("click", () => { const a = adjacentLesson(-1); if (a) openLesson(a.id); });
     const nextBtn = view.querySelector('[data-action="next-lesson"]');
     if (nextBtn) nextBtn.addEventListener("click", () => { const a = adjacentLesson(1); if (a) openLesson(a.id); });
+    bindWorkspace(view);
+  }
+
+  function bindWorkspace(view) {
+    if (!ui.lessonState.ws) return;
+    const toggle = view.querySelector('[data-action="ws-toggle"]');
+    if (toggle) toggle.addEventListener("click", () => {
+      ui.lessonState.ws.open = !ui.lessonState.ws.open;
+      setWsPrefs({ open: ui.lessonState.ws.open });
+      paintLesson();
+    });
+    view.querySelectorAll('[data-action="ws-tab"]').forEach((b) => b.addEventListener("click", () => {
+      ui.lessonState.ws.tab = b.getAttribute("data-tab");
+      setWsPrefs({ tab: ui.lessonState.ws.tab });
+      paintLesson();
+    }));
+    const wsNotes = view.querySelector('[data-field="ws-notes"]');
+    if (wsNotes) wsNotes.addEventListener("input", () => {
+      ui.lessonState.ws.notes = wsNotes.value;
+      scheduleNotesSave();
+      const el = root.querySelector(".ws-status");
+      if (el) el.textContent = "saving…";
+    });
+    const wsSend = view.querySelector('[data-action="ws-send"]');
+    if (wsSend) wsSend.addEventListener("click", sendWsChat);
   }
 
   function answerCheck(i, answer) {
