@@ -168,3 +168,24 @@ def test_run_sourced_raises_auth_error_on_401_line():
     line = json.dumps({"api_error_status": 401, "result": "Invalid API key"})
     with pytest.raises(cc.ClaudeAuthError):
         cc.run_sourced("p", spawn=lambda args: iter([line]))
+
+
+def test_stream_enables_web_search_tools_when_requested():
+    seen = {}
+    def spawn(args):
+        seen["args"] = args
+        return iter([json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "hi"}]}})])
+    out = list(cc.stream("p", tools=["WebSearch", "WebFetch"], spawn=spawn))
+    a = seen["args"]
+    assert "--allowedTools" in a and "WebSearch" in a and "WebFetch" in a
+    assert "stream-json" in a
+    assert out == ["hi"]
+
+
+def test_stream_without_tools_has_no_allowedtools():
+    seen = {}
+    def spawn(args):
+        seen["args"] = args
+        return iter([])
+    list(cc.stream("p", spawn=spawn))
+    assert "--allowedTools" not in seen["args"]

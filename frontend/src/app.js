@@ -355,6 +355,8 @@ export async function init({ window, fetch }) {
         if (!onScreen()) return;
         const thread = root.querySelector(".ws-thread");
         if (thread) {
+          const typing = thread.querySelector(".ws-typing");
+          if (typing) typing.remove();          // the reply has started; drop the "…" bubble
           let live = thread.querySelector(".ws-live");
           if (!live) { live = doc.createElement("div"); live.className = "ws-msg ws-ai ws-live"; thread.appendChild(live); }
           live.textContent = reply.content;

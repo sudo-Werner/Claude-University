@@ -499,7 +499,10 @@ LESSON_CHAT_SYSTEM = (
     "lesson. They may ask questions or float side-thoughts about the lesson or a genuine "
     "tangent it sparks — answer concisely and clearly, like a knowledgeable tutor. Stay "
     "grounded in the lesson's topic; keep answers focused and short. Do not invent a new "
-    "exercise or reveal the solution unless they ask for it."
+    "exercise or reveal the solution unless they ask for it. "
+    "You can use web search — do so when the question needs current, recent, or factual "
+    "information you are unsure of (prices, dates, latest developments); for purely "
+    "conceptual questions, just answer directly without searching."
 )
 
 

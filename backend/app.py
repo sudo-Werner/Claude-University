@@ -263,7 +263,10 @@ def create_app(db_path=None):
         if lesson is None:
             return jsonify({"error": "lesson not found"}), 404
         body = request.get_json(silent=True) or {}
-        sse = generation.lesson_chat_sse(lesson, body.get("messages", []), stream_fn=claude_client.stream)
+        # The side-chat can web-search so it isn't limited to the model's training cutoff;
+        # the model only searches when the question needs current/factual info.
+        stream_fn = lambda p: claude_client.stream(p, tools=["WebSearch", "WebFetch"])
+        sse = generation.lesson_chat_sse(lesson, body.get("messages", []), stream_fn=stream_fn)
         return app.response_class(sse, mimetype="text/event-stream")
 
     @app.get("/api/courses/<course_id>/reviews")

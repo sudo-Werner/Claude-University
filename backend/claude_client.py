@@ -153,8 +153,11 @@ def _extract_stream_text(line):
     return ""
 
 
-def stream(prompt, *, model=DEFAULT_MODEL, spawn=_spawn_cli):
-    args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--model", model]
+def stream(prompt, *, model=DEFAULT_MODEL, spawn=_spawn_cli, tools=None):
+    args = ["-p", prompt]
+    if tools:
+        args += ["--allowedTools", *tools]  # variadic; terminated by the next --flag below
+    args += ["--output-format", "stream-json", "--verbose", "--model", model]
     for line in spawn(args):
         try:
             ev = json.loads(line)
