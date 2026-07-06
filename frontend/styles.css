@@ -234,6 +234,7 @@ textarea::placeholder{color:#b3a994}
    These also become the layout anchors for the desktop media query below. */
 .dash{display:flex; flex-direction:column; gap:16px}
 .lesson-col{display:flex; flex-direction:column; gap:16px}
+.lesson-main{display:flex; flex-direction:column; gap:16px; min-width:0}
 .diag-col{display:flex; flex-direction:column; gap:14px}
 
 /* =================  DESKTOP LAYOUT (>=760px)  =================
@@ -267,6 +268,18 @@ textarea::placeholder{color:#b3a994}
   .card.lesson{padding:32px; min-height:360px}
   .prompt{font-size:17px; line-height:1.7}
   .diag-col{max-width:640px; margin:0 auto; width:100%}
+}
+
+/* =================  WIDE DESKTOP: notes beside the lesson (>=1200px)  =================
+   The lesson prose keeps its comfortable ~680px measure; the workspace becomes a
+   sticky right-hand column instead of sitting below. Falls back to stacked below
+   1200px (phone/tablet/narrow laptop). Uses :has() to widen only the lesson screen. */
+@media (min-width:1200px){
+  .app:has(.lesson-col){max-width:1120px}
+  .lesson-col{flex-direction:row; align-items:flex-start; max-width:none; margin:0; gap:28px}
+  .lesson-main{flex:0 1 680px}
+  .lesson-side{flex:1 1 360px; min-width:320px; position:sticky; top:24px; align-self:flex-start}
+  .lesson-side .workspace{margin:0}
 }
 
 /* =================  UNIVERSITY HOME (course grid)  ================= */

@@ -106,6 +106,7 @@ export function lessonHTML(lesson, state, nav = {}) {
 
   return `
     <div class="lesson-col">
+    <div class="lesson-main">
     <div>
       <div class="steps">${segs}</div>
       <div class="steprow"><span>Step ${lesson.step} of ${lesson.totalSteps} · <b>Exercise</b></span><span class="right">${lesson.topic}</span></div>
@@ -146,7 +147,8 @@ export function lessonHTML(lesson, state, nav = {}) {
           : `<span class="nav-hint">Reveal the solution to finish</span>`
       }
     </div>
-    ${workspaceHTML(state.ws)}
+    </div>
+    <div class="lesson-side">${workspaceHTML(state.ws)}</div>
     </div>
   `;
 }

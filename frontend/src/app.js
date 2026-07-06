@@ -301,8 +301,10 @@ export async function init({ window, fetch }) {
   // ---- lesson workspace (notes + side-chat) ----
   const WS_PREFS = "ws-prefs"; // remembers open/closed + active tab across lessons
   function wsPrefs() {
-    try { return JSON.parse(storage.getItem(WS_PREFS)) || { open: false, tab: "notes" }; }
-    catch (e) { return { open: false, tab: "notes" }; }
+    // Default: open on wide screens (the notes sit beside the lesson), collapsed on
+    // phone. Once the learner toggles it, their saved choice is respected everywhere.
+    try { const p = JSON.parse(storage.getItem(WS_PREFS)); if (p) return p; } catch (e) {}
+    return { open: window.innerWidth >= 1200, tab: "notes" };
   }
   function setWsPrefs(patch) {
     try { storage.setItem(WS_PREFS, JSON.stringify({ ...wsPrefs(), ...patch })); } catch (e) {}
