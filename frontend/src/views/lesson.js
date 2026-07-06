@@ -106,7 +106,7 @@ export function lessonHTML(lesson, state, nav = {}) {
 
   return `
     <div class="lesson-col">
-    <div class="lesson-main">
+    <div class="lesson-head">
     <div>
       <div class="steps">${segs}</div>
       <div class="steprow"><span>Step ${lesson.step} of ${lesson.totalSteps} · <b>Exercise</b></span><span class="right">${lesson.topic}</span></div>
@@ -118,6 +118,9 @@ export function lessonHTML(lesson, state, nav = {}) {
           <button class="pn-btn" data-action="next-lesson" aria-label="Next lesson"${nav.hasNext ? "" : " disabled"}>›</button>
         </div>
       </div>
+    </div>
+    <div class="lesson-body">
+    <div class="lesson-main">
     <section class="card lesson">
       <span class="eyebrow">${lesson.eyebrow}</span>
       <div class="prompt">${lesson.promptHtml}</div>
@@ -149,6 +152,7 @@ export function lessonHTML(lesson, state, nav = {}) {
     </div>
     </div>
     <div class="lesson-side">${workspaceHTML(state.ws)}</div>
+    </div>
     </div>
   `;
 }

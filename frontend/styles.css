@@ -234,6 +234,8 @@ textarea::placeholder{color:#b3a994}
    These also become the layout anchors for the desktop media query below. */
 .dash{display:flex; flex-direction:column; gap:16px}
 .lesson-col{display:flex; flex-direction:column; gap:16px}
+.lesson-head{display:flex; flex-direction:column; gap:16px}
+.lesson-body{display:flex; flex-direction:column; gap:16px}
 .lesson-main{display:flex; flex-direction:column; gap:16px; min-width:0}
 .diag-col{display:flex; flex-direction:column; gap:14px}
 
@@ -275,10 +277,11 @@ textarea::placeholder{color:#b3a994}
    sticky right-hand column instead of sitting below. Falls back to stacked below
    1200px (phone/tablet/narrow laptop). Uses :has() to widen only the lesson screen. */
 @media (min-width:1200px){
-  .app:has(.lesson-col){max-width:1120px}
-  .lesson-col{flex-direction:row; align-items:flex-start; max-width:none; margin:0; gap:28px}
-  .lesson-main{flex:0 1 680px}
-  .lesson-side{flex:1 1 360px; min-width:320px; position:sticky; top:24px; align-self:flex-start}
+  .app:has(.lesson-col){max-width:1160px}
+  .lesson-col{max-width:none; margin:0}          /* head spans full width above the two panes */
+  .lesson-body{flex-direction:row; align-items:flex-start; gap:28px}
+  .lesson-main{flex:1 1 0}                         /* equal-width panes */
+  .lesson-side{flex:1 1 0; min-width:0; position:sticky; top:24px; align-self:flex-start}
   .lesson-side .workspace{margin:0}
 }
 
