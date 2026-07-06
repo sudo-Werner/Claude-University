@@ -736,3 +736,13 @@ def test_course_lesson_sources_rolls_up_and_dedupes(tmp_path):
     assert urls.count("https://arxiv.org/abs/1") == 1   # deduped across lessons
     assert "https://mit.edu/x" in urls and "https://pytorch.org/docs" in urls
     assert rolled[0]["type"] == "university"            # sorted: university first
+
+
+def test_course_system_prompt_decouples_depth_from_daily_time():
+    p = gen.COURSE_SYSTEM_PROMPT
+    low = p.lower()
+    assert "how intensively" not in low               # old time/intensity ask removed
+    assert '"pace"' not in p and "depth, pace" not in p  # brief no longer captures pace
+    assert "self-paced" in low                        # explicitly self-paced
+    assert "how deep" in low or "desired depth" in low # depth still asked
+    assert "per day" not in low or "do not ask" in low # daily time only mentioned to forbid it

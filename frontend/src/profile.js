@@ -27,10 +27,10 @@ export const DIAGNOSTIC = [
   },
   {
     key: "sessionStyle",
-    question: "Given a free 2-hour block, how do you prefer to learn?",
+    question: "When you study, how do you prefer to focus?",
     options: [
-      { label: "One deep 2-hour session on one topic", value: "deep_block" },
-      { label: "Several short sprints across topics", value: "sprints" },
+      { label: "Go deep on one topic at a time", value: "deep_block" },
+      { label: "Move across several topics", value: "sprints" },
     ],
   },
   {
