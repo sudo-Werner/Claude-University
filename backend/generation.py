@@ -492,6 +492,46 @@ def build_chat_prompt(messages, profile):
     return "\n".join(lines)
 
 
+# ---- lesson workspace: a lesson-aware side-chat (no web search) ----
+
+LESSON_CHAT_SYSTEM = (
+    "You are a friendly study companion helping a learner while they work through ONE "
+    "lesson. They may ask questions or float side-thoughts about the lesson or a genuine "
+    "tangent it sparks — answer concisely and clearly, like a knowledgeable tutor. Stay "
+    "grounded in the lesson's topic; keep answers focused and short. Do not invent a new "
+    "exercise or reveal the solution unless they ask for it."
+)
+
+
+def lesson_chat_prompt(lesson, messages):
+    ctx = (
+        f"Lesson topic: {lesson.get('topic', '')}\n"
+        f"Lesson prompt (HTML): {lesson.get('promptHtml', '')}\n"
+        f"Reference answer: {lesson.get('solutionAns', '')}\n"
+        f"Why it is right: {lesson.get('solutionNote', '')}\n"
+    )
+    lines = [LESSON_CHAT_SYSTEM, "", "The lesson the learner is studying:", ctx, ""]
+    for m in messages:
+        who = "Learner" if m.get("role") == "user" else "You"
+        lines.append(f"{who}: {m.get('content', '')}")
+    lines.append("You:")
+    return "\n".join(lines)
+
+
+def lesson_chat_sse(lesson, messages, *, stream_fn):
+    prompt = lesson_chat_prompt(lesson, messages)
+    try:
+        for chunk in stream_fn(prompt):
+            yield _sse("delta", chunk)
+    except claude_client.ClaudeAuthError:
+        yield _sse("error", json.dumps({"message": "Claude needs re-authentication on the Pi — run `claude` there to log in again."}))
+        return
+    except claude_client.ClaudeError:
+        yield _sse("error", json.dumps({"message": "Claude is unavailable right now."}))
+        return
+    yield _sse("done", "{}")
+
+
 def _sse(event, data):
     payload = "\n".join(f"data: {line}" for line in data.split("\n"))
     return f"event: {event}\n{payload}\n\n"

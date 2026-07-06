@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
@@ -232,6 +232,39 @@ def create_app(db_path=None):
         # Phase 2: also surface the live roll-up of sources cited across generated lessons.
         library = {**library, "lessonSources": generation.course_lesson_sources(courses.CONTENT_DIR, course_id)}
         return jsonify(library)
+
+    @app.get("/api/courses/<course_id>/lessons/<lesson_id>/workspace")
+    def get_workspace(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "not found"}), 404
+        return jsonify(notes.load_workspace(courses.CONTENT_DIR, course_id, lesson_id))
+
+    @app.put("/api/courses/<course_id>/lessons/<lesson_id>/workspace")
+    def put_workspace(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "not found"}), 404
+        body = request.get_json(silent=True) or {}
+        try:
+            record = notes.save_workspace(
+                courses.CONTENT_DIR, course_id, lesson_id,
+                body.get("notes", ""), body.get("chat", []),
+            )
+        except notes.WorkspaceTooLarge:
+            return jsonify({"error": "notes too large"}), 413
+        except ValueError:
+            return jsonify({"error": "invalid workspace"}), 400
+        return jsonify({"updatedAt": record["updatedAt"]})
+
+    @app.post("/api/courses/<course_id>/lessons/<lesson_id>/chat")
+    def post_lesson_chat(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "not found"}), 404
+        lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
+        if lesson is None:
+            return jsonify({"error": "lesson not found"}), 404
+        body = request.get_json(silent=True) or {}
+        sse = generation.lesson_chat_sse(lesson, body.get("messages", []), stream_fn=claude_client.stream)
+        return app.response_class(sse, mimetype="text/event-stream")
 
     @app.get("/api/courses/<course_id>/reviews")
     def get_reviews(course_id):

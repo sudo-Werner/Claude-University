@@ -746,3 +746,33 @@ def test_course_system_prompt_decouples_depth_from_daily_time():
     assert "self-paced" in low                        # explicitly self-paced
     assert "how deep" in low or "desired depth" in low # depth still asked
     assert "per day" not in low or "do not ask" in low # daily time only mentioned to forbid it
+
+
+def test_lesson_chat_prompt_includes_lesson_context():
+    lesson = {"topic": "HTTP requests", "promptHtml": "<p>what is a GET</p>",
+              "solutionAns": "GET /x", "solutionNote": "method+path"}
+    p = gen.lesson_chat_prompt(lesson, [{"role": "user", "content": "does http/2 change this?"}])
+    assert "HTTP requests" in p
+    assert "what is a GET" in p
+    assert "Learner: does http/2 change this?" in p
+    assert p.rstrip().endswith("You:")
+
+
+def test_lesson_chat_sse_streams_delta_then_done():
+    def fake_stream(prompt):
+        yield "HTTP/2 keeps "
+        yield "the same idea."
+    lesson = {"topic": "HTTP", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    chunks = list(gen.lesson_chat_sse(lesson, [{"role": "user", "content": "q?"}], stream_fn=fake_stream))
+    evs = _events(chunks)
+    assert ("delta", "HTTP/2 keeps") in evs
+    assert evs[-1][0] == "done"
+
+
+def test_lesson_chat_sse_emits_reauth_on_auth_error():
+    def failing(prompt):
+        raise claude_client.ClaudeAuthError("Invalid API key")
+        yield
+    chunks = list(gen.lesson_chat_sse({"topic": "t"}, [{"role": "user", "content": "x"}], stream_fn=failing))
+    msg = [d for (e, d) in _events(chunks) if e == "error"]
+    assert msg and "re-authentication" in msg[0].lower()

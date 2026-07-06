@@ -375,3 +375,57 @@ def test_library_endpoint_includes_lesson_source_rollup(client, tmp_path, monkey
     # subject bibliography (from search) + the live roll-up of lesson sources
     assert any(s["url"] == "https://arxiv.org/abs/1" for s in body["sources"])
     assert any(s["url"] == "https://mit.edu/ocw" for s in body["lessonSources"])
+
+
+def test_workspace_get_default_and_put_roundtrip(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    assert client.get(f"/api/courses/{cid}/lessons/{lesson_id}/workspace").get_json() == {
+        "notes": "", "chat": [], "updatedAt": None}
+    r = client.put(f"/api/courses/{cid}/lessons/{lesson_id}/workspace",
+                   json={"notes": "n", "chat": [{"role": "user", "content": "hi"}]})
+    assert r.status_code == 200 and r.get_json()["updatedAt"]
+    got = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/workspace").get_json()
+    assert got["notes"] == "n" and got["chat"][0]["content"] == "hi"
+
+
+def test_workspace_put_rejects_bad_and_oversize(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    assert client.put(f"/api/courses/{cid}/lessons/{lesson_id}/workspace",
+                      json={"notes": "n", "chat": [{"role": "x", "content": "y"}]}).status_code == 400
+    assert client.put(f"/api/courses/{cid}/lessons/{lesson_id}/workspace",
+                      json={"notes": "z" * 200000, "chat": []}).status_code == 413
+
+
+def test_workspace_rejects_bad_ids(client):
+    assert client.get("/api/courses/Bad_Id/lessons/l1/workspace").status_code == 404
+
+
+def test_lesson_chat_route_streams(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "stream", lambda prompt, **kw: iter(["Hello ", "world"]))
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/chat",
+                       json={"messages": [{"role": "user", "content": "hi"}]})
+    assert resp.status_code == 200
+    text = resp.get_data(as_text=True)
+    assert "event: delta" in text and "Hello" in text and "event: done" in text
+
+
+def test_lesson_chat_route_404_unknown_lesson(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    assert client.post(f"/api/courses/{cid}/lessons/nope/chat", json={"messages": []}).status_code == 404
