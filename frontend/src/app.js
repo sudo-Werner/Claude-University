@@ -277,7 +277,10 @@ export async function init({ window, fetch }) {
     const deeper = await deepenLesson({ fetch, courseId: ui.courseId, lessonId });
     if (ui.screen !== "lesson" || !ui.lesson || ui.lesson.id !== lessonId) return;
     if (lessonFailed(deeper)) {
-      ui.lessonState = { ...ui.lessonState, deepenError: (deeper && deeper.error) || "Couldn't rewrite this lesson right now." };
+      // Break the shared ws reference and clear any stuck pending, so a chat that was
+      // mid-stream when deepen failed doesn't leave the input disabled.
+      const keptWs = ui.lessonState.ws ? { ...ui.lessonState.ws, pending: false } : undefined;
+      ui.lessonState = { ...ui.lessonState, ws: keptWs, deepenError: (deeper && deeper.error) || "Couldn't rewrite this lesson right now." };
       showLesson();
       return;
     }
@@ -330,20 +333,24 @@ export async function init({ window, fetch }) {
   }
   async function sendWsChat() {
     const ls = ui.lessonState, ws = ls.ws;
+    // Capture the target lesson so the transcript is always persisted to the RIGHT
+    // file even if the learner navigates away before the reply finishes.
+    const cid = ui.courseId, lid = ui.lesson.id;
     const ta = root.querySelector('[data-field="ws-chat"]');
     const text = ta ? ta.value.trim() : "";
     if (!text || ws.pending) return;
     ws.chat.push({ role: "user", content: text });
     ws.pending = true;
     const reply = { role: "assistant", content: "" };
+    const onScreen = () => ui.lessonState === ls && ui.screen === "lesson";
     paintLesson();
     await streamChat({
       fetch,
-      endpoint: `/api/courses/${ui.courseId}/lessons/${ui.lesson.id}/chat`,
+      endpoint: `/api/courses/${cid}/lessons/${lid}/chat`,
       messages: ws.chat.map((m) => ({ role: m.role, content: m.content })),
       onDelta: (d) => {
-        if (ui.lessonState !== ls) return;
         reply.content += d;
+        if (!onScreen()) return;
         const thread = root.querySelector(".ws-thread");
         if (thread) {
           let live = thread.querySelector(".ws-live");
@@ -352,17 +359,15 @@ export async function init({ window, fetch }) {
         }
       },
       onDone: () => {
-        if (ui.lessonState !== ls) return;
-        ws.pending = false;
+        ws.pending = false;                 // always clear pending so the input re-enables
         if (reply.content.trim()) ws.chat.push(reply);
-        paintLesson();
-        saveWsNow();
+        saveWorkspace({ fetch, storage, courseId: cid, lessonId: lid, notes: ws.notes, chat: ws.chat });
+        if (onScreen()) paintLesson();
       },
       onError: (e) => {
-        if (ui.lessonState !== ls) return;
         ws.pending = false;
         ws.chat.push({ role: "assistant", content: "⚠️ " + ((e && e.message) || "Claude is unavailable right now.") });
-        paintLesson();
+        if (onScreen()) paintLesson();
       },
     });
   }
