@@ -111,6 +111,17 @@ features + research. Status:
   anti-decoration rules from multimedia-learning research (`docs/research/2026-06-24-visual-aids.md`).
   Pi-verified: a comparison lesson rendered a clean 3-col table. (commit c35c300)
 
+## Third round (2026-06-30 → 07-06, Werner using the live system)
+- ✅ **Accredited sources / "academic institution":** lessons + courses grounded in REAL
+  web-retrieved accredited sources (trust guarantee: only display URLs the search actually
+  returned; domain-derived type). Phase 1 = course **Library**; Phase 2 = per-lesson citations
+  + roll-up. Spec `specs/2026-07-01-accredited-sources-design.md`. (commits fcc4979, 0695649)
+- ✅ **Depth decoupled from daily time:** onboarding no longer asks time-per-day to set depth;
+  self-paced, depth from goal + desired depth. Diagnostic reworded time-neutral. (commit 1187ded)
+- ✅ **Lesson Workspace:** per-lesson **Notes** (auto-saved) + lesson-aware **side-chat** with
+  Claude, persisted to the Pi, reload/device-durable. Spec+plan `…/2026-07-06-lesson-workspace*`.
+  Security-reviewed + Pi-verified. (commits 83cd86b, 4965c7e, 8582a96)
+
 ## Known issues (discovered during build)
 - ✅ **FIXED 2026-06-24 (commit 6fc932b):** lesson body rendered raw HTML tags as literal text.
   Widened the sanitizer allowlist to safe attribute-less block tags (h1–h3, p, pre, ul/ol, li),
