@@ -126,7 +126,9 @@ def create_app(db_path=None):
         finally:
             conn.close()
         prof_data = (prof or {}).get("data")
-        generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_lesson)
+        # Phase 2: generate lessons WITH web search so they're grounded in real accredited
+        # sources (run_sourced returns (lesson, captured_sources)).
+        generate = lambda prompt: claude_client.run_sourced(prompt, validate=generation.valid_lesson)
         try:
             lesson = generation.ensure_lesson(
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
@@ -172,7 +174,8 @@ def create_app(db_path=None):
         finally:
             conn.close()
         prof_data = (prof or {}).get("data")
-        generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_lesson)
+        # Phase 2: re-ground the deepened lesson in real accredited sources too.
+        generate = lambda prompt: claude_client.run_sourced(prompt, validate=generation.valid_lesson)
         try:
             lesson = generation.deepen_lesson(
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
@@ -226,6 +229,8 @@ def create_app(db_path=None):
             return jsonify({"error": "could not compile the course library"}), 502
         if library is None:
             return jsonify({"error": "course not found"}), 404
+        # Phase 2: also surface the live roll-up of sources cited across generated lessons.
+        library = {**library, "lessonSources": generation.course_lesson_sources(courses.CONTENT_DIR, course_id)}
         return jsonify(library)
 
     @app.get("/api/courses/<course_id>/reviews")

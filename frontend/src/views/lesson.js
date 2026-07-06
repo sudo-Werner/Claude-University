@@ -34,6 +34,25 @@ function gradeBlock(state) {
     </div>`;
 }
 
+// Phase 2 — the accredited sources this lesson was grounded in (real, web-retrieved).
+const SRC_TYPE_LABEL = {
+  university: "University", "peer-reviewed": "Peer-reviewed", textbook: "Textbook",
+  "official-docs": "Official docs", reference: "Reference",
+};
+
+function lessonSourcesHTML(sources) {
+  if (!Array.isArray(sources) || !sources.length) return "";
+  const rows = sources.map((s) =>
+    `<li class="lsrc"><a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${s.title}</a>` +
+    `<span class="src-badge src-${esc(s.type || "reference")}">${SRC_TYPE_LABEL[s.type] || "Reference"}</span></li>`,
+  ).join("");
+  return (
+    `<section class="card lesson-sources"><div class="ls-head">Sources</div>` +
+    `<ul class="lsrc-list">${rows}</ul>` +
+    `<div class="ls-foot">Accredited sources this lesson drew on — retrieved from the web, not invented.</div></section>`
+  );
+}
+
 export function lessonHTML(lesson, state, nav = {}) {
   const segs = Array.from({ length: lesson.totalSteps }, (_, i) => {
     if (i + 1 < lesson.step) return '<i class="done"></i>';
@@ -76,6 +95,7 @@ export function lessonHTML(lesson, state, nav = {}) {
       ${solutionPanel}
     </section>
     ${state.solutionRevealed ? checksHTML(lesson.checks || [], state) : ""}
+    ${lessonSourcesHTML(lesson.sources)}
     <div class="nav">
       <button class="btn-back" data-action="back">Back</button>
       ${

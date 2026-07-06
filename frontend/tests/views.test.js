@@ -156,6 +156,29 @@ test("libraryHTML handles an empty source list", () => {
   assert.match(html, /No accredited sources/);
 });
 
+test("libraryHTML shows a 'used in your lessons' roll-up when present", () => {
+  const html = libraryHTML({ courseId: "c", title: "X", sources: [],
+    lessonSources: [{ title: "MIT OCW", url: "https://mit.edu/ocw", type: "university" }] });
+  assert.match(html, /USED IN YOUR LESSONS/);
+  assert.match(html, /MIT OCW/);
+  assert.match(html, /href="https:\/\/mit\.edu\/ocw"[^>]*target="_blank"/);
+});
+
+test("lesson renders its accredited sources section", () => {
+  const withSources = { ...SAMPLE_LESSON, sources: [
+    { title: "Stanford CS231n", url: "https://cs231n.stanford.edu/", type: "university" }] };
+  const html = lessonHTML(withSources, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.match(html, /lesson-sources/);
+  assert.match(html, /Stanford CS231n/);
+  assert.match(html, /rel="noopener noreferrer"/);
+  assert.match(html, /src-university/);
+});
+
+test("lesson omits the sources section when there are none", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.doesNotMatch(html, /lesson-sources/);
+});
+
 test("diagnostic renders all six questions and gates Continue", () => {
   const none = diagnosticHTML({});
   assert.equal((none.match(/data-q="/g) || []).length >= 6, true);

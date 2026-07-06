@@ -674,3 +674,65 @@ def test_ensure_bibliography_filters_to_really_retrieved_urls(tmp_path):
     # cached: second call returns without regenerating
     lib2 = gen.ensure_bibliography(root, cid, generate_sourced=lambda p: (_ for _ in ()).throw(AssertionError("regen")))
     assert lib2["courseId"] == cid
+
+
+# ---- Phase 2: per-lesson grounding + roll-up ----
+
+def test_lesson_prompt_asks_for_web_grounded_sources():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="c-l1", lesson_title="L",
+                          module_title="M", position=1, total=3)
+    low = p.lower()
+    assert "web search" in low
+    assert "accredited" in low
+    assert "sources" in low  # the sources field is requested
+
+
+def test_ensure_lesson_stores_only_really_retrieved_sources(tmp_path):
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    made["checks"] = [dict(_OK_CHECK)]
+    made["sources"] = [
+        {"title": "Stanford CS231n", "url": "https://cs231n.stanford.edu/"},
+        {"title": "Hallucinated", "url": "https://not-real.example.com/x"}]
+    captured = [{"title": "Stanford CS231n", "url": "https://cs231n.stanford.edu/"}]
+    def generate(prompt):
+        return made, captured  # sourced generator returns a tuple
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=generate)
+    urls = [s["url"] for s in out["sources"]]
+    assert urls == ["https://cs231n.stanford.edu/"]        # hallucinated dropped
+    assert out["sources"][0]["type"] == "university"       # domain-typed
+    # persisted to disk with sources
+    on_disk = _json.loads((root / "demo" / "lessons" / "demo-l1.json").read_text())
+    assert on_disk["sources"][0]["url"] == "https://cs231n.stanford.edu/"
+
+
+def test_ensure_lesson_without_tuple_defaults_to_no_sources(tmp_path):
+    # A plain (non-sourced) generator returning just a dict still works — sources = [].
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"; made["checks"] = [dict(_OK_CHECK)]
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: made)
+    assert out["sources"] == []
+
+
+def test_course_lesson_sources_rolls_up_and_dedupes(tmp_path):
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "T", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "L1"}, {"title": "L2"}]}]})
+    cid = manifest["id"]
+    ldir = root / cid / "lessons"
+    l1 = {"id": "a", "sources": [
+        {"title": "arXiv", "url": "https://arxiv.org/abs/1", "type": "peer-reviewed"},
+        {"title": "MIT", "url": "https://mit.edu/x", "type": "university"}]}
+    l2 = {"id": "b", "sources": [
+        {"title": "arXiv dup", "url": "https://arxiv.org/abs/1", "type": "peer-reviewed"},
+        {"title": "Docs", "url": "https://pytorch.org/docs", "type": "official-docs"}]}
+    (ldir / "a.json").write_text(_json.dumps(l1))
+    (ldir / "b.json").write_text(_json.dumps(l2))
+    rolled = gen.course_lesson_sources(root, cid)
+    urls = [s["url"] for s in rolled]
+    assert urls.count("https://arxiv.org/abs/1") == 1   # deduped across lessons
+    assert "https://mit.edu/x" in urls and "https://pytorch.org/docs" in urls
+    assert rolled[0]["type"] == "university"            # sorted: university first

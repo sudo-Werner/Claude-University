@@ -416,6 +416,15 @@ textarea::placeholder{color:#b3a994}
 .src-badge.src-official-docs{background:rgba(47,143,208,.14); color:var(--blue-text); border-color:rgba(47,143,208,.3)}
 .src-empty{font-size:14px; color:var(--text-mut)}
 
+/* Phase 2 — compact lesson-sources list (lesson view + Library roll-up) */
+.lesson-sources{padding:16px 18px}
+.ls-head{font-size:11px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--purple); margin-bottom:10px}
+.ls-foot{font-size:11.5px; color:var(--text-faint); margin-top:10px}
+.lsrc-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px}
+.lsrc{display:flex; align-items:baseline; justify-content:space-between; gap:10px}
+.lsrc a{font-size:14px; font-weight:600; color:var(--blue-text); text-decoration:none; line-height:1.35}
+.lsrc a:hover{text-decoration:underline; text-underline-offset:2px}
+
 /* =================  LESSON PLAYER NAV  ================= */
 .player-nav{display:flex; align-items:center; justify-content:space-between; margin-top:18px; gap:8px}
 .pn-curric{flex:0 0 auto}

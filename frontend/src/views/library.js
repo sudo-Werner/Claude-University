@@ -35,12 +35,27 @@ export function libraryHTML(library) {
     }).join("");
     body = groups;
   }
+  // Phase 2: the live roll-up of sources actually cited across the lessons you've done.
+  const lessonSources = library.lessonSources || [];
+  let usedSection = "";
+  if (lessonSources.length) {
+    const rows = lessonSources.map((s) =>
+      `<li class="lsrc"><a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${s.title}</a>` +
+      `<span class="src-badge src-${esc(s.type || "reference")}">${TYPE_LABEL[s.type] || "Reference"}</span></li>`,
+    ).join("");
+    usedSection =
+      `<section class="card"><span class="eyebrow">USED IN YOUR LESSONS</span>` +
+      `<div class="lib-intro">The accredited sources the lessons you've done were actually grounded in.</div>` +
+      `<ul class="lsrc-list">${rows}</ul></section>`;
+  }
+
   return (
     `<div class="library">` +
     `<div class="greeting"><h1>Library</h1><span>${esc(library.title || "")}</span></div>` +
+    usedSection +
     `<section class="card">` +
-    `<span class="eyebrow">ACCREDITED SOURCES</span>` +
-    `<div class="lib-intro">Authoritative sources this course draws on — retrieved from the web, ` +
+    `<span class="eyebrow">RECOMMENDED READING</span>` +
+    `<div class="lib-intro">Authoritative sources for this subject — retrieved from the web, ` +
     `not invented. Each link was a real search result.</div>${body}</section>` +
     `<div class="nav"><button class="btn-back" data-action="back">Back</button></div>` +
     `</div>`

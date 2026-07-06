@@ -131,6 +131,8 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         'eyebrow ("EXERCISE"), promptHtml (the question as HTML, may use <code>), '
         "hintHtml (a hint as HTML), solutionAns (the answer), "
         "solutionNote (a brief worked example: show the reasoning/steps, not just restate the answer),\n"
+        '  sources: a list of the accredited sources you actually drew on, each {"title","url"} '
+        "with the REAL url from your web search (see the grounding note below),\n"
         "  checks: a list of 1-3 concept-check items. Each item is either "
         '{"type":"mcq","prompt":"<question, may use <code>>","choices":["A","B","C"],'
         '"answer":<integer index of the correct choice>,'
@@ -163,7 +165,13 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         '- A short framed aside for a key idea or warning: <div class="callout">...</div> (use it '
         'sparingly), or <div class="box">...</div> for a neutral framed note. Use those EXACT class '
         "strings; no other div/class/attribute will render.\n"
-        "Prefer an annotated worked example over an abstract diagram. If in doubt, use prose."
+        "Prefer an annotated worked example over an abstract diagram. If in doubt, use prose.\n\n"
+        # Phase 2 grounding: teach from real, accredited sources and cite the ones used.
+        "Ground this lesson in real, ACCREDITED sources: use web search to consult authoritative "
+        "material (university course pages/.edu, official documentation, peer-reviewed papers, "
+        "established textbooks), and base your explanation on what you find. In the `sources` field, "
+        "list ONLY the specific sources you actually drew on, each with its exact real URL from your "
+        "search — never invent or guess a URL. If a claim is contested, prefer the primary source."
         + directive_line
     )
 
@@ -355,6 +363,60 @@ def _norm_url(url):
     return u.rstrip("/")
 
 
+def _resolve_sources(cited, captured):
+    """Turn the model's cited sources into displayable ones, keeping ONLY those whose URL
+    was actually in the captured web-search results (the trust guarantee). Derives the
+    accreditation type from the domain and sanitizes the learner-facing text. Deduped."""
+    retrieved = {_norm_url(s.get("url", "")) for s in (captured or []) if isinstance(s, dict)}
+    out, seen = [], set()
+    for s in (cited or []):
+        if not isinstance(s, dict):
+            continue
+        url = s.get("url", "")
+        if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
+            continue
+        n = _norm_url(url)
+        if n not in retrieved or n in seen:
+            continue
+        seen.add(n)
+        out.append({
+            "title": sanitize_html(s.get("title", "")),
+            "url": url,
+            "type": source_type(url),
+            "note": sanitize_html(s["note"]) if isinstance(s.get("note"), str) else "",
+        })
+    out.sort(key=lambda s: _SOURCE_TYPE_RANK.index(s["type"]))
+    return out
+
+
+def course_lesson_sources(content_dir, course_id):
+    """Deduped roll-up of the sources cited across every generated lesson (Phase 2).
+    Read live so the course Library reflects lessons as they are generated. Lesson sources
+    are already sanitized/typed at store time, so we just merge and dedupe by URL."""
+    lessons_dir = Path(content_dir) / course_id / "lessons"
+    if not lessons_dir.exists():
+        return []
+    seen = {}
+    for f in sorted(lessons_dir.glob("*.json")):
+        try:
+            data = json.loads(f.read_text())
+        except ValueError:
+            continue
+        for s in data.get("sources", []) if isinstance(data, dict) else []:
+            if not (isinstance(s, dict) and isinstance(s.get("url"), str)):
+                continue
+            n = _norm_url(s["url"])
+            if n and n not in seen:
+                seen[n] = {
+                    "title": s.get("title", ""),
+                    "url": s["url"],
+                    "type": s.get("type") or source_type(s["url"]),
+                }
+    out = list(seen.values())
+    out.sort(key=lambda s: _SOURCE_TYPE_RANK.index(s.get("type", "reference")))
+    return out
+
+
 def valid_bibliography(obj):
     if not isinstance(obj, dict):
         return False
@@ -410,23 +472,7 @@ def ensure_bibliography(content_dir, course_id, *, generate_sourced):
     obj, captured = generate_sourced(prompt)
     if not isinstance(obj, dict):
         raise claude_client.ClaudeError("bibliography generator returned a non-dict result")
-    retrieved = {_norm_url(s.get("url", "")) for s in captured if isinstance(s, dict)}
-    kept = []
-    for s in obj.get("sources", []):
-        if not isinstance(s, dict):
-            continue
-        url = s.get("url", "")
-        if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
-            continue
-        if _norm_url(url) not in retrieved:
-            continue  # the trust guarantee: only show URLs the search actually returned
-        kept.append({
-            "title": sanitize_html(s.get("title", "")),
-            "url": url,
-            "type": source_type(url),
-            "note": sanitize_html(s.get("note", "")),
-        })
-    kept.sort(key=lambda s: _SOURCE_TYPE_RANK.index(s["type"]))
+    kept = _resolve_sources(obj.get("sources"), captured)
     library = {"courseId": course_id, "title": manifest.get("title", ""), "sources": kept}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(library, indent=2, ensure_ascii=False))
@@ -496,13 +542,18 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
         performance=performance,
         directive=directive,
     )
-    lesson = generate(prompt)
+    result = generate(prompt)
+    # Phase 2: a sourced generator returns (lesson, captured_web_sources); a plain one
+    # returns just the lesson dict. Accept both.
+    lesson, captured = result if isinstance(result, tuple) else (result, [])
     if not isinstance(lesson, dict):
         raise claude_client.ClaudeError("generator returned a non-dict result")
     lesson["id"] = lesson_id
     lesson["courseId"] = course_id
     lesson["step"] = position
     lesson["totalSteps"] = len(flat)
+    # Keep only the cited sources whose URL was really retrieved (trust guarantee).
+    lesson["sources"] = _resolve_sources(lesson.get("sources"), captured)
     for field in ("promptHtml", "hintHtml", "solutionAns", "solutionNote"):
         if isinstance(lesson.get(field), str):
             lesson[field] = sanitize_html(lesson[field])

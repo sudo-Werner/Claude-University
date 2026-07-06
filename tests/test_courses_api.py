@@ -124,7 +124,7 @@ def test_lesson_route_returns_reauth_on_auth_error(client, tmp_path, monkeypatch
     # no lesson file on disk -> generation path; force an auth failure
     def boom(prompt, **kw):
         raise claude_client.ClaudeAuthError("Invalid API key")
-    monkeypatch.setattr(claude_client, "run_structured", boom)
+    monkeypatch.setattr(claude_client, "run_sourced", boom)
     resp = client.get(f"/api/courses/{cid}/lessons/{lid}")
     assert resp.status_code == 503
     assert resp.get_json().get("code") == "reauth"
@@ -216,12 +216,14 @@ def test_deepen_endpoint_regenerates_lesson(client, tmp_path, monkeypatch):
               "eyebrow": "EXERCISE", "promptHtml": "<p>deeper now</p>", "hintHtml": "h",
               "solutionAns": "a", "solutionNote": "n",
               "checks": [{"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}]}
-    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: deeper)
+    # deepen now generates WITH web search: run_sourced returns (lesson, captured_sources)
+    monkeypatch.setattr(claude_client, "run_sourced", lambda prompt, **kw: (deeper, []))
     resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/deepen")
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["promptHtml"] == "<p>deeper now</p>"
     assert body["id"] == lesson_id  # reconciled
+    assert body["sources"] == []  # no captured sources -> empty list
 
 
 def test_deepen_endpoint_reauth_on_auth_error(client, tmp_path, monkeypatch):
@@ -232,7 +234,7 @@ def test_deepen_endpoint_reauth_on_auth_error(client, tmp_path, monkeypatch):
     cid = manifest["id"]
     def boom(prompt, **kw):
         raise claude_client.ClaudeAuthError("Invalid API key")
-    monkeypatch.setattr(claude_client, "run_structured", boom)
+    monkeypatch.setattr(claude_client, "run_sourced", boom)
     resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/deepen")
     assert resp.status_code == 503
     assert resp.get_json().get("code") == "reauth"
@@ -352,3 +354,24 @@ def test_library_endpoint_404_unknown_course(client, tmp_path, monkeypatch):
     monkeypatch.setattr(courses, "CONTENT_DIR", root)
     resp = client.get("/api/courses/no-such-course/library")
     assert resp.status_code == 404
+
+
+def test_library_endpoint_includes_lesson_source_rollup(client, tmp_path, monkeypatch):
+    import json as _json
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    # a generated lesson on disk carries its own cited sources
+    lp = root / cid / "lessons" / f"{lesson_id}.json"
+    data = _json.loads(lp.read_text())
+    data["sources"] = [{"title": "MIT OCW", "url": "https://mit.edu/ocw", "type": "university"}]
+    lp.write_text(_json.dumps(data))
+    captured = [{"title": "arXiv", "url": "https://arxiv.org/abs/1"}]
+    obj = {"sources": [{"title": "arXiv", "url": "https://arxiv.org/abs/1", "note": "n"}]}
+    monkeypatch.setattr(claude_client, "run_sourced", lambda prompt, **kw: (obj, captured))
+    body = client.get(f"/api/courses/{cid}/library").get_json()
+    # subject bibliography (from search) + the live roll-up of lesson sources
+    assert any(s["url"] == "https://arxiv.org/abs/1" for s in body["sources"])
+    assert any(s["url"] == "https://mit.edu/ocw" for s in body["lessonSources"])
