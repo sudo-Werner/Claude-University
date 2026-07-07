@@ -82,3 +82,18 @@ export async function createCourse({ fetch, proposal }) {
   const body = await resp.json();
   return body.course;
 }
+
+export async function compileProgram({ fetch, learnerBrief }) {
+  const resp = await fetch("/api/courses/compile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ learnerBrief }),
+  });
+  if (!resp.ok) {
+    let message = "Couldn't build your program right now. Please try again.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  const body = await resp.json();
+  return body.course;
+}

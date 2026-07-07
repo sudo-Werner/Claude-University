@@ -8,6 +8,7 @@ import { curriculumHTML, lessonStatus, moduleProgress } from "../src/views/curri
 import { capstoneHTML } from "../src/views/capstone.js";
 import { loadingHTML, LESSON_STAGES, CAPSTONE_STAGES } from "../src/views/loading.js";
 import { libraryHTML } from "../src/views/library.js";
+import { syllabusHTML } from "../src/views/syllabus.js";
 const DASHBOARD_SEED = {
   topic: "Backpropagation, intuitively",
   sub: "Module 3 · Neural Networks · Lesson 2",
@@ -377,4 +378,31 @@ test("lessonHTML renders player nav with Prev/Next enabled per nav flags", () =>
 
   const first = lessonHTML(SAMPLE_LESSON, state, { hasPrev: false, hasNext: true });
   assert.match(first, /data-action="prev-lesson"[^>]*disabled/);
+});
+
+const OBJ = { text: "Calculate the gradient", bloom: "apply", knowledge: "procedural" };
+const COURSE = {
+  title: "Intro ML", subtitle: "hands-on",
+  level: { code: "bachelor-y2", label: "Bachelor Year 2-equivalent" },
+  targetHours: 130, skills: ["train a model", "evaluate a model"],
+  outcomes: [{ text: "Compare two models", bloom: "analyze", knowledge: "conceptual" }],
+  groundingSources: [{ title: "MIT 6.036", url: "https://mit.edu/6036", type: "university" }],
+  modules: [{ id: "m1", title: "Foundations", outcomes: [OBJ],
+    lessons: [{ id: "l1", title: "Vectors", estMinutes: 90, objectives: [OBJ], prereqs: [] }] }],
+};
+
+test("syllabusHTML renders level, hours, skills, objectives, and sources", () => {
+  const html = syllabusHTML(COURSE);
+  assert.ok(html.includes("Bachelor Year 2-equivalent"));
+  assert.ok(html.includes("130"));                          // estimated total effort
+  assert.ok(html.includes("train a model"));
+  assert.ok(html.includes("Calculate the gradient"));       // a lesson objective
+  assert.ok(html.includes("MIT 6.036"));
+  assert.ok(html.includes('data-action="accept-syllabus"'));
+  assert.ok(html.includes('data-action="revise-syllabus"'));
+});
+
+test("syllabusHTML escapes learner-derived text", () => {
+  const evil = { ...COURSE, title: "<img src=x onerror=alert(1)>" };
+  assert.ok(!syllabusHTML(evil).includes("<img src=x"));
 });

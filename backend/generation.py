@@ -59,23 +59,26 @@ def restore_entities(value):
 
 
 COURSE_SYSTEM_PROMPT = (
-    "You are a curriculum designer building a personalized course for a single learner "
-    "on their personal learning platform. Have a short, friendly conversation to understand "
-    "their goal, prior knowledge, and how deep they want to go (their desired depth). "
-    "Do NOT ask how much time they have per day or per week, and do not let time drive the "
-    "material: the course is self-paced and every lesson is self-contained, so how much time "
-    "they spend on a given day only changes how many lessons they do, never how deep the "
-    "material is. Set depth from their goal and desired depth alone. "
-    "Ask one or two focused questions per turn. When you have enough to propose a curriculum, "
-    "reply with a brief sentence and then a fenced code block labelled `course` containing ONLY "
-    "JSON of this shape:\n"
-    "```course\n"
-    '{"title": "...", "subtitle": "...", "brief": "<one paragraph capturing audience level, '
-    'desired depth, and goals for later lesson generation — do NOT mention daily time or pace>", '
-    '"modules": [{"title": "...", "lessons": [{"title": "..."}]}]}\n'
+    "You are an academic advisor conducting an INTAKE INTERVIEW to design a rigorous, personalized "
+    "university-level course for a single learner. Understand, in the learner's own words:\n"
+    "- their GOAL: what they want to be able to DO afterwards (the real-world transfer), not just "
+    "'learn about X';\n"
+    "- their BACKGROUND: relevant experience or study;\n"
+    "- their PRIOR KNOWLEDGE: probe conversationally which parts of the subject they already know, so "
+    "the course starts at the right depth and marks familiar material (this replaces a placement quiz);\n"
+    "- their MOTIVATION: why this, why now;\n"
+    "- their DESIRED DEPTH: how deep and rigorous they want to go.\n"
+    "Ask ONE or TWO focused questions per turn and follow up to probe prior knowledge. Do NOT ask how "
+    "much time they have per day or week — the course is self-paced. When you have enough to design a "
+    "real program, reply with a brief sentence and then a fenced code block labelled `learnerBrief` "
+    "containing ONLY JSON of this shape:\n"
+    "```learnerBrief\n"
+    '{"goal": "<what they want to be able to DO>", "background": "<their experience, in their words>", '
+    '"priorKnowledge": ["<a topic they already know>"], "motivation": "<why>", '
+    '"desiredDepth": "<their stated depth preference>"}\n'
     "```\n"
-    "Keep the course focused: 3-6 modules, 3-6 lessons each. Do not emit the course block until "
-    "you have enough information."
+    "Do not emit the learnerBrief block until you have enough. After emitting it the platform builds "
+    "the full syllabus — do not list modules or lessons yourself."
 )
 
 LESSON_KEYS = (
@@ -84,8 +87,100 @@ LESSON_KEYS = (
 )
 
 
+# ---- Sub-project A: program-backbone schema (Bloom objectives, levels, prereq graph) ----
+
+BLOOM_LEVELS = ("remember", "understand", "apply", "analyze", "evaluate", "create")
+KNOWLEDGE_DIMS = ("factual", "conceptual", "procedural", "metacognitive")
+LEVEL_CODES = ("foundation", "bachelor-y1", "bachelor-y2", "bachelor-y3", "master")
+# Non-observable verbs: an objective built on these cannot be measured, so backward design
+# forbids them in objective text. Kept as a named list for the prompts; the lint below uses
+# word boundaries so "knowledge" does not trip on "know". It deliberately does NOT match the
+# "-ing" gerund forms ("learning", "understanding"): those are domain nouns (e.g. "supervised
+# learning") that saturate a subject like ML, not the weak objective verb the lint targets.
+BANNED_OBJECTIVE_VERBS = ("understand", "know", "learn", "appreciate", "grasp", "be aware", "familiar")
+_BANNED_VERB_RE = _re.compile(
+    r"\b(understands?|knows?|learns?|appreciates?|grasps?|aware|familiar)\b", _re.I
+)
+
+
+def valid_objective(obj):
+    if not isinstance(obj, dict):
+        return False
+    text = obj.get("text")
+    if not (isinstance(text, str) and text.strip()):
+        return False
+    if _BANNED_VERB_RE.search(text):
+        return False
+    return obj.get("bloom") in BLOOM_LEVELS and obj.get("knowledge") in KNOWLEDGE_DIMS
+
+
+def valid_outcomes(items):
+    return isinstance(items, list) and len(items) >= 1 and all(valid_objective(o) for o in items)
+
+
+def valid_prereq_graph(modules):
+    """Prereq edges must reference lessons appearing strictly earlier in the flat
+    module->lesson order. Earlier-only edges are inherently acyclic, so this single check
+    enforces both the DAG and the topological-order requirements."""
+    if not isinstance(modules, list):
+        return False
+    seen = set()
+    for module in modules:
+        if not isinstance(module, dict):
+            return False
+        for lesson in module.get("lessons", []):
+            if not (isinstance(lesson, dict) and lesson.get("id")):
+                return False
+            prereqs = lesson.get("prereqs", [])
+            if not isinstance(prereqs, list):
+                return False
+            if any(p not in seen for p in prereqs):  # unknown, self, or forward edge
+                return False
+            seen.add(lesson["id"])
+    return True
+
+
+def valid_compiled_course(obj):
+    if not isinstance(obj, dict) or obj.get("schemaVersion") != 2:
+        return False
+    if not (isinstance(obj.get("title"), str) and obj["title"].strip()):
+        return False
+    level = obj.get("level")
+    if not (isinstance(level, dict) and level.get("code") in LEVEL_CODES
+            and isinstance(level.get("label"), str) and level["label"].strip()):
+        return False
+    if not (isinstance(obj.get("targetHours"), (int, float)) and obj["targetHours"] > 0):
+        return False
+    skills = obj.get("skills")
+    if not (isinstance(skills, list) and skills and all(isinstance(s, str) and s.strip() for s in skills)):
+        return False
+    if not valid_outcomes(obj.get("outcomes")):
+        return False
+    modules = obj.get("modules")
+    if not (isinstance(modules, list) and modules):
+        return False
+    for module in modules:
+        if not (isinstance(module, dict) and module.get("title") and valid_outcomes(module.get("outcomes"))):
+            return False
+        lessons = module.get("lessons")
+        if not (isinstance(lessons, list) and lessons):
+            return False
+        for lesson in lessons:
+            if not (isinstance(lesson, dict) and lesson.get("id") and lesson.get("title")):
+                return False
+            if not valid_outcomes(lesson.get("objectives")):
+                return False
+            if not (isinstance(lesson.get("estMinutes"), (int, float)) and lesson["estMinutes"] > 0):
+                return False
+    return valid_prereq_graph(modules)
+
+
 def detect_proposal(text):
     return claude_client.extract_fenced_json(text, "course")
+
+
+def detect_brief(text):
+    return claude_client.extract_fenced_json(text, "learnerBrief")
 
 
 def valid_check(item):
@@ -118,9 +213,21 @@ def valid_lesson(obj):
 
 
 def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, position, total,
-                  performance="", directive=""):
+                  performance="", directive="", objectives=None):
     perf_line = f"Learner performance so far: {performance}\n" if performance else ""
     directive_line = f"\n{directive}\n" if directive else ""
+    obj_block = ""
+    if objectives:
+        listed = "; ".join(
+            f"{o.get('text', '')} (Bloom: {o.get('bloom', '')})"
+            for o in objectives if isinstance(o, dict) and o.get("text")
+        )
+        if listed:
+            obj_block = (
+                "\n\nThis lesson must teach to these MEASURABLE learning objectives, and its exercise "
+                "AND every concept-check must require the learner to perform each objective's action "
+                f"verb (constructive alignment): {listed}.\n"
+            )
     return (
         "You are writing one self-contained lesson for a personalized course.\n"
         f"Course context: {brief}\n"
@@ -190,7 +297,7 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "established textbooks), and base your explanation on what you find. In the `sources` field, "
         "list ONLY the specific sources you actually drew on, each with its exact real URL from your "
         "search — never invent or guess a URL. If a claim is contested, prefer the primary source."
-        + directive_line
+        + obj_block + directive_line
     )
 
 
@@ -573,9 +680,9 @@ def chat_sse(messages, profile, *, stream_fn):
     except claude_client.ClaudeError:
         yield _sse("error", json.dumps({"message": "Claude is unavailable right now."}))
         return
-    proposal = detect_proposal("".join(full))
-    if proposal is not None:
-        yield _sse("proposal", json.dumps(proposal))
+    brief = detect_brief("".join(full))
+    if brief is not None:
+        yield _sse("brief", json.dumps(brief))
     yield _sse("done", "{}")
 
 
@@ -706,6 +813,7 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
         total=len(flat),
         performance=performance,
         directive=directive,
+        objectives=meta.get("objectives"),
     )
     result = generate(prompt)
     # Phase 2: a sourced generator returns (lesson, captured_web_sources); a plain one

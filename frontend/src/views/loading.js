@@ -20,6 +20,14 @@ export const CAPSTONE_STAGES = [
   "Writing the connections…",
   "Almost ready…",
 ];
+export const PROGRAM_STAGES = [
+  "Reading your brief…",
+  "Searching canonical sources…",
+  "Designing modules and lessons…",
+  "Writing measurable objectives…",
+  "Fact-checking against the sources…",
+  "Assembling your syllabus…",
+];
 
 function bars(kind) {
   if (kind === "capstone") {

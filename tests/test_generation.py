@@ -1,4 +1,5 @@
 from backend import generation as gen
+from backend import generation
 
 _OK_CHECK = {"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}
 
@@ -189,14 +190,16 @@ def test_chat_sse_streams_deltas_then_done():
     assert evs[-1][0] == "done"
 
 
-def test_chat_sse_emits_proposal_when_course_fence_present():
+def test_chat_sse_emits_brief_when_learner_brief_fence_present():
+    # chat_sse now emits a `brief` event (intake interview), not a `proposal` event.
     def fake_stream(prompt):
-        yield "Great, here is a plan.\n```course\n"
-        yield '{"title": "Stats", "modules": []}\n```'
+        yield 'Great, here is your brief.\n```learnerBrief\n'
+        yield '{"goal":"learn Stats","background":"none","priorKnowledge":[],"motivation":"career","desiredDepth":"deep"}\n```'
     chunks = list(gen.chat_sse([{"role": "user", "content": "stats"}], {}, stream_fn=fake_stream))
     evs = _events(chunks)
-    proposal = [d for (e, d) in evs if e == "proposal"]
-    assert proposal and '"title": "Stats"' in proposal[0]
+    brief = [d for (e, d) in evs if e == "brief"]
+    assert brief and '"goal": "learn Stats"' in brief[0]
+    assert not any(e == "proposal" for (e, _) in evs)
 
 
 def test_chat_sse_preserves_multiline_delta():
@@ -907,3 +910,114 @@ def test_ensure_lesson_skips_verification_when_not_requested(tmp_path):
     raw = _full_lesson(solutionAns="unreviewed")
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(raw))
     assert out["solutionAns"] == "unreviewed"  # no verify_generate -> stored as generated
+
+
+# ---- Sub-project A: program-backbone schema (Bloom objectives, levels, prereq graph) ----
+
+def test_valid_objective_accepts_action_verb_and_tags():
+    assert generation.valid_objective(
+        {"text": "Calculate the gradient of a loss function", "bloom": "apply", "knowledge": "procedural"})
+
+def test_valid_objective_rejects_banned_verbs():
+    for bad in ("Understand recursion", "Know the four phases", "Learn about markets",
+                "Appreciate the design", "Be aware of the risks", "Grasp the concept"):
+        assert not generation.valid_objective({"text": bad, "bloom": "understand", "knowledge": "conceptual"})
+
+def test_valid_objective_allows_knowledge_word_not_matching_know():
+    # "knowledge" must NOT trip the \bknow\b lint (word-boundary, not substring)
+    assert generation.valid_objective(
+        {"text": "Analyze a knowledge-representation scheme", "bloom": "analyze", "knowledge": "conceptual"})
+
+def test_valid_objective_allows_learning_as_domain_noun():
+    # the -ing gerund forms are domain nouns, not the weak objective verb the lint targets:
+    # an ML course's objectives are full of "learning" and must not be rejected wholesale.
+    for good in ("Apply supervised learning to a labelled dataset",
+                 "Compare deep learning architectures",
+                 "Design a reinforcement learning reward function",
+                 "Build a shared understanding of the bias-variance tradeoff"):
+        assert generation.valid_objective({"text": good, "bloom": "apply", "knowledge": "procedural"})
+    # but the base weak verbs are still banned
+    for bad in ("Learn about gradient descent", "Understand backpropagation"):
+        assert not generation.valid_objective({"text": bad, "bloom": "apply", "knowledge": "procedural"})
+
+def test_valid_objective_rejects_bad_tags():
+    assert not generation.valid_objective({"text": "Derive Bayes' rule", "bloom": "prove", "knowledge": "conceptual"})
+    assert not generation.valid_objective({"text": "Derive Bayes' rule", "bloom": "apply", "knowledge": "meta"})
+    assert not generation.valid_objective({"text": "", "bloom": "apply", "knowledge": "procedural"})
+
+def test_valid_outcomes_requires_nonempty_list_of_objectives():
+    assert generation.valid_outcomes([{"text": "Compare two models", "bloom": "analyze", "knowledge": "conceptual"}])
+    assert not generation.valid_outcomes([])
+    assert not generation.valid_outcomes("nope")
+
+
+# ---- Task 2: Prerequisite-graph + compiled-course validators ----
+
+OBJ = {"text": "Calculate X", "bloom": "apply", "knowledge": "procedural"}
+
+def _mods_with_prereqs(edges):
+    # edges: {lessonId: [prereqIds]} over lessons l1,l2,l3 in one module
+    return [{"id": "m1", "title": "M", "outcomes": [OBJ],
+             "lessons": [{"id": lid, "title": lid, "objectives": [OBJ], "estMinutes": 60,
+                          "prereqs": edges.get(lid, [])} for lid in ("l1", "l2", "l3")]}]
+
+def test_valid_prereq_graph_accepts_earlier_only_dag():
+    assert generation.valid_prereq_graph(_mods_with_prereqs({"l2": ["l1"], "l3": ["l1", "l2"]}))
+
+def test_valid_prereq_graph_rejects_forward_edge():
+    assert not generation.valid_prereq_graph(_mods_with_prereqs({"l1": ["l2"]}))
+
+def test_valid_prereq_graph_rejects_self_and_unknown_edge():
+    assert not generation.valid_prereq_graph(_mods_with_prereqs({"l2": ["l2"]}))
+    assert not generation.valid_prereq_graph(_mods_with_prereqs({"l3": ["l9"]}))
+
+def _compiled():
+    return {"schemaVersion": 2, "title": "T", "subtitle": "",
+            "level": {"code": "bachelor-y2", "label": "Bachelor Year 2-equivalent"},
+            "targetHours": 130, "skills": ["do X"], "outcomes": [OBJ],
+            "groundingSources": [], "modules": _mods_with_prereqs({"l2": ["l1"]})}
+
+def test_valid_compiled_course_accepts_full_shape():
+    assert generation.valid_compiled_course(_compiled())
+
+def test_valid_compiled_course_rejects_missing_pieces():
+    c = _compiled(); c.pop("outcomes"); assert not generation.valid_compiled_course(c)
+    c = _compiled(); c["level"] = {"code": "phd", "label": "x"}; assert not generation.valid_compiled_course(c)
+    c = _compiled(); c["schemaVersion"] = 1; assert not generation.valid_compiled_course(c)
+    c = _compiled(); c["modules"][0]["lessons"][0].pop("objectives"); assert not generation.valid_compiled_course(c)
+
+
+# ---- Task 3: intake-interview prompt + learnerBrief detection + brief SSE event ----
+
+def test_detect_brief_parses_fenced_block():
+    text = ('Great, here is your brief.\n```learnerBrief\n'
+            '{"goal":"build ML models","background":"python dev","priorKnowledge":["python"],'
+            '"motivation":"career","desiredDepth":"deep"}\n```')
+    brief = generation.detect_brief(text)
+    assert brief["goal"] == "build ML models" and brief["priorKnowledge"] == ["python"]
+
+def test_detect_brief_ignores_prose():
+    assert generation.detect_brief("just a normal chat reply, no block") is None
+
+def test_chat_sse_emits_brief_event():
+    brief_json = ('```learnerBrief\n{"goal":"g","background":"b","priorKnowledge":[],'
+                  '"motivation":"m","desiredDepth":"d"}\n```')
+    def fake_stream(prompt):
+        yield brief_json
+    frames = "".join(generation.chat_sse([{"role": "user", "content": "hi"}], None, stream_fn=fake_stream))
+    assert "event: brief" in frames and '"goal": "g"' in frames
+    assert "event: proposal" not in frames
+
+
+# ---- Task 11: constructive alignment — Bloom objectives in lesson prompt ----
+
+def test_lesson_prompt_includes_objectives_alignment():
+    p = generation.lesson_prompt(brief="b", profile=None, lesson_id="c-l1", lesson_title="A",
+        module_title="M", position=1, total=3,
+        objectives=[{"text": "Calculate the mean", "bloom": "apply", "knowledge": "procedural"}])
+    assert "Calculate the mean" in p and "constructive alignment" in p
+
+def test_lesson_prompt_omits_block_without_objectives():
+    p = generation.lesson_prompt(brief="b", profile=None, lesson_id="c-l1", lesson_title="A",
+        module_title="M", position=1, total=3)
+    assert "constructive alignment" not in p

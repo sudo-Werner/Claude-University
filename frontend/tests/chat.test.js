@@ -9,7 +9,7 @@ function bodyFrom(str) {
   return { getReader: () => ({ read: async () => (sent ? { done: true } : (sent = true, { value: bytes, done: false })) }) };
 }
 
-test("streamChat posts to a custom endpoint and tolerates a missing onProposal", async () => {
+test("streamChat posts to a custom endpoint and tolerates a missing onBrief", async () => {
   let url;
   const fetch = async (u) => { url = u; return { body: bodyFrom("event: delta\ndata: hi\n\nevent: done\ndata: {}\n\n") }; };
   let text = "", done = false;
@@ -54,4 +54,22 @@ test("chatHTML escapes message content", () => {
   const html = chatHTML([{ role: "user", content: "<b>hi</b>" }], {});
   assert.doesNotMatch(html, /<b>hi<\/b>/);
   assert.match(html, /&lt;b&gt;hi/);
+});
+
+function fakeFetchSSE(frames) {
+  const body = frames.map((f) => `event: ${f.event}\ndata: ${f.data}\n\n`).join("");
+  const bytes = new TextEncoder().encode(body);
+  return async () => ({
+    body: { getReader: () => { let done = false;
+      return { read: async () => done ? { done: true } : (done = true, { value: bytes, done: false }) }; } },
+  });
+}
+
+test("streamChat dispatches brief event to onBrief", async () => {
+  let brief = null;
+  await streamChat({
+    fetch: fakeFetchSSE([{ event: "brief", data: JSON.stringify({ goal: "build models" }) }, { event: "done", data: "{}" }]),
+    messages: [], onDelta() {}, onBrief: (b) => { brief = b; }, onDone() {}, onError() {},
+  });
+  assert.equal(brief.goal, "build models");
 });

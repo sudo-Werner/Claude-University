@@ -1,4 +1,13 @@
 import { PHASE_NAMES, PHASE_SECONDS } from "../timer.js";
+import { esc } from "../escape.js";
+
+function contractHTML(contract) {
+  if (!contract) return "";
+  const skills = (contract.skills || []).slice(0, 6).map((s) => `<span class="chip">${esc(s)}</span>`).join("");
+  const hours = contract.hours ? `<span class="hours-badge">~${contract.hours} h estimated total effort</span>` : "";
+  return `<div class="contract"><span class="level-badge">${esc(contract.level)}</span>${hours}` +
+         (skills ? `<div class="chips">${skills}</div>` : "") + `</div>`;
+}
 
 const CLOCK_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#a59b89" stroke-width="2"/><path d="M12 7v5l3 2" stroke="#a59b89" stroke-width="2" stroke-linecap="round"/></svg>`;
 const PLAY_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="#fff"><path d="M7 5l12 7-12 7V5z"/></svg>`;
@@ -32,6 +41,7 @@ export function dashboardHTML(data, timerView) {
   return `
     <div class="dash">
     <div class="greeting"><h1>Good morning, Werner</h1><span>Today</span></div>
+    ${contractHTML(data.contract)}
     <section class="card">
       <div class="session-head">
         <span class="eyebrow">TODAY'S SESSION</span>

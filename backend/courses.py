@@ -27,6 +27,7 @@ def flatten_lessons(manifest):
                 "id": lesson["id"],
                 "title": lesson["title"],
                 "moduleTitle": module["title"],
+                "objectives": lesson.get("objectives", []),
             })
     return out
 
@@ -96,14 +97,31 @@ def write_course(content_dir, proposal):
     existing = {p.name for p in content_dir.iterdir()} if content_dir.exists() else set()
     course_id = slug_for(proposal["title"], existing)
 
-    modules = []
-    counter = 1
+    # Map each lesson's provisional id (compiler's l1..lN, or positional for legacy) to its slugged
+    # id first, so prereq edges can be remapped to the same slugged ids.
+    id_map, counter = {}, 1
+    for module in proposal.get("modules", []):
+        for lesson in module.get("lessons", []):
+            id_map[lesson.get("id") or f"l{counter}"] = f"{course_id}-l{counter}"
+            counter += 1
+
+    modules, counter = [], 1
     for m_idx, module in enumerate(proposal.get("modules", []), start=1):
         lessons = []
         for lesson in module.get("lessons", []):
-            lessons.append({"id": f"{course_id}-l{counter}", "title": lesson["title"]})
+            new_lesson = {"id": f"{course_id}-l{counter}", "title": lesson["title"]}
+            if "objectives" in lesson:
+                new_lesson["objectives"] = lesson["objectives"]
+            if "estMinutes" in lesson:
+                new_lesson["estMinutes"] = lesson["estMinutes"]
+            if "prereqs" in lesson:
+                new_lesson["prereqs"] = [id_map.get(p, p) for p in lesson.get("prereqs", [])]
+            lessons.append(new_lesson)
             counter += 1
-        modules.append({"id": f"m{m_idx}", "title": module["title"], "lessons": lessons})
+        new_module = {"id": f"m{m_idx}", "title": module["title"], "lessons": lessons}
+        if "outcomes" in module:
+            new_module["outcomes"] = module["outcomes"]
+        modules.append(new_module)
 
     manifest = {
         "id": course_id,
@@ -112,6 +130,13 @@ def write_course(content_dir, proposal):
         "brief": proposal.get("brief", ""),
         "modules": modules,
     }
+    # Carry the compiled (schemaVersion 2) course-level fields through when present; legacy
+    # proposals omit them and write exactly as before.
+    for field in ("schemaVersion", "learnerBrief", "level", "targetHours", "skills",
+                  "outcomes", "groundingSources"):
+        if field in proposal:
+            manifest[field] = proposal[field]
+
     course_dir = content_dir / course_id
     (course_dir / "lessons").mkdir(parents=True, exist_ok=True)
     (course_dir / "course.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False))

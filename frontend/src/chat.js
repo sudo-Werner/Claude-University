@@ -18,7 +18,7 @@ export function parseSSELines(buffer) {
   return { events, rest };
 }
 
-export async function streamChat({ fetch, messages, endpoint = "/api/courses/chat", onDelta, onProposal, onDone, onError }) {
+export async function streamChat({ fetch, messages, endpoint = "/api/courses/chat", onDelta, onBrief, onDone, onError }) {
   const resp = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -35,7 +35,7 @@ export async function streamChat({ fetch, messages, endpoint = "/api/courses/cha
     buffer = parsed.rest;
     for (const { event, data } of parsed.events) {
       if (event === "delta") onDelta(data);
-      else if (event === "proposal") { if (onProposal) onProposal(JSON.parse(data)); }
+      else if (event === "brief") { if (onBrief) onBrief(JSON.parse(data)); }
       else if (event === "done") onDone();
       else if (event === "error") { if (onError) onError(JSON.parse(data)); }
     }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -128,4 +128,20 @@ test("loadLibrary returns an error shape on non-ok", async () => {
   const fetch = async () => ({ ok: false, status: 503, json: async () => ({ error: "reauth" }) });
   const r = await loadLibrary({ fetch, courseId: "c" });
   assert.equal(r.error, "reauth");
+});
+
+test("compileProgram posts the brief and returns the proposed course", async () => {
+  let sent = null;
+  const fetch = async (url, opts) => { sent = { url, body: JSON.parse(opts.body) };
+    return { ok: true, json: async () => ({ course: { title: "Deep ML", level: { code: "master" } } }) }; };
+  const course = await compileProgram({ fetch, learnerBrief: { goal: "g" } });
+  assert.equal(sent.url, "/api/courses/compile");
+  assert.deepEqual(sent.body, { learnerBrief: { goal: "g" } });
+  assert.equal(course.level.code, "master");
+});
+
+test("compileProgram returns an error object on failure", async () => {
+  const fetch = async () => ({ ok: false, json: async () => ({ error: "couldn't build your program, try again" }) });
+  const r = await compileProgram({ fetch, learnerBrief: { goal: "g" } });
+  assert.ok(r.error);
 });

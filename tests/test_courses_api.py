@@ -1,5 +1,46 @@
 import json
 
+from backend import app as app_module, claude_client, compiler, courses
+
+OBJ = {"text": "Calculate X", "bloom": "apply", "knowledge": "procedural"}
+COMPILED = {"schemaVersion": 2, "title": "Deep ML", "subtitle": "s", "brief": "b",
+    "learnerBrief": {"goal": "g"}, "level": {"code": "master", "label": "Master-equivalent"},
+    "targetHours": 130, "skills": ["do X"], "outcomes": [OBJ], "groundingSources": [],
+    "modules": [{"id": "m1", "title": "M", "outcomes": [OBJ],
+                 "lessons": [{"id": "l1", "title": "A", "estMinutes": 90, "objectives": [OBJ], "prereqs": []}]}]}
+
+def _client(tmp_path, monkeypatch):
+    monkeypatch.setattr(courses, "CONTENT_DIR", tmp_path)
+    app = app_module.create_app(db_path=str(tmp_path / "t.db"))
+    return app.test_client()
+
+def test_compile_returns_proposed_course_without_saving(tmp_path, monkeypatch):
+    monkeypatch.setattr(compiler, "compile_course", lambda brief, **kw: COMPILED)
+    client = _client(tmp_path, monkeypatch)
+    resp = client.post("/api/courses/compile", json={"learnerBrief": {"goal": "build models"}})
+    assert resp.status_code == 200
+    assert resp.get_json()["course"]["level"]["code"] == "master"
+    assert not (tmp_path / "deep-ml").exists()                     # NOT saved
+
+def test_compile_requires_goal(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    assert client.post("/api/courses/compile", json={"learnerBrief": {}}).status_code == 400
+
+def test_compile_maps_claude_errors(tmp_path, monkeypatch):
+    def boom(brief, **kw):
+        raise claude_client.ClaudeAuthError("login")
+    monkeypatch.setattr(compiler, "compile_course", boom)
+    client = _client(tmp_path, monkeypatch)
+    r = client.post("/api/courses/compile", json={"learnerBrief": {"goal": "g"}})
+    assert r.status_code == 503 and r.get_json()["code"] == "reauth"
+
+def test_post_courses_writes_compiled(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    resp = client.post("/api/courses", json=COMPILED)
+    assert resp.status_code == 201
+    assert resp.get_json()["course"]["schemaVersion"] == 2
+    assert (tmp_path / "deep-ml" / "course.json").exists()
+
 
 def _fixture_course(courses, root):
     """Create a course manifest plus one written lesson file in a temp content dir.

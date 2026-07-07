@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
@@ -83,6 +83,25 @@ def create_app(db_path=None):
             return jsonify({"error": "title and modules are required"}), 400
         manifest = courses.write_course(courses.CONTENT_DIR, body)
         return jsonify({"course": manifest}), 201
+
+    @app.post("/api/courses/compile")
+    def post_course_compile():
+        body = request.get_json(silent=True) or {}
+        brief = body.get("learnerBrief")
+        if not isinstance(brief, dict) or not brief.get("goal"):
+            return jsonify({"error": "learnerBrief with a goal is required"}), 400
+        # Grounded stages web-search; structured stages don't — same wiring as lessons.
+        generate_sourced = lambda prompt, validate: claude_client.run_sourced(prompt, validate=validate)
+        verify = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        try:
+            compiled = compiler.compile_course(brief, generate_sourced=generate_sourced, verify=verify)
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "couldn't build your program, try again"}), 502
+        if not generation.valid_compiled_course(compiled):
+            return jsonify({"error": "couldn't build your program, try again"}), 502
+        return jsonify({"course": compiled})
 
     @app.post("/api/courses/chat")
     def post_course_chat():

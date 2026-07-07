@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram } from "./courses.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
@@ -12,9 +12,10 @@ import { lessonHTML } from "./views/lesson.js";
 import { curriculumHTML } from "./views/curriculum.js";
 import { capstoneHTML } from "./views/capstone.js";
 import { libraryHTML } from "./views/library.js";
-import { loadingHTML, LESSON_STAGES, DEEPEN_STAGES, CAPSTONE_STAGES } from "./views/loading.js";
+import { loadingHTML, LESSON_STAGES, DEEPEN_STAGES, CAPSTONE_STAGES, PROGRAM_STAGES } from "./views/loading.js";
 import { diagnosticHTML } from "./views/diagnostic.js";
 import { chatHTML } from "./views/chat.js";
+import { syllabusHTML } from "./views/syllabus.js";
 import { gradeCheck } from "./views/checks.js";
 import { streamChat } from "./chat.js";
 import { loadWorkspace, saveWorkspace } from "./notes.js";
@@ -144,6 +145,11 @@ export async function init({ window, fetch }) {
       lessonsTotal: p.total,
       reviewsDue: ui.summary ? ui.summary.reviewsDue : 0,
       masteryCounts: (ui.manifest && ui.manifest.masteryCounts) || {},
+      contract: (ui.manifest && ui.manifest.schemaVersion === 2) ? {
+        level: (ui.manifest.level && (ui.manifest.level.label || ui.manifest.level.code)) || "",
+        hours: ui.manifest.targetHours || null,
+        skills: ui.manifest.skills || [],
+      } : null,
     };
   }
 
@@ -535,7 +541,7 @@ export async function init({ window, fetch }) {
   function showChat() {
     pauseTimer();
     ui.screen = "chat";
-    ui.chat = { messages: [], proposal: null, pending: false };
+    ui.chat = { messages: [], brief: null, pending: false };
     root.innerHTML = shellHTML({ back: "Courses" });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showHome);
     paintChat();
@@ -544,16 +550,16 @@ export async function init({ window, fetch }) {
   function paintChat() {
     const view = root.querySelector("#view");
     view.innerHTML = chatHTML(ui.chat.messages, { pending: ui.chat.pending });
-    if (ui.chat.proposal) {
+    if (ui.chat.brief) {
       const card = doc.createElement("div");
       card.className = "card proposal";
       card.innerHTML =
-        `<div class="eyebrow">PROPOSED COURSE</div>` +
-        `<h2 class="session-topic">${esc(ui.chat.proposal.title)}</h2>` +
-        `<div class="session-sub">${esc(ui.chat.proposal.subtitle || "")}</div>` +
-        `<button class="btn-primary" data-action="create-course">Create this course</button>`;
+        `<div class="eyebrow">READY TO BUILD</div>` +
+        `<h2 class="session-topic">Your learning brief is ready</h2>` +
+        `<div class="session-sub">${esc(ui.chat.brief.goal || "")}</div>` +
+        `<button class="btn-primary" data-action="build-program">Build my program</button>`;
       view.querySelector(".chat-thread").appendChild(card);
-      card.querySelector('[data-action="create-course"]').addEventListener("click", createFromProposal);
+      card.querySelector('[data-action="build-program"]').addEventListener("click", buildProgram);
     }
     const send = view.querySelector('[data-action="send"]');
     if (send) send.addEventListener("click", sendChat);
@@ -575,14 +581,45 @@ export async function init({ window, fetch }) {
       fetch,
       messages: history,
       onDelta: (d) => { reply.content += d; paintChat(); },
-      onProposal: (p) => { ui.chat.proposal = p; },
+      onBrief: (b) => { ui.chat.brief = b; },
       onDone: () => { ui.chat.pending = false; paintChat(); },
       onError: (e) => { reply.content = "⚠️ " + (e.message || "Claude is unavailable right now."); ui.chat.pending = false; paintChat(); },
     });
   }
 
-  async function createFromProposal() {
-    const course = await createCourse({ fetch, proposal: ui.chat.proposal });
+  async function buildProgram() {
+    pauseTimer();
+    ui.screen = "compiling";
+    root.innerHTML = shellHTML({ back: "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showChat);
+    const view = root.querySelector("#view");
+    startLoading(view, "lesson", PROGRAM_STAGES);
+    const course = await compileProgram({ fetch, learnerBrief: ui.chat.brief });
+    if (ui.screen !== "compiling") return;
+    if (!course || course.error) {
+      view.innerHTML =
+        `<div class="card"><div class="prompt">${esc((course && course.error) || "Couldn't build your program.")}</div>` +
+        `<div class="nav"><button class="btn-back" data-action="back">Back</button></div></div>`;
+      view.querySelector('[data-action="back"]').addEventListener("click", showChat);
+      return;
+    }
+    showSyllabus(course);
+  }
+
+  function showSyllabus(course) {
+    pauseTimer();
+    ui.screen = "syllabus";
+    ui.proposedCourse = course;
+    root.innerHTML = shellHTML({ back: "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showChat);
+    const view = root.querySelector("#view");
+    view.innerHTML = syllabusHTML(course);
+    view.querySelector('[data-action="accept-syllabus"]').addEventListener("click", acceptSyllabus);
+    view.querySelector('[data-action="revise-syllabus"]').addEventListener("click", showChat);
+  }
+
+  async function acceptSyllabus() {
+    const course = await createCourse({ fetch, proposal: ui.proposedCourse });
     if (course) { log("course_created", { courseId: course.id }); openCourse(course.id); }
   }
 

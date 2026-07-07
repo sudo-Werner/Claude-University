@@ -45,7 +45,8 @@ def test_progress_starts_at_zero_and_points_at_first(conn, tmp_path):
     root = _make_course(tmp_path)
     p = courses.course_progress(conn, root, "demo")
     assert p == {"done": 0, "total": 2, "pct": 0,
-                 "nextLesson": {"id": "l1", "title": "Lesson One", "moduleTitle": "Module One"}}
+                 "nextLesson": {"id": "l1", "title": "Lesson One", "moduleTitle": "Module One",
+                                "objectives": []}}
 
 
 def test_completing_a_lesson_advances_progress(conn, tmp_path):
@@ -117,6 +118,45 @@ def test_write_course_creates_manifest_with_brief_and_ids(tmp_path):
     on_disk = courses.load_manifest(root, "intro-stats")
     assert on_disk["title"] == "Intro Stats"
     assert (root / "intro-stats" / "lessons").is_dir()
+
+
+def test_write_course_legacy_shape_unchanged(tmp_path):
+    from backend import courses
+    m = courses.write_course(tmp_path, {"title": "Old Way", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "L1"}, {"title": "L2"}]}]})
+    assert m["id"] == "old-way"
+    assert [l["id"] for l in m["modules"][0]["lessons"]] == ["old-way-l1", "old-way-l2"]
+    assert "schemaVersion" not in m
+
+
+def test_write_course_compiled_shape_slugs_ids_and_remaps_prereqs(tmp_path):
+    from backend import courses
+    OBJ = {"text": "Calculate X", "bloom": "apply", "knowledge": "procedural"}
+    compiled = {"schemaVersion": 2, "title": "Deep ML", "subtitle": "s", "brief": "b",
+        "learnerBrief": {"goal": "g"}, "level": {"code": "master", "label": "Master-equivalent"},
+        "targetHours": 130, "skills": ["do X"], "outcomes": [OBJ], "groundingSources": [],
+        "modules": [{"id": "m1", "title": "M", "outcomes": [OBJ], "lessons": [
+            {"id": "l1", "title": "A", "estMinutes": 90, "objectives": [OBJ], "prereqs": []},
+            {"id": "l2", "title": "B", "estMinutes": 60, "objectives": [OBJ], "prereqs": ["l1"]}]}]}
+    m = courses.write_course(tmp_path, compiled)
+    assert m["schemaVersion"] == 2 and m["level"]["code"] == "master" and m["targetHours"] == 130
+    lessons = m["modules"][0]["lessons"]
+    assert [l["id"] for l in lessons] == ["deep-ml-l1", "deep-ml-l2"]
+    assert lessons[1]["prereqs"] == ["deep-ml-l1"]                 # prereq remapped to slugged id
+    assert lessons[0]["objectives"] == [OBJ] and lessons[0]["estMinutes"] == 90
+    # persisted file matches the returned manifest
+    import json
+    on_disk = json.loads((tmp_path / "deep-ml" / "course.json").read_text())
+    assert on_disk == m
+
+
+def test_flatten_lessons_includes_objectives():
+    from backend import courses
+    OBJ = {"text": "Calculate X", "bloom": "apply", "knowledge": "procedural"}
+    manifest = {"modules": [{"id": "m1", "title": "M", "lessons": [
+        {"id": "c-l1", "title": "A", "objectives": [OBJ]}, {"id": "c-l2", "title": "B"}]}]}
+    flat = courses.flatten_lessons(manifest)
+    assert flat[0]["objectives"] == [OBJ] and flat[1]["objectives"] == []
 
 
 def test_completed_counts_reviewed_events(conn, tmp_path):
