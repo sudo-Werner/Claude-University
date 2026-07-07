@@ -776,3 +776,134 @@ def test_lesson_chat_sse_emits_reauth_on_auth_error():
     chunks = list(gen.lesson_chat_sse({"topic": "t"}, [{"role": "user", "content": "x"}], stream_fn=failing))
     msg = [d for (e, d) in _events(chunks) if e == "error"]
     assert msg and "re-authentication" in msg[0].lower()
+
+
+# ---- self-consistency: prompt hardening + verification pass ----
+
+def _full_lesson(**over):
+    base = {"id": "demo-l1", "courseId": "demo", "topic": "t", "step": 1, "totalSteps": 1,
+            "eyebrow": "EXERCISE", "promptHtml": "<p>body</p>", "hintHtml": "h",
+            "solutionAns": "a", "solutionNote": "n", "checks": [dict(_OK_CHECK)]}
+    base.update(over)
+    return base
+
+
+def test_lesson_prompt_requires_self_containment_and_consistency():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="x-l1", lesson_title="T",
+                          module_title="M", position=1, total=2)
+    low = p.lower()
+    assert "self-contained" in low
+    assert "answerable using only what you teach" in low
+    assert "exact same name" in low                 # one consistent vocabulary
+    assert "visual aid must match the prose" in low  # diagram cannot contradict text
+
+
+def test_lesson_chat_system_mirrors_lesson_vocabulary():
+    low = gen.LESSON_CHAT_SYSTEM.lower()
+    assert "mirror the lesson's own vocabulary" in low
+    assert "even if you know a different textbook name" in low
+
+
+def _verify_stub(audit_result, review_result):
+    """A verify_generate(prompt, validate) stub: routes the rewrite call (which asks for a
+    CORRECTED lesson) to review_result and the audit call to audit_result."""
+    def verify(prompt, validate=None):
+        if "CORRECTED" in prompt:
+            return review_result() if callable(review_result) else review_result
+        return audit_result() if callable(audit_result) else audit_result
+    return verify
+
+
+def test_valid_audit_shape():
+    assert gen.valid_audit({"ok": True})
+    assert gen.valid_audit({"ok": False, "issues": ["x"]})
+    assert not gen.valid_audit({"ok": False, "issues": []})   # must name at least one issue
+    assert not gen.valid_audit({"ok": False})                 # issues required when not ok
+    assert not gen.valid_audit({"ok": "yes"})                 # ok must be a bool
+    assert not gen.valid_audit("nope")
+
+
+def test_lesson_audit_prompt_asks_for_ok_verdict():
+    p = gen.lesson_audit_prompt(_full_lesson(topic="business cycles"))
+    assert '{"ok": true}' in p
+    assert "business cycles" in p            # the lesson under review is embedded
+    assert "consistent terminology" in p.lower()
+
+
+def test_lesson_review_prompt_states_the_three_rules():
+    p = gen.lesson_review_prompt(_full_lesson(topic="business cycles"))
+    low = p.lower()
+    assert "self-contained" in low
+    assert "consistent terminology" in low
+    assert "visual aid matches prose" in low
+    assert "business cycles" in p            # the lesson under review is embedded
+    assert "do not change" in low and "sources" in low  # citations are off-limits
+
+
+def test_lesson_review_prompt_includes_flagged_issues_when_given():
+    p = gen.lesson_review_prompt(_full_lesson(), issues=["graphic says Slowdown, answer says contraction"])
+    assert "graphic says Slowdown, answer says contraction" in p
+    p2 = gen.lesson_review_prompt(_full_lesson())
+    assert "already flagged" not in p2
+
+
+def test_verification_rewrites_only_when_audit_flags_a_defect(tmp_path):
+    root = _course(tmp_path)
+    raw = _full_lesson(promptHtml="<p>uses Slowdown</p>", solutionAns="early contraction")
+    fixed = _full_lesson(promptHtml="<p>uses Slowdown</p>", solutionAns="Slowdown")
+    audit = {"ok": False, "issues": ["solutionAns 'early contraction' vs graphic 'Slowdown'"]}
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(raw),
+                            verify_generate=_verify_stub(audit, lambda: dict(fixed)))
+    assert out["solutionAns"] == "Slowdown"       # reconciled version was stored
+    on_disk = _json.loads((root / "demo" / "lessons" / "demo-l1.json").read_text())
+    assert on_disk["solutionAns"] == "Slowdown"
+
+
+def test_verification_skips_rewrite_when_audit_is_clean(tmp_path):
+    root = _course(tmp_path)
+    raw = _full_lesson(solutionAns="as generated")
+    def no_rewrite():
+        raise AssertionError("rewrite must not run when the audit says ok")
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(raw),
+                            verify_generate=_verify_stub({"ok": True}, no_rewrite))
+    assert out["solutionAns"] == "as generated"   # audit clean -> lesson stored unchanged
+
+
+def test_verification_falls_back_to_original_when_review_is_invalid(tmp_path):
+    root = _course(tmp_path)
+    raw = _full_lesson(solutionAns="original answer")
+    audit = {"ok": False, "issues": ["something"]}
+    # rewrite returns junk (missing required keys) -> keep the original, never break the lesson
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(raw),
+                            verify_generate=_verify_stub(audit, {"bad": 1}))
+    assert out["solutionAns"] == "original answer"
+
+
+def test_verification_falls_back_when_audit_errors(tmp_path):
+    root = _course(tmp_path)
+    raw = _full_lesson(solutionAns="original answer")
+    def boom(prompt, validate=None):
+        raise claude_client.ClaudeError("audit down")
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {},
+                            generate=lambda p: dict(raw), verify_generate=boom)
+    assert out["solutionAns"] == "original answer"
+
+
+def test_verification_preserves_original_sources(tmp_path):
+    root = _course(tmp_path)
+    src = [{"title": "MIT OCW", "url": "https://ocw.mit.edu/x"}]
+    raw = _full_lesson(sources=list(src))
+    audit = {"ok": False, "issues": ["term drift"]}
+    # a rewrite that strips sources must not lose the real, captured citations
+    fixed = _full_lesson(sources=[], solutionAns="reconciled")
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: (dict(raw), src),
+                            verify_generate=_verify_stub(audit, lambda: dict(fixed)))
+    assert out["solutionAns"] == "reconciled"
+    assert [s["url"] for s in out["sources"]] == ["https://ocw.mit.edu/x"]
+
+
+def test_ensure_lesson_skips_verification_when_not_requested(tmp_path):
+    root = _course(tmp_path)
+    raw = _full_lesson(solutionAns="unreviewed")
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(raw))
+    assert out["solutionAns"] == "unreviewed"  # no verify_generate -> stored as generated

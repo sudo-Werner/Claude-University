@@ -218,6 +218,8 @@ def test_deepen_endpoint_regenerates_lesson(client, tmp_path, monkeypatch):
               "checks": [{"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}]}
     # deepen now generates WITH web search: run_sourced returns (lesson, captured_sources)
     monkeypatch.setattr(claude_client, "run_sourced", lambda prompt, **kw: (deeper, []))
+    # ...then a non-web verification pass reconciles it; the reviewer returns it unchanged here.
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: dict(deeper))
     resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/deepen")
     assert resp.status_code == 200
     body = resp.get_json()

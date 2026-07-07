@@ -155,6 +155,20 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "reasoning so the learner sees HOW, not just the final answer.\n"
         "- Keep every check explanation specific and encouraging: name what is right and the one "
         "thing to watch, never a bare 'wrong'.\n\n"
+        # Self-containment + consistency: the learner is assessed on THIS lesson, so everything the
+        # end-questions need must be taught here, in one consistent vocabulary. This is the fix for
+        # lessons whose diagram/prose/exercise/solution drifted apart (e.g. a phase called
+        # "Slowdown" in the graphic but "early contraction" in the answer).
+        "Make the lesson SELF-CONTAINED and internally CONSISTENT — to the standard of an "
+        "accredited university:\n"
+        "- Every concept-check AND the main exercise must be answerable using ONLY what you teach "
+        "in promptHtml. Never require a term, label, phase/step name, formula, or fact the body "
+        "did not clearly introduce and explain.\n"
+        "- Use ONE consistent set of terms. Whatever you name a concept in the prose, use that "
+        "EXACT same name in any diagram or table, in the exercise, in solutionAns, in solutionNote, "
+        "and in every check. Do not switch to a synonym or a textbook variant partway through.\n"
+        "- Any visual aid must match the prose exactly — same labels, same phases/steps, no "
+        "contradiction between what the diagram shows and what the text says.\n\n"
         # Visual aids (#visual-aids): evidence says a visual helps ONLY when it carries
         # structure/process/comparison prose can't; decorative visuals measurably hurt.
         "Add a visual aid ONLY when it shows structure, a process/sequence, or a comparison that "
@@ -500,6 +514,12 @@ LESSON_CHAT_SYSTEM = (
     "tangent it sparks — answer concisely and clearly, like a knowledgeable tutor. Stay "
     "grounded in the lesson's topic; keep answers focused and short. Do not invent a new "
     "exercise or reveal the solution unless they ask for it. "
+    "Mirror the lesson's OWN vocabulary: use the exact terms, labels, and phase/step names that "
+    "appear in the lesson text below, even if you know a different textbook name for the same "
+    "idea — the learner is being assessed on the lesson's wording, so switching terms confuses "
+    "them. If the lesson's framing genuinely differs from standard usage and it matters, lead "
+    "with the lesson's term and add the alternative in parentheses, rather than silently "
+    "substituting your own. "
     "You can use web search — do so when the question needs current, recent, or factual "
     "information you are unsure of (prices, dates, latest developments); for purely "
     "conceptual questions, just answer directly without searching."
@@ -559,8 +579,106 @@ def chat_sse(messages, profile, *, stream_fn):
     yield _sse("done", "{}")
 
 
+# ---- university-grade self-consistency: an audit-first pass reconciles the lesson ----
+# A single generation pass can let the diagram, prose, exercise, solution, and end-checks drift
+# apart (different names for the same idea; a question that needs a term the body never taught).
+# A cheap audit call decides whether the lesson is already consistent; only when it flags a real
+# defect do we pay for a full rewrite that reconciles everything to ONE vocabulary and guarantees
+# every end-question is answerable from the body. It falls back to the original on any failure, so
+# it can only improve a lesson, never break one. Neither call web-searches (it reconciles existing
+# content, not facts), so both are cheaper than the sourced generation.
+
+def valid_audit(obj):
+    if not isinstance(obj, dict) or not isinstance(obj.get("ok"), bool):
+        return False
+    if obj["ok"]:
+        return True
+    return isinstance(obj.get("issues"), list) and len(obj["issues"]) >= 1
+
+
+def lesson_audit_prompt(lesson):
+    return (
+        "You are a meticulous course editor checking ONE generated lesson for internal "
+        "consistency, to the standard of an accredited university. Here is the lesson as JSON:\n"
+        f"{json.dumps(lesson, ensure_ascii=False)}\n\n"
+        "Check it against these three rules:\n"
+        "1. SELF-CONTAINED: every concept-check AND the main exercise is answerable using ONLY "
+        "what the lesson body (promptHtml) actually teaches — no term, label, phase/step name, "
+        "formula, or fact is required that the body did not introduce and explain.\n"
+        "2. CONSISTENT TERMINOLOGY: the same concept is called by the EXACT same name everywhere "
+        "— in the prose, any diagram or table, the exercise, solutionAns, solutionNote, and every "
+        "check. No synonyms, no switching to a textbook variant partway through.\n"
+        "3. VISUAL AID MATCHES PROSE: any <pre> diagram or <table> agrees with the surrounding "
+        "text — same labels, same structure, no contradictions.\n"
+        "Reply with ONLY a JSON object, no prose, no code fence. If the lesson fully satisfies all "
+        'three rules, reply exactly {"ok": true}. Otherwise reply '
+        '{"ok": false, "issues": ["<each specific inconsistency, quoting the mismatched terms>"]}.'
+    )
+
+
+def lesson_review_prompt(lesson, issues=None):
+    issues_block = ""
+    if issues:
+        joined = "; ".join(str(i) for i in issues)
+        issues_block = f"\nA reviewer already flagged these specific problems to fix: {joined}\n"
+    return (
+        "You are a meticulous course editor doing the final quality check on ONE generated "
+        "lesson, to the standard of an accredited university. Here is the lesson as JSON:\n"
+        f"{json.dumps(lesson, ensure_ascii=False)}\n"
+        f"{issues_block}\n"
+        "Audit it against these rules and return a CORRECTED version that satisfies ALL of them:\n"
+        "1. SELF-CONTAINED: every concept-check AND the main exercise must be answerable using "
+        "ONLY what the lesson body (promptHtml) actually teaches. If any question relies on a "
+        "term, label, phase/step name, formula, or fact the body does not clearly introduce and "
+        "explain, fix it — either add the missing explanation to promptHtml, or adjust the "
+        "question — so nothing is required that was not taught.\n"
+        "2. CONSISTENT TERMINOLOGY: use ONE consistent set of terms everywhere. Whatever a concept "
+        "is named in the prose must be the EXACT same name used in any diagram or table, in the "
+        "exercise, in solutionAns, in solutionNote, and in every check — no synonyms, no switching "
+        "to a textbook variant partway through. (For example, a diagram labelling a phase "
+        "'Slowdown' while the solution calls it 'early contraction' is a defect: pick one name and "
+        "use it everywhere.)\n"
+        "3. VISUAL AID MATCHES PROSE: any <pre> diagram or <table> must agree with the surrounding "
+        "text — same labels, same structure, no contradictions.\n"
+        "Do NOT invent new facts, do NOT change the underlying subject matter, and do NOT change "
+        "the `sources`. Keep exactly the same JSON keys and shape. Change only what is needed to "
+        "satisfy the rules; if the lesson already satisfies them, return it unchanged.\n"
+        "Reply with ONLY the corrected JSON object, no prose, no code fence."
+    )
+
+
+def _reviewed_lesson(lesson, verify_generate):
+    """Audit-first self-consistency pass. A cheap audit call decides whether the lesson is
+    already consistent; only if it flags a real defect do we pay for the full rewrite. Returns
+    the reconciled lesson, or the original unchanged if the audit clears it, errors, or the
+    rewrite fails validation — verification must never make a lesson worse. Citations are carried
+    through verbatim; the reviewer is told not to touch them, and we enforce it here.
+
+    verify_generate(prompt, validate) forwards to a plain structured (non-web) generation."""
+    try:
+        audit = verify_generate(lesson_audit_prompt(lesson), valid_audit)
+    except claude_client.ClaudeError:
+        return lesson  # fail open: never block a lesson on a flaky audit
+    if isinstance(audit, tuple):
+        audit = audit[0]
+    if not (isinstance(audit, dict) and audit.get("ok") is False):
+        return lesson  # already consistent (ok:true) or unparseable — trust the generated lesson
+    issues = audit.get("issues") if isinstance(audit.get("issues"), list) else []
+    original_sources = lesson.get("sources")
+    try:
+        reviewed = verify_generate(lesson_review_prompt(lesson, issues), valid_lesson)
+    except claude_client.ClaudeError:
+        return lesson
+    if isinstance(reviewed, tuple):
+        reviewed = reviewed[0]
+    if not (isinstance(reviewed, dict) and valid_lesson(reviewed)):
+        return lesson
+    reviewed["sources"] = original_sources
+    return reviewed
+
+
 def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, generate,
-                               performance="", directive=""):
+                               performance="", directive="", verify_generate=None):
     """Generate one lesson, reconcile authoritative fields, sanitize, validate, and
     cache it (overwriting any existing file). Shared by ensure_lesson (cache-miss
     generation) and deepen_lesson (forced regeneration with a depth directive).
@@ -595,6 +713,10 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
     lesson, captured = result if isinstance(result, tuple) else (result, [])
     if not isinstance(lesson, dict):
         raise claude_client.ClaudeError("generator returned a non-dict result")
+    # University-grade self-consistency review: reconcile terminology across prose/diagram/
+    # exercise/solution/checks and ensure every end-question is answerable from the body.
+    if verify_generate is not None:
+        lesson = _reviewed_lesson(lesson, verify_generate)
     lesson["id"] = lesson_id
     lesson["courseId"] = course_id
     lesson["step"] = position
@@ -623,12 +745,14 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
     return lesson
 
 
-def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, performance=""):
+def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, performance="",
+                  verify_generate=None):
     existing = courses.load_lesson(content_dir, course_id, lesson_id)
     if existing is not None:
         return existing
     return _generate_and_store_lesson(
         content_dir, course_id, lesson_id, profile, generate=generate, performance=performance,
+        verify_generate=verify_generate,
     )
 
 
@@ -643,8 +767,9 @@ _DEEPEN_DIRECTIVE = (
 )
 
 
-def deepen_lesson(content_dir, course_id, lesson_id, profile, *, generate, performance=""):
+def deepen_lesson(content_dir, course_id, lesson_id, profile, *, generate, performance="",
+                  verify_generate=None):
     return _generate_and_store_lesson(
         content_dir, course_id, lesson_id, profile, generate=generate,
-        performance=performance, directive=_DEEPEN_DIRECTIVE,
+        performance=performance, directive=_DEEPEN_DIRECTIVE, verify_generate=verify_generate,
     )

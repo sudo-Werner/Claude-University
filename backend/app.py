@@ -129,10 +129,13 @@ def create_app(db_path=None):
         # Phase 2: generate lessons WITH web search so they're grounded in real accredited
         # sources (run_sourced returns (lesson, captured_sources)).
         generate = lambda prompt: claude_client.run_sourced(prompt, validate=generation.valid_lesson)
+        # University-grade self-consistency: an audit-first, non-web pass reconciles terminology
+        # and guarantees every end-question is answerable from the body (rewrites only on a defect).
+        verify = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
         try:
             lesson = generation.ensure_lesson(
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
-                generate=generate, performance=performance,
+                generate=generate, performance=performance, verify_generate=verify,
             )
         except claude_client.ClaudeAuthError:
             return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
@@ -176,10 +179,11 @@ def create_app(db_path=None):
         prof_data = (prof or {}).get("data")
         # Phase 2: re-ground the deepened lesson in real accredited sources too.
         generate = lambda prompt: claude_client.run_sourced(prompt, validate=generation.valid_lesson)
+        verify = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
         try:
             lesson = generation.deepen_lesson(
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
-                generate=generate, performance=performance,
+                generate=generate, performance=performance, verify_generate=verify,
             )
         except claude_client.ClaudeAuthError:
             return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
