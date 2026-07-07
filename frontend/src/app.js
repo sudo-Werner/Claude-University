@@ -360,6 +360,7 @@ export async function init({ window, fetch }) {
           let live = thread.querySelector(".ws-live");
           if (!live) { live = doc.createElement("div"); live.className = "ws-msg ws-ai ws-live"; thread.appendChild(live); }
           live.textContent = reply.content;
+          thread.scrollTop = thread.scrollHeight;  // follow the streaming reply
         }
       },
       onDone: () => {
@@ -456,6 +457,14 @@ export async function init({ window, fetch }) {
     bindWorkspace(view);
   }
 
+  // The chat thread is a fixed-height scroll area that rebuilds on every repaint, so it
+  // resets to the top (oldest messages) each time. Pin it to the bottom so the latest
+  // message is always in view without manual scrolling.
+  function scrollWsThread() {
+    const thread = root.querySelector(".ws-thread");
+    if (thread) thread.scrollTop = thread.scrollHeight;
+  }
+
   function bindWorkspace(view) {
     if (!ui.lessonState.ws) return;
     const toggle = view.querySelector('[data-action="ws-toggle"]');
@@ -478,6 +487,7 @@ export async function init({ window, fetch }) {
     });
     const wsSend = view.querySelector('[data-action="ws-send"]');
     if (wsSend) wsSend.addEventListener("click", sendWsChat);
+    scrollWsThread();  // open/repaint with the newest message in view
   }
 
   function answerCheck(i, answer) {
