@@ -145,11 +145,6 @@ def write_course(content_dir, proposal):
     return manifest
 
 
-def _lesson_id_list(manifest):
-    """Return a flat list of lesson ids from a manifest dict."""
-    return [l.get("id") for m in manifest.get("modules", []) for l in m.get("lessons", [])]
-
-
 def apply_revision(content_dir, course_id, revised, *, now=None):
     """Validate, back up, and atomically write a revised course manifest in-place.
 

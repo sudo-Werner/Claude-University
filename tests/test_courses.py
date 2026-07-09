@@ -216,7 +216,8 @@ def test_apply_revision_writes_in_place_backs_up_and_preserves_bodies(tmp_path):
     out = courses.apply_revision(cdir, "c", revised, now="20260709T120000Z")
     assert out is not None
     on_disk = json.loads((course / "course.json").read_text())
-    assert on_disk["schemaVersion"] == 2 and courses._lesson_id_list(on_disk)  # written in place
+    ids = [l.get("id") for m in on_disk.get("modules", []) for l in m.get("lessons", [])]
+    assert on_disk["schemaVersion"] == 2 and ids  # written in place
     assert (course / "course.json.pre-revise-20260709T120000Z").exists()        # backup made
     assert (course / "lessons" / "c-l1.json").exists()                           # body preserved
 
