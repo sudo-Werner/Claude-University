@@ -258,6 +258,22 @@ test("dashboard shows a mastery breakdown when there is mastery data", () => {
   assert.match(html, /Proficient/i);
 });
 
+test("dashboard renders the course contract as level, effort, and a readable skills list", () => {
+  const html = dashboardHTML(
+    { topic: "T", sub: "S", durationMin: 90, progressPct: 5, lessonsDone: 1, lessonsTotal: 22, reviewsDue: 0,
+      contract: { level: "Bachelor Year 1", hours: 26,
+        skills: ["Explain any homeostatic loop using control-system vocabulary", "Calculate cardiac output"] } },
+    { fills: [0,0,0], activePhaseIndex: 0, statusLabel: "", clock: "" },
+  );
+  assert.match(html, /class="level-badge">Bachelor Year 1</);
+  assert.match(html, /~26 h total effort/);
+  assert.match(html, /WHAT YOU'LL BE ABLE TO DO/);
+  // each skill is its own list item, not run together in one chip
+  assert.match(html, /<li>Explain any homeostatic loop using control-system vocabulary<\/li>/);
+  assert.match(html, /<li>Calculate cardiac output<\/li>/);
+  assert.doesNotMatch(html, /class="chip"/);
+});
+
 test("dashboard omits the mastery breakdown when all counts are zero", () => {
   const html = dashboardHTML(
     { topic: "T", sub: "S", durationMin: 90, progressPct: 0, lessonsDone: 0,

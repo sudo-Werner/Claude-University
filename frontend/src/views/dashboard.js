@@ -3,10 +3,16 @@ import { esc } from "../escape.js";
 
 function contractHTML(contract) {
   if (!contract) return "";
-  const skills = (contract.skills || []).slice(0, 6).map((s) => `<span class="chip">${esc(s)}</span>`).join("");
-  const hours = contract.hours ? `<span class="hours-badge">~${contract.hours} h estimated total effort</span>` : "";
-  return `<div class="contract"><span class="level-badge">${esc(contract.level)}</span>${hours}` +
-         (skills ? `<div class="chips">${skills}</div>` : "") + `</div>`;
+  const level = contract.level ? `<span class="level-badge">${esc(contract.level)}</span>` : "";
+  const hours = contract.hours ? `<span class="hours-badge">~${contract.hours} h total effort</span>` : "";
+  const meta = level || hours ? `<div class="contract-meta">${level}${hours}</div>` : "";
+  const skills = (contract.skills || []).slice(0, 8);
+  const list = skills.length
+    ? `<div class="contract-skills"><span class="eyebrow mut">WHAT YOU'LL BE ABLE TO DO</span>` +
+      `<ul>${skills.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>`
+    : "";
+  if (!meta && !list) return "";
+  return `<div class="contract">${meta}${list}</div>`;
 }
 
 const CLOCK_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#a59b89" stroke-width="2"/><path d="M12 7v5l3 2" stroke="#a59b89" stroke-width="2" stroke-linecap="round"/></svg>`;

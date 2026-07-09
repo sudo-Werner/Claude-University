@@ -233,6 +233,18 @@ textarea::placeholder{color:#b3a994}
    needs its own vertical rhythm (the .app gap only spaces header/tabs/#view).
    These also become the layout anchors for the desktop media query below. */
 .dash{display:flex; flex-direction:column; gap:16px}
+/* course "contract": level + effort + the skills the course builds */
+.contract{background:var(--glass-stat); border:1px solid var(--border-glass); border-radius:var(--r-md);
+  padding:16px 18px; box-shadow:var(--sh-card); display:flex; flex-direction:column; gap:13px}
+.contract-meta{display:flex; flex-wrap:wrap; align-items:center; gap:10px}
+.level-badge{font:700 12px/1 inherit; letter-spacing:.02em; color:#fff; background:var(--grad);
+  padding:6px 12px; border-radius:999px; white-space:nowrap}
+.hours-badge{font-size:12.5px; color:var(--text-mut)}
+.contract-skills{display:flex; flex-direction:column; gap:9px}
+.contract-skills ul{margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:8px}
+.contract-skills li{position:relative; padding-left:19px; font-size:13.5px; line-height:1.5; color:var(--read)}
+.contract-skills li::before{content:""; position:absolute; left:2px; top:8px; width:6px; height:6px;
+  border-radius:50%; background:var(--purple)}
 .lesson-col{display:flex; flex-direction:column; gap:16px}
 .lesson-head{display:flex; flex-direction:column; gap:16px}
 .lesson-body{display:flex; flex-direction:column; gap:16px}
