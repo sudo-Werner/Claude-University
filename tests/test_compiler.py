@@ -198,3 +198,41 @@ def test_enrich_course_is_idempotent_on_ids():
     twice = compiler.enrich_course(once, generate_sourced=gs2, verify=vf2)
     assert [l["id"] for m in twice["modules"] for l in m["lessons"]] == \
            [l["id"] for m in once["modules"] for l in m["lessons"]]
+
+
+def test_valid_revise_outline_gates_shape():
+    good = {"modules": [{"title": "M1", "lessons": [{"title": "L1", "keepId": "c-l1"},
+                                                     {"title": "L2"}]}],
+            "changeSummary": ["added L2"]}
+    assert compiler.valid_revise_outline(good)
+    assert not compiler.valid_revise_outline({"modules": []})
+    assert not compiler.valid_revise_outline({"modules": [{"title": "M", "lessons": []}]})
+    assert not compiler.valid_revise_outline({"modules": [{"title": "M",
+        "lessons": [{"keepId": "c-l1"}]}]})  # lesson missing title
+    assert not compiler.valid_revise_outline({"modules": [{"lessons": [{"title": "L"}]}]})  # module missing title
+    assert not compiler.valid_revise_outline({"modules": [{"title": "M",
+        "lessons": [{"title": "L"}]}], "changeSummary": "nope"})  # changeSummary not a list
+
+
+def test_resolve_revised_ids_keeps_valid_reuses_and_mints_new():
+    existing = {"id": "c", "modules": [
+        {"id": "m1", "title": "A", "lessons": [{"id": "c-l1", "title": "One"},
+                                               {"id": "c-l2", "title": "Two"}]},
+        {"id": "m2", "title": "B", "lessons": [{"id": "c-l3", "title": "Three"}]}]}
+    revised = {"modules": [
+        {"title": "A2", "lessons": [{"title": "One renamed", "keepId": "c-l1"},
+                                    {"title": "Brand new"}]},                 # new -> mint
+        {"title": "B", "lessons": [{"title": "Three", "keepId": "c-l3"},
+                                   {"title": "Dup", "keepId": "c-l1"},        # dup keepId -> mint
+                                   {"title": "Ghost", "keepId": "c-l99"}]}]}  # unknown -> mint
+    outline, retained = compiler._resolve_revised_ids(existing, revised)
+    flat = [l for m in outline["modules"] for l in m["lessons"]]
+    assert [l["id"] for l in flat[:1]] == ["c-l1"]          # retained keeps id
+    assert flat[0]["_keep"] is True and flat[0]["title"] == "One renamed"
+    # highest existing suffix is 3 -> new ids start at c-l4
+    new_ids = [l["id"] for l in flat if not l["_keep"]]
+    assert new_ids == ["c-l4", "c-l5", "c-l6"]
+    assert all(i.startswith("c-l") for i in new_ids)
+    assert "c-l2" not in [l["id"] for l in flat]            # c-l2 removed (not referenced)
+    assert set(retained) == {"c-l1", "c-l3"}
+    assert [m["id"] for m in outline["modules"]] == ["m1", "m2"]  # modules re-minted positionally

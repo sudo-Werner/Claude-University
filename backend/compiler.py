@@ -3,6 +3,7 @@ compiled, Bloom-tagged, prerequisite-graphed syllabus. Grounded stages (outline,
 sweep) use run_sourced + generation._resolve_sources (only real retrieved URLs survive);
 structured stages (objectives/graph) use run_structured. Each stage validates its output."""
 import json
+import re
 
 from backend import claude_client, generation
 
@@ -364,3 +365,63 @@ def enrich_course(existing_manifest, *, generate_sourced, verify):
     compiled = _assemble_contract(_brief_from_manifest(existing_manifest), outline, swept, sources)
     compiled["id"] = existing_manifest["id"]
     return compiled
+
+
+def valid_revise_outline(obj):
+    if not isinstance(obj, dict):
+        return False
+    if not isinstance(obj.get("changeSummary", []), list):
+        return False
+    modules = obj.get("modules")
+    if not (isinstance(modules, list) and modules):
+        return False
+    for m in modules:
+        if not (isinstance(m, dict) and isinstance(m.get("title"), str) and m["title"].strip()):
+            return False
+        lessons = m.get("lessons")
+        if not (isinstance(lessons, list) and lessons):
+            return False
+        for l in lessons:
+            if not (isinstance(l, dict) and isinstance(l.get("title"), str) and l["title"].strip()):
+                return False
+            keep = l.get("keepId")
+            if keep is not None and not isinstance(keep, str):
+                return False
+    return True
+
+
+def _max_lesson_num(existing_manifest):
+    nums = []
+    for m in existing_manifest.get("modules", []):
+        for l in m.get("lessons", []):
+            mo = re.search(r"-l(\d+)$", l.get("id", ""))
+            if mo:
+                nums.append(int(mo.group(1)))
+    return max(nums) if nums else 0
+
+
+def _resolve_revised_ids(existing_manifest, revised_outline):
+    course_id = existing_manifest["id"]
+    existing_ids = {l.get("id") for m in existing_manifest.get("modules", [])
+                    for l in m.get("lessons", [])}
+    counter = _max_lesson_num(existing_manifest)
+    used, retained, modules = set(), [], []
+    for mi, m in enumerate(revised_outline.get("modules", []), start=1):
+        lessons = []
+        for l in m.get("lessons", []):
+            keep = l.get("keepId")
+            if isinstance(keep, str) and keep in existing_ids and keep not in used:
+                lid, is_keep = keep, True
+                used.add(keep)
+                retained.append(keep)
+            else:
+                counter += 1
+                lid, is_keep = f"{course_id}-l{counter}", False
+            lessons.append({"id": lid, "title": l.get("title"),
+                            "estMinutes": l.get("estMinutes", 60), "_keep": is_keep})
+        modules.append({"id": f"m{mi}", "title": m.get("title"), "lessons": lessons})
+    outline = {"title": revised_outline.get("title", existing_manifest.get("title", "")),
+               "subtitle": revised_outline.get("subtitle", existing_manifest.get("subtitle", "")),
+               "level": revised_outline.get("level", existing_manifest.get("level", {})),
+               "modules": modules}
+    return outline, retained
