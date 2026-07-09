@@ -97,3 +97,32 @@ export async function compileProgram({ fetch, learnerBrief }) {
   const body = await resp.json();
   return body.course;
 }
+
+export async function reviseCourse({ fetch, courseId, messages }) {
+  const resp = await fetch(`/api/courses/${courseId}/revise`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages }),
+  });
+  if (!resp.ok) {
+    let message = "Couldn't propose changes right now. Please try again.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}
+
+export async function applyRevision({ fetch, courseId, course }) {
+  const resp = await fetch(`/api/courses/${courseId}/apply-revision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ course }),
+  });
+  if (!resp.ok) {
+    let message = "Couldn't apply the revision right now. Please try again.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  const body = await resp.json();
+  return body.course;
+}

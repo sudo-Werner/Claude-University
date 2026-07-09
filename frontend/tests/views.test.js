@@ -370,6 +370,12 @@ test("capstone explore link decodes HTML entities before encoding the query", ()
   assert.doesNotMatch(html, /amp%3B/);          // no leftover entity in the query
 });
 
+test("dashboard renders a Refine this course button", () => {
+  const html = dashboardHTML(DASHBOARD_SEED, idleTimer);
+  assert.match(html, /data-action="refine"/);
+  assert.match(html, /Refine this course/);
+});
+
 test("shell no longer renders a streak pill", () => {
   const html = shellHTML({ back: "Courses" });
   assert.doesNotMatch(html, /streak/i);

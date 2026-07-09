@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -143,5 +143,43 @@ test("compileProgram posts the brief and returns the proposed course", async () 
 test("compileProgram returns an error object on failure", async () => {
   const fetch = async () => ({ ok: false, json: async () => ({ error: "couldn't build your program, try again" }) });
   const r = await compileProgram({ fetch, learnerBrief: { goal: "g" } });
+  assert.ok(r.error);
+});
+
+test("reviseCourse POSTs to the revise endpoint and returns full body", async () => {
+  let sent = null;
+  const fetch = async (url, opts) => {
+    sent = { url, body: JSON.parse(opts.body) };
+    return { ok: true, json: async () => ({ course: { title: "ML" }, changeSummary: "Updated intro", progressAtRisk: false }) };
+  };
+  const result = await reviseCourse({ fetch, courseId: "c", messages: [{ role: "user", content: "make it harder" }] });
+  assert.equal(sent.url, "/api/courses/c/revise");
+  assert.equal(sent.body.messages[0].content, "make it harder");
+  assert.equal(result.course.title, "ML");
+  assert.equal(result.changeSummary, "Updated intro");
+  assert.equal(result.progressAtRisk, false);
+});
+
+test("reviseCourse returns an error object on failure", async () => {
+  const fetch = async () => ({ ok: false, json: async () => ({ error: "Couldn't propose changes right now. Please try again." }) });
+  const r = await reviseCourse({ fetch, courseId: "c", messages: [] });
+  assert.ok(r.error);
+});
+
+test("applyRevision POSTs to the apply-revision endpoint and returns the course", async () => {
+  let sent = null;
+  const fetch = async (url, opts) => {
+    sent = { url, body: JSON.parse(opts.body) };
+    return { ok: true, json: async () => ({ course: { title: "ML revised" } }) };
+  };
+  const result = await applyRevision({ fetch, courseId: "c", course: { title: "ML revised" } });
+  assert.equal(sent.url, "/api/courses/c/apply-revision");
+  assert.deepEqual(sent.body.course, { title: "ML revised" });
+  assert.equal(result.title, "ML revised");
+});
+
+test("applyRevision returns an error object on failure", async () => {
+  const fetch = async () => ({ ok: false, json: async () => ({ error: "couldn't apply revision" }) });
+  const r = await applyRevision({ fetch, courseId: "c", course: {} });
   assert.ok(r.error);
 });
