@@ -246,6 +246,7 @@ export async function init({ window, fetch }) {
 
   async function applyRevisionNow() {
     const course = await applyRevision({ fetch, courseId: ui.courseId, course: ui.proposedRevision.course });
+    if (ui.screen !== "revision") return;  // user navigated away mid-apply — don't paint over their new screen
     if (!course || course.error) {
       showRevision(ui.proposedRevision);
       return;
