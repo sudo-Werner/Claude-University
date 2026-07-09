@@ -428,3 +428,67 @@ test("syllabusHTML escapes learner-derived text", () => {
   const evil = { ...COURSE, title: "<img src=x onerror=alert(1)>" };
   assert.ok(!syllabusHTML(evil).includes("<img src=x"));
 });
+
+// ---- revisionHTML ----
+import { revisionHTML } from "../src/views/revision.js";
+
+const REVISION_COURSE = {
+  title: "Intro ML", subtitle: "hands-on",
+  level: { code: "bachelor-y2", label: "Bachelor Year 2-equivalent" },
+  targetHours: 130, skills: [], outcomes: [], groundingSources: [],
+  modules: [{ id: "m1", title: "Foundations", outcomes: [],
+    lessons: [{ id: "l1", title: "Vectors", estMinutes: 90, objectives: [], prereqs: [] }] }],
+};
+
+test("revisionHTML renders the syllabus title", () => {
+  const html = revisionHTML({ course: REVISION_COURSE, changeSummary: [], progressAtRisk: [] });
+  assert.ok(html.includes("Intro ML"));
+});
+
+test("revisionHTML renders a changeSummary item", () => {
+  const html = revisionHTML({ course: REVISION_COURSE, changeSummary: ["Added two new modules"], progressAtRisk: [] });
+  assert.match(html, /Added two new modules/);
+});
+
+test("revisionHTML renders apply-revision and keep-discussing buttons", () => {
+  const html = revisionHTML({ course: REVISION_COURSE, changeSummary: [], progressAtRisk: [] });
+  assert.match(html, /data-action="apply-revision"/);
+  assert.match(html, /data-action="keep-discussing"/);
+});
+
+test("revisionHTML renders progress-at-risk callout with count when list is non-empty", () => {
+  const html = revisionHTML({
+    course: REVISION_COURSE,
+    changeSummary: [],
+    progressAtRisk: [{ title: "Vectors" }, { title: "Gradients" }],
+  });
+  assert.match(html, /progress-at-risk/);
+  assert.match(html, /2 lesson/);
+  assert.match(html, /Vectors/);
+  assert.match(html, /Gradients/);
+});
+
+test("revisionHTML omits progress-at-risk callout when list is empty", () => {
+  const html = revisionHTML({ course: REVISION_COURSE, changeSummary: [], progressAtRisk: [] });
+  assert.doesNotMatch(html, /progress-at-risk/);
+});
+
+test("revisionHTML escapes XSS in changeSummary items (no raw <img)", () => {
+  const html = revisionHTML({
+    course: REVISION_COURSE,
+    changeSummary: ["<img src=x onerror=alert(1)>"],
+    progressAtRisk: [],
+  });
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.match(html, /&lt;img/);
+});
+
+test("revisionHTML escapes XSS in progressAtRisk titles", () => {
+  const html = revisionHTML({
+    course: REVISION_COURSE,
+    changeSummary: [],
+    progressAtRisk: [{ title: "<script>evil()</script>" }],
+  });
+  assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /&lt;script&gt;/);
+});

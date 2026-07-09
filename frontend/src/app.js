@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision } from "./courses.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
@@ -17,6 +17,7 @@ import { diagnosticHTML } from "./views/diagnostic.js";
 import { chatHTML } from "./views/chat.js";
 import { syllabusHTML } from "./views/syllabus.js";
 import { gradeCheck } from "./views/checks.js";
+import { revisionHTML } from "./views/revision.js";
 import { streamChat } from "./chat.js";
 import { loadWorkspace, saveWorkspace } from "./notes.js";
 
@@ -162,6 +163,95 @@ export async function init({ window, fetch }) {
     if (cur) cur.addEventListener("click", showCurriculum);
     const lib = view.querySelector('[data-action="library"]');
     if (lib) lib.addEventListener("click", showLibrary);
+    const ref = view.querySelector('[data-action="refine"]');
+    if (ref) ref.addEventListener("click", startRefine);
+  }
+
+  // ---- refine course flow ----
+  function startRefine() {
+    pauseTimer();
+    ui.screen = "refine";
+    ui.refine = ui.refine && ui.refine.messages ? ui.refine : { messages: [] };
+    root.innerHTML = shellHTML({ back: ui.manifest.title });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
+    paintRefine();
+  }
+
+  function paintRefine() {
+    const view = root.querySelector("#view");
+    const msgs = ui.refine.messages;
+    view.innerHTML = chatHTML(msgs, { pending: false });
+
+    // Replace the greeting with a refine-specific lead-in card
+    const greeting = view.querySelector(".greeting");
+    if (greeting) {
+      greeting.innerHTML =
+        `<h1>Refine this course</h1>` +
+        `<span>Describe what you&rsquo;d like to change in <strong>${esc(ui.manifest.title)}</strong></span>`;
+    }
+
+    // Append the action card with the "Propose changes" button
+    const thread = view.querySelector(".chat-thread");
+    if (thread) {
+      const card = doc.createElement("div");
+      card.className = "card proposal";
+      const empty = msgs.length === 0;
+      card.innerHTML =
+        `<button class="btn-primary" data-action="propose-revision"${empty ? " disabled" : ""}>Propose changes</button>`;
+      thread.appendChild(card);
+      card.querySelector('[data-action="propose-revision"]').addEventListener("click", proposeRevision);
+    }
+
+    const send = view.querySelector('[data-action="send"]');
+    if (send) send.addEventListener("click", sendRefine);
+  }
+
+  function sendRefine() {
+    const ta = root.querySelector('[data-field="chat"]');
+    if (!ta) return;
+    const text = ta.value.trim();
+    if (!text) return;
+    ui.refine.messages.push({ role: "user", content: text });
+    paintRefine();
+  }
+
+  async function proposeRevision() {
+    ui.screen = "revising";
+    root.innerHTML = shellHTML({ back: ui.manifest.title });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", startRefine);
+    const view = root.querySelector("#view");
+    startLoading(view, "lesson", PROGRAM_STAGES);
+    const result = await reviseCourse({ fetch, courseId: ui.courseId, messages: ui.refine.messages });
+    if (ui.screen !== "revising") return;
+    if (!result || result.error) {
+      view.innerHTML =
+        `<div class="card"><div class="prompt">${esc((result && result.error) || "Couldn't propose changes right now.")}</div>` +
+        `<div class="nav"><button class="btn-back" data-action="back">Back</button></div></div>`;
+      view.querySelector('[data-action="back"]').addEventListener("click", startRefine);
+      return;
+    }
+    showRevision(result);
+  }
+
+  function showRevision(result) {
+    ui.screen = "revision";
+    ui.proposedRevision = result;
+    root.innerHTML = shellHTML({ back: ui.manifest.title });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", startRefine);
+    const view = root.querySelector("#view");
+    view.innerHTML = revisionHTML(result);
+    view.querySelector('[data-action="apply-revision"]').addEventListener("click", applyRevisionNow);
+    view.querySelector('[data-action="keep-discussing"]').addEventListener("click", startRefine);
+  }
+
+  async function applyRevisionNow() {
+    const course = await applyRevision({ fetch, courseId: ui.courseId, course: ui.proposedRevision.course });
+    if (!course || course.error) {
+      showRevision(ui.proposedRevision);
+      return;
+    }
+    log("course_revised", { courseId: ui.courseId });
+    openCourse(ui.courseId);
   }
 
   // #accredited-sources — the course Library: real, web-retrieved accredited sources.

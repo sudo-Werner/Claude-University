@@ -344,6 +344,17 @@ textarea::placeholder{color:#b3a994}
 .card.proposal{margin-top:6px}
 .card.lesson.loading{display:flex; align-items:center; justify-content:center; min-height:200px; color:var(--text-mut)}
 
+/* =================  REVISION REVIEW SCREEN  ================= */
+/* "What's changing" list — reuses the existing syllabus layout */
+.revision-changes{margin:16px 0}
+.revision-changes h2{font-size:16px; font-weight:700; margin:0 0 8px; color:var(--text)}
+.revision-changes ul{margin:0; padding-left:18px; display:flex; flex-direction:column; gap:5px;
+  font-size:14px; line-height:1.5; color:var(--text-2)}
+/* warning callout for lessons whose progress will be reset */
+.progress-at-risk{background:var(--glass-stat); border:1px solid var(--border-glass);
+  border-left:3px solid var(--purple); border-radius:var(--r-md); padding:12px 14px; margin:12px 0;
+  font-size:13px; line-height:1.55; color:var(--text-2); box-shadow:var(--sh-stat)}
+
 /* #3b skeleton + staged status loading */
 .loading-card{min-height:200px}
 .load-status{display:flex; align-items:center; gap:9px; font-size:13px; font-weight:600; color:var(--text-dim); margin-bottom:16px}
