@@ -1,5 +1,7 @@
 import json
+import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 CONTENT_DIR = Path(__file__).resolve().parent.parent / "content" / "courses"
@@ -141,3 +143,45 @@ def write_course(content_dir, proposal):
     (course_dir / "lessons").mkdir(parents=True, exist_ok=True)
     (course_dir / "course.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
     return manifest
+
+
+def _lesson_id_list(manifest):
+    """Return a flat list of lesson ids from a manifest dict."""
+    return [l.get("id") for m in manifest.get("modules", []) for l in m.get("lessons", [])]
+
+
+def apply_revision(content_dir, course_id, revised, *, now=None):
+    """Validate, back up, and atomically write a revised course manifest in-place.
+
+    Returns the revised dict on success, or None if validation fails or the course
+    directory does not exist. Never touches the lessons/ directory.
+    """
+    content_dir = Path(content_dir)
+    course_dir = content_dir / course_id
+    manifest_path = course_dir / "course.json"
+    if not manifest_path.exists():
+        return None
+    if not isinstance(revised, dict) or revised.get("id") != course_id:
+        return None
+    from backend import generation
+    if not generation.valid_compiled_course(revised):
+        return None
+    current = json.loads(manifest_path.read_text())
+    existing_ids = {l.get("id") for m in current.get("modules", []) for l in m.get("lessons", [])}
+    pattern = re.compile(rf"^{re.escape(course_id)}-l\d+$")
+    seen = set()
+    for m in revised.get("modules", []):
+        for l in m.get("lessons", []):
+            lid = l.get("id")
+            if lid in seen:
+                return None
+            seen.add(lid)
+            if lid not in existing_ids and not pattern.match(lid or ""):
+                return None
+    if now is None:
+        now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    (course_dir / f"course.json.pre-revise-{now}").write_text(manifest_path.read_text())
+    tmp = course_dir / "course.json.tmp"
+    tmp.write_text(json.dumps(revised, indent=2, ensure_ascii=False))
+    os.replace(tmp, manifest_path)
+    return revised

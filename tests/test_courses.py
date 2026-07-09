@@ -1,6 +1,35 @@
 import json
 
 
+def _valid_compiled(cid):
+    """Build a minimal valid schemaVersion-2 course with lesson ids <cid>-l1 and <cid>-l2."""
+    OBJ = {"text": "Calculate the result", "bloom": "apply", "knowledge": "procedural"}
+    return {
+        "schemaVersion": 2,
+        "id": cid,
+        "title": "Test Course",
+        "subtitle": "A test",
+        "brief": "For testing",
+        "learnerBrief": {"goal": "g"},
+        "level": {"code": "bachelor-y1", "label": "Bachelor Y1"},
+        "targetHours": 10,
+        "skills": ["skill one"],
+        "outcomes": [OBJ],
+        "groundingSources": [],
+        "modules": [{
+            "id": "m1",
+            "title": "Module One",
+            "outcomes": [OBJ],
+            "lessons": [
+                {"id": f"{cid}-l1", "title": "Lesson One", "estMinutes": 30,
+                 "objectives": [OBJ], "prereqs": []},
+                {"id": f"{cid}-l2", "title": "Lesson Two", "estMinutes": 45,
+                 "objectives": [OBJ], "prereqs": [f"{cid}-l1"]},
+            ],
+        }],
+    }
+
+
 def _make_course(tmp_path):
     root = tmp_path / "courses"
     (root / "demo" / "lessons").mkdir(parents=True)
@@ -173,3 +202,35 @@ def test_completed_counts_reviewed_events(conn, tmp_path):
         "topic_id": "demo-l1", "payload": {"quality": "good"},
     }])
     assert "demo-l1" in courses.completed_lesson_ids(conn, "demo")
+
+
+def test_apply_revision_writes_in_place_backs_up_and_preserves_bodies(tmp_path):
+    from backend import courses
+    cdir = tmp_path
+    course = cdir / "c"
+    (course / "lessons").mkdir(parents=True)
+    (course / "course.json").write_text(json.dumps({"id": "c", "title": "Old",
+        "modules": [{"id": "m1", "title": "M", "lessons": [{"id": "c-l1", "title": "One"}]}]}))
+    (course / "lessons" / "c-l1.json").write_text('{"id": "c-l1"}')  # retained body
+    revised = _valid_compiled("c")  # schemaVersion-2 course with ids c-l1 + new c-l2
+    out = courses.apply_revision(cdir, "c", revised, now="20260709T120000Z")
+    assert out is not None
+    on_disk = json.loads((course / "course.json").read_text())
+    assert on_disk["schemaVersion"] == 2 and courses._lesson_id_list(on_disk)  # written in place
+    assert (course / "course.json.pre-revise-20260709T120000Z").exists()        # backup made
+    assert (course / "lessons" / "c-l1.json").exists()                           # body preserved
+
+
+def test_apply_revision_rejects_tampered_course(tmp_path):
+    from backend import courses
+    cdir = tmp_path
+    course = cdir / "c"
+    (course / "lessons").mkdir(parents=True)
+    (course / "course.json").write_text(json.dumps({"id": "c", "title": "Old",
+        "modules": [{"id": "m1", "title": "M", "lessons": [{"id": "c-l1", "title": "One"}]}]}))
+    foreign = _valid_compiled("c")
+    foreign["modules"][0]["lessons"].append({"id": "other-l9", "title": "X",
+        "objectives": [{"text": "Calculate y", "bloom": "apply", "knowledge": "procedural"}],
+        "estMinutes": 30, "prereqs": [f"c-l1", f"c-l2"]})  # bad id pattern
+    assert courses.apply_revision(cdir, "c", foreign, now="t") is None
+    assert courses.apply_revision(cdir, "c", {**foreign, "id": "d"}, now="t") is None  # id mismatch
