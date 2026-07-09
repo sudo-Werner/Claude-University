@@ -472,3 +472,132 @@ def test_lesson_chat_route_404_unknown_lesson(client, tmp_path, monkeypatch):
     manifest, _ = _fixture_course(courses, root)
     cid = manifest["id"]
     assert client.post(f"/api/courses/{cid}/lessons/nope/chat", json={"messages": []}).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# /revise and /apply-revision
+# ---------------------------------------------------------------------------
+
+def test_revise_happy_path(tmp_path, monkeypatch):
+    """
+    /revise returns proposed course + changeSummary + progressAtRisk (for the dropped completed
+    lesson) and does NOT write course.json to disk.
+    """
+    manifest = courses.write_course(tmp_path, COMPILED)
+    cid = manifest["id"]
+    # The two lessons in COMPILED get slugged to <cid>-l1 and <cid>-l2 by write_course.
+    lesson_ids = [l["id"] for m in manifest["modules"] for l in m["lessons"]]
+    assert len(lesson_ids) == 1, f"Expected 1 lesson, got {lesson_ids}"
+    kept_id = lesson_ids[0]
+
+    # Write COMPILED with two lessons so we have a "kept" and a "dropped" lesson.
+    two_lesson_proposal = {
+        **COMPILED,
+        "modules": [{
+            **COMPILED["modules"][0],
+            "lessons": [
+                COMPILED["modules"][0]["lessons"][0],
+                {"id": "l2", "title": "B", "estMinutes": 60, "objectives": [OBJ], "prereqs": []},
+            ],
+        }],
+    }
+    manifest = courses.write_course(tmp_path, two_lesson_proposal)
+    cid = manifest["id"]
+    lesson_ids = [l["id"] for m in manifest["modules"] for l in m["lessons"]]
+    kept_id, dropped_id = lesson_ids[0], lesson_ids[1]
+    dropped_title = [l["title"] for m in manifest["modules"] for l in m["lessons"] if l["id"] == dropped_id][0]
+
+    client = _client(tmp_path, monkeypatch)
+
+    # Seed a lesson_completed event for the lesson we'll drop from the revision.
+    seed_resp = client.post("/api/events", json={"events": [{
+        "client_event_id": "ev-drop-1",
+        "session_id": "sess-1",
+        "event_type": "lesson_completed",
+        "occurred_at": "2026-01-01T10:00:00+00:00",
+        "course_id": cid,
+        "topic_id": dropped_id,
+    }]})
+    assert seed_resp.status_code == 200
+
+    # Proposed course keeps only the first lesson (drops the completed second one).
+    proposed = {
+        **manifest,
+        "modules": [{
+            **manifest["modules"][0],
+            "lessons": [l for l in manifest["modules"][0]["lessons"] if l["id"] == kept_id],
+        }],
+        "changeSummary": ["Removed lesson B to tighten scope"],
+    }
+
+    monkeypatch.setattr(compiler, "revise_course",
+                        lambda existing, messages, **kw: proposed)
+
+    on_disk_before = (tmp_path / cid / "course.json").read_text()
+
+    resp = client.post(f"/api/courses/{cid}/revise", json={"messages": [{"role": "user", "content": "remove lesson B"}]})
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body["changeSummary"] == ["Removed lesson B to tighten scope"]
+    assert len(body["progressAtRisk"]) == 1
+    assert body["progressAtRisk"][0]["id"] == dropped_id
+    assert body["progressAtRisk"][0]["title"] == dropped_title
+    # course.json must be unchanged (non-persisting)
+    assert (tmp_path / cid / "course.json").read_text() == on_disk_before
+
+
+def test_revise_claude_error_handling(tmp_path, monkeypatch):
+    """ClaudeAuthError -> 503 reauth, ClaudeError -> 502."""
+    manifest = courses.write_course(tmp_path, COMPILED)
+    cid = manifest["id"]
+    client = _client(tmp_path, monkeypatch)
+
+    def boom_auth(existing, messages, **kw):
+        raise claude_client.ClaudeAuthError("login")
+    monkeypatch.setattr(compiler, "revise_course", boom_auth)
+    r = client.post(f"/api/courses/{cid}/revise", json={"messages": []})
+    assert r.status_code == 503 and r.get_json()["code"] == "reauth"
+
+    def boom_err(existing, messages, **kw):
+        raise claude_client.ClaudeError("fail")
+    monkeypatch.setattr(compiler, "revise_course", boom_err)
+    r = client.post(f"/api/courses/{cid}/revise", json={"messages": []})
+    assert r.status_code == 502
+
+
+def test_revise_404_for_missing_course(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    assert client.post("/api/courses/no-such-course/revise", json={}).status_code == 404
+
+
+def test_revise_404_for_illegal_id(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    assert client.post("/api/courses/Bad_Id!/revise", json={}).status_code == 404
+
+
+def test_apply_revision_persists_and_rejects_bad(tmp_path, monkeypatch):
+    """
+    POST /apply-revision with a valid revised course writes course.json;
+    a tampered one (wrong id) returns 400.
+    """
+    manifest = courses.write_course(tmp_path, COMPILED)
+    cid = manifest["id"]
+    client = _client(tmp_path, monkeypatch)
+
+    # Valid revision — same id, same lesson ids (no new ones), valid schema.
+    revised = {**manifest, "title": "Deep ML (Revised)"}
+    r = client.post(f"/api/courses/{cid}/apply-revision", json={"course": revised})
+    assert r.status_code == 200
+    on_disk = json.loads((tmp_path / cid / "course.json").read_text())
+    assert on_disk["title"] == "Deep ML (Revised)"
+
+    # Tampered: wrong course id inside the payload -> 400.
+    tampered = {**revised, "id": "wrong-id"}
+    r = client.post(f"/api/courses/{cid}/apply-revision", json={"course": tampered})
+    assert r.status_code == 400
+    assert r.get_json()["error"] == "invalid revision"
+
+
+def test_apply_revision_404_for_illegal_id(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    assert client.post("/api/courses/Bad_Id!/apply-revision", json={}).status_code == 404

@@ -303,6 +303,52 @@ def create_app(db_path=None):
             conn.close()
         return jsonify({"due": due})
 
+    @app.post("/api/courses/<course_id>/revise")
+    def post_course_revise(course_id):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        body = request.get_json(silent=True) or {}
+        generate_sourced = lambda prompt, validate: claude_client.run_sourced(prompt, validate=validate)
+        verify = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        try:
+            proposed = compiler.revise_course(
+                manifest, body.get("messages", []),
+                generate_sourced=generate_sourced, verify=verify,
+            )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "couldn't revise your course, try again"}), 502
+        if not generation.valid_compiled_course(proposed):
+            return jsonify({"error": "couldn't revise your course, try again"}), 502
+        proposed_lesson_ids = {l["id"] for m in proposed.get("modules", []) for l in m.get("lessons", [])}
+        existing_lessons = {l["id"]: l for m in manifest.get("modules", []) for l in m.get("lessons", [])}
+        conn = db.get_connection(path)
+        try:
+            completed = courses.completed_lesson_ids(conn, course_id)
+        finally:
+            conn.close()
+        progress_at_risk = [
+            {"id": lid, "title": lesson["title"]}
+            for lid, lesson in existing_lessons.items()
+            if lid not in proposed_lesson_ids and lid in completed
+        ]
+        return jsonify({"course": proposed, "changeSummary": proposed.get("changeSummary", []), "progressAtRisk": progress_at_risk})
+
+    @app.post("/api/courses/<course_id>/apply-revision")
+    def post_apply_revision(course_id):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        body = request.get_json(silent=True) or {}
+        revised = body.get("course")
+        written = courses.apply_revision(courses.CONTENT_DIR, course_id, revised)
+        if written is None:
+            return jsonify({"error": "invalid revision"}), 400
+        return jsonify({"course": written})
+
     frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 
     @app.get("/")
