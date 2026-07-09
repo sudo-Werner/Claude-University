@@ -236,3 +236,45 @@ def test_resolve_revised_ids_keeps_valid_reuses_and_mints_new():
     assert "c-l2" not in [l["id"] for l in flat]            # c-l2 removed (not referenced)
     assert set(retained) == {"c-l1", "c-l3"}
     assert [m["id"] for m in outline["modules"]] == ["m1", "m2"]  # modules re-minted positionally
+
+
+def test_revise_course_keeps_retained_objectives_mints_new_and_skips_sweep(monkeypatch):
+    # Retained objective uses valid bloom+knowledge so valid_compiled_course passes.
+    retained_obj = {"text": "Calculate X", "bloom": "apply", "knowledge": "procedural"}
+    existing = {"id": "c", "title": "Course", "subtitle": "Sub",
+                "level": {"code": "bachelor-y1", "label": "Bachelor Y1"},
+                "modules": [{"id": "m1", "title": "A", "lessons": [
+                    {"id": "c-l1", "title": "One",
+                     "objectives": [retained_obj], "estMinutes": 60}]}]}
+    revise_outline = {"title": "Course", "subtitle": "Sub",
+                      "level": {"code": "bachelor-y1", "label": "Bachelor Y1"},
+                      "groundingSources": [{"title": "S", "url": "https://ex.com"}],
+                      "changeSummary": ["added a lesson"],
+                      "modules": [{"title": "A", "lessons": [
+                          {"title": "One", "keepId": "c-l1", "estMinutes": 60},
+                          {"title": "New", "estMinutes": 90}]}]}
+
+    def fake_sourced(prompt, validate):
+        return revise_outline, []            # (obj, captured)
+
+    def fake_verify(prompt, validate):
+        # per-module objectives + rollup: heuristic — rollup prompt contains "roll" and "skills"
+        if "roll" in prompt.lower() or "skills" in prompt.lower():
+            return {"outcomes": [{"text": "Evaluate course outcomes", "bloom": "evaluate", "knowledge": "conceptual"}],
+                    "skills": ["skill one"]}
+        return {"outcomes": [{"text": "Compare module concepts", "bloom": "analyze", "knowledge": "conceptual"}],
+                "lessons": [{"id": "c-l1", "objectives": [{"text": "Calculate retained", "bloom": "apply", "knowledge": "procedural"}], "prereqs": []},
+                            {"id": "c-l2", "objectives": [{"text": "Design new solution", "bloom": "create", "knowledge": "procedural"}], "prereqs": []}]}
+
+    monkeypatch.setattr(compiler, "_accuracy_sweep",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("sweep must not run")))
+    out = compiler.revise_course(existing, [{"role": "user", "content": "add a lesson"}],
+                                 generate_sourced=fake_sourced, verify=fake_verify)
+    assert out["id"] == "c" and out["schemaVersion"] == 2
+    assert out["changeSummary"] == ["added a lesson"]
+    flat = [l for m in out["modules"] for l in m["lessons"]]
+    assert flat[0]["id"] == "c-l1"
+    assert flat[0]["objectives"] == [retained_obj]   # retained -> existing kept
+    assert flat[1]["id"] == "c-l2"
+    assert flat[1]["objectives"] == [{"text": "Design new solution", "bloom": "create", "knowledge": "procedural"}]  # new -> generated
+    assert generation.valid_compiled_course(out)

@@ -367,6 +367,52 @@ def enrich_course(existing_manifest, *, generate_sourced, verify):
     return compiled
 
 
+def _revise_outline_prompt(existing_manifest, messages):
+    skeleton = {"id": existing_manifest.get("id"), "title": existing_manifest.get("title", ""),
+                "subtitle": existing_manifest.get("subtitle", ""),
+                "level": existing_manifest.get("level", {}),
+                "modules": [{"id": m.get("id"), "title": m.get("title"),
+                             "lessons": [{"id": l.get("id"), "title": l.get("title")}
+                                         for l in m.get("lessons", [])]}
+                            for m in existing_manifest.get("modules", [])]}
+    convo = "\n".join(f"{msg.get('role', 'user')}: {msg.get('content', '')}"
+                      for msg in messages if isinstance(msg, dict))
+    return (
+        "You are revising an EXISTING course based on a discussion with the learner. Using web "
+        "search where the change needs new material, produce the revised syllabus. Current course:\n"
+        f"{json.dumps(skeleton, ensure_ascii=False)}\n\n"
+        f"Discussion:\n{convo}\n\n"
+        "For every lesson that CONTINUES an existing one (kept as-is, renamed, or moved), set "
+        "\"keepId\" to that existing lesson id EXACTLY. OMIT keepId for brand-new lessons. Never "
+        "invent ids. Keep the course coherent and correctly ordered. changeSummary lists, in short "
+        "human-readable phrases, what changed versus the current course. Reply with ONLY a JSON "
+        "object, no prose, no fence:\n"
+        '{"title": "...", "subtitle": "...", "level": {"code": "...", "label": "..."}, '
+        '"groundingSources": [{"title": "...", "url": "..."}], "changeSummary": ["..."], '
+        '"modules": [{"title": "...", "lessons": [{"title": "...", "keepId": "c-l1", "estMinutes": 90}]}]}'
+    )
+
+
+def revise_course(existing_manifest, messages, *, generate_sourced, verify):
+    obj, captured = generate_sourced(_revise_outline_prompt(existing_manifest, messages),
+                                     valid_revise_outline)
+    outline, retained = _resolve_revised_ids(existing_manifest, obj)
+    sources = generation._resolve_sources(obj.get("groundingSources"), captured)
+    enriched = _merge_objectives(outline, _objectives_and_graph(outline, verify=verify))
+    # Overlay: retained lessons keep their previously approved objectives; only prereqs (which
+    # depend on the new order) come from the fresh graph. New lessons keep generated objectives.
+    existing_obj = {l.get("id"): l.get("objectives")
+                    for m in existing_manifest.get("modules", []) for l in m.get("lessons", [])}
+    for m in enriched.get("modules", []):
+        for l in m.get("lessons", []):
+            if l.get("id") in retained and existing_obj.get(l["id"]):
+                l["objectives"] = existing_obj[l["id"]]
+    compiled = _assemble_contract(_brief_from_manifest(existing_manifest), outline, enriched, sources)
+    compiled["id"] = existing_manifest["id"]
+    compiled["changeSummary"] = obj.get("changeSummary", [])
+    return compiled
+
+
 def valid_revise_outline(obj):
     if not isinstance(obj, dict):
         return False
