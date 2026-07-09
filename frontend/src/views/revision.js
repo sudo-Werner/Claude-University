@@ -18,9 +18,9 @@ export function revisionHTML({ course, changeSummary, progressAtRisk }) {
     `<button class="btn-secondary" data-action="keep-discussing" style="margin-top:8px">Keep discussing</button>` +
     `</div>`;
 
-  // syllabusHTML renders the full course proposal including its own accept/revise buttons.
-  // We wrap it and append the revision-specific sections + our own action buttons below.
-  const syllabus = syllabusHTML(course);
+  // Render the proposal WITHOUT syllabusHTML's own intake CTAs — the revision screen supplies
+  // its own Apply / Keep discussing actions below, so the intake buttons would be dead + confusing.
+  const syllabus = syllabusHTML(course, { actions: false });
 
   return `<div class="revision">${syllabus}${changeSection}${riskSection}${actions}</div>`;
 }

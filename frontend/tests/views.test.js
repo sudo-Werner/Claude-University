@@ -456,6 +456,12 @@ test("revisionHTML renders apply-revision and keep-discussing buttons", () => {
   assert.match(html, /data-action="keep-discussing"/);
 });
 
+test("revisionHTML suppresses the intake syllabus CTAs (no dead accept/revise buttons)", () => {
+  const html = revisionHTML({ course: REVISION_COURSE, changeSummary: [], progressAtRisk: [] });
+  assert.ok(!html.includes('data-action="accept-syllabus"'));
+  assert.ok(!html.includes('data-action="revise-syllabus"'));
+});
+
 test("revisionHTML renders progress-at-risk callout with count when list is non-empty", () => {
   const html = revisionHTML({
     course: REVISION_COURSE,

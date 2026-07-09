@@ -23,7 +23,7 @@ function sourceList(sources) {
   return items ? `<ul class="src-list">${items}</ul>` : "<div class='muted'>No sources retrieved.</div>";
 }
 
-export function syllabusHTML(course) {
+export function syllabusHTML(course, { actions = true } = {}) {
   const skills = (course.skills || []).map((s) => `<li>${esc(s)}</li>`).join("");
   const outcomes = objList(course.outcomes);
   const level = course.level || {};
@@ -41,10 +41,12 @@ export function syllabusHTML(course) {
     (outcomes ? `<h2>Course outcomes</h2>${outcomes}` : "") +
     `<h2>Syllabus</h2>${modules}` +
     `<h2>Grounding sources</h2>${sourceList(course.groundingSources)}` +
-    `<div class="syl-actions">` +
-      `<button class="btn-primary" data-action="accept-syllabus">Create this course</button>` +
-      `<button class="btn-secondary" data-action="revise-syllabus" style="margin-top:8px">Request changes</button>` +
-    `</div>` +
+    (actions
+      ? `<div class="syl-actions">` +
+          `<button class="btn-primary" data-action="accept-syllabus">Create this course</button>` +
+          `<button class="btn-secondary" data-action="revise-syllabus" style="margin-top:8px">Request changes</button>` +
+        `</div>`
+      : "") +
     `</div>`
   );
 }
