@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -197,4 +197,26 @@ test("explainAnswer surfaces the server error message", async () => {
   const fetch = async () => ({ ok: false, json: async () => ({ error: "boom" }) });
   const out = await explainAnswer({ fetch, courseId: "c1", lessonId: "c1-l1", explanation: "w" });
   assert.equal(out.error, "boom");
+});
+
+test("startExam posts and maps errors", async () => {
+  const calls = [];
+  const fetch = async (url, opts) => { calls.push([url, opts]); return { ok: true, json: async () => ({ examKey: "m1", questions: [] }) }; };
+  const exam = await startExam({ fetch, courseId: "c1", examKey: "m1" });
+  assert.equal(calls[0][0], "/api/courses/c1/exams/m1");
+  assert.equal(calls[0][1].method, "POST");
+  assert.equal(exam.examKey, "m1");
+  const failing = async () => ({ ok: false, json: async () => ({ error: "boom" }) });
+  assert.equal((await startExam({ fetch: failing, courseId: "c1", examKey: "m1" })).error, "boom");
+});
+
+test("submitExam posts answers and maps errors", async () => {
+  const calls = [];
+  const fetch = async (url, opts) => { calls.push([url, opts]); return { ok: true, json: async () => ({ passed: true }) }; };
+  const res = await submitExam({ fetch, courseId: "c1", examKey: "final", answers: [1, "a"] });
+  assert.equal(calls[0][0], "/api/courses/c1/exams/final/submit");
+  assert.deepEqual(JSON.parse(calls[0][1].body), { answers: [1, "a"] });
+  assert.equal(res.passed, true);
+  const failing = async () => ({ ok: false, json: async () => { throw new Error("no body"); } });
+  assert.ok((await submitExam({ fetch: failing, courseId: "c1", examKey: "final", answers: [] })).error);
 });

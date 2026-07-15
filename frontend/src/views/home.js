@@ -12,6 +12,7 @@ function courseCard(c) {
   return `
     <button class="course-card" data-course="${c.id}">
       <div class="course-title">${esc(c.title)}</div>
+      ${c.passed ? '<span class="course-passed">Passed</span>' : ""}
       <div class="course-sub">${esc(c.subtitle)}</div>
       <div class="bar"><i style="width:${c.progress.pct}%"></i></div>
       <div class="course-meta">${c.progress.done} of ${c.progress.total} lessons · ${c.reviewsDue} reviews due</div>

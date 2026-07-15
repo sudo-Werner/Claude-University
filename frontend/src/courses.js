@@ -140,3 +140,27 @@ export async function applyRevision({ fetch, courseId, course }) {
   const body = await resp.json();
   return body.course;
 }
+
+export async function startExam({ fetch, courseId, examKey }) {
+  const resp = await fetch(`/api/courses/${courseId}/exams/${examKey}`, { method: "POST" });
+  if (!resp.ok) {
+    let message = "Couldn't prepare the exam right now.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}
+
+export async function submitExam({ fetch, courseId, examKey, answers }) {
+  const resp = await fetch(`/api/courses/${courseId}/exams/${examKey}/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ answers }),
+  });
+  if (!resp.ok) {
+    let message = "Couldn't grade the exam right now — your answers are still here, try again.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}

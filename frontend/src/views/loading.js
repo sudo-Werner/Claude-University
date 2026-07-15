@@ -28,6 +28,12 @@ export const PROGRAM_STAGES = [
   "Fact-checking against the sources…",
   "Assembling your syllabus…",
 ];
+export const EXAM_STAGES = [
+  "Reading the objectives…",
+  "Writing questions that test them…",
+  "Setting plausible distractors…",
+  "Almost ready…",
+];
 
 function bars(kind) {
   if (kind === "capstone") {
