@@ -1191,3 +1191,85 @@ def test_ensure_lesson_pops_spine_and_writes_spine_json(tmp_path):
     assert "spine" not in cached
     from backend import spine as spine_mod
     assert spine_mod.load_spine(root, "demo")["lessons"]["demo-l1"] == _ok_spine()
+
+
+def test_spine_block_empty_when_no_earlier_lessons():
+    assert generation.spine_block([], {"c-l1": _ok_spine()}) == ""
+
+
+def test_spine_block_definitions_for_recent_terms_only_for_older():
+    earlier = [{"id": f"c-l{i}", "title": f"Lesson {i}", "objectives": []}
+               for i in range(1, 11)]  # 10 earlier lessons
+    entries = {f"c-l{i}": {"summary": f"Sum {i}.",
+                           "concepts": [{"term": f"term{i}", "definition": f"def {i}"}]}
+               for i in range(1, 11)}
+    block = generation.spine_block(earlier, entries)
+    # oldest two fall outside SPINE_RECENT=8: summary + term name, no definition
+    # (compare full "term = def" pairs — "def 1" alone is a substring of "def 10")
+    assert "Sum 1." in block and "term1" in block and "term1 = def 1" not in block
+    assert "Sum 2." in block and "term2 = def 2" not in block
+    # the recent eight carry full definitions
+    assert "term3 = def 3" in block and "term10 = def 10" in block
+    assert "do NOT re-teach" in block
+    assert "Never refer to lessons by number" in block
+
+
+def test_spine_block_falls_back_to_objectives_for_ungenerated_lessons():
+    earlier = [{"id": "c-l1", "title": "Recursion basics",
+                "objectives": [{"text": "Trace a recursive call", "bloom": "apply"}]}]
+    block = generation.spine_block(earlier, {})
+    assert "Recursion basics" in block
+    assert "planned, not yet studied" in block
+    assert "Trace a recursive call" in block
+
+
+def test_lesson_prompt_appends_spine_context():
+    ctx = "\n\nThe learner has ALREADY covered these earlier lessons"
+    prompt = generation.lesson_prompt(
+        brief="b", profile={}, lesson_id="l2", lesson_title="T",
+        module_title="M", position=2, total=2, spine_context=ctx)
+    assert ctx in prompt
+    without = generation.lesson_prompt(
+        brief="b", profile={}, lesson_id="l2", lesson_title="T",
+        module_title="M", position=2, total=2)
+    assert "ALREADY covered" not in without
+
+
+def _course_with_two_lessons(tmp_path):
+    # same manifest style as _course, but course id "c" with two lessons in one module,
+    # so c-l2's generation prompt can be checked for injected c-l1 spine context.
+    from backend import courses
+    root = tmp_path / "courses"
+    (root / "c" / "lessons").mkdir(parents=True)
+    (root / "c" / "course.json").write_text(_json.dumps({
+        "id": "c", "title": "Course", "subtitle": "", "brief": "beginner friendly",
+        "modules": [{"id": "m1", "title": "Basics",
+                     "lessons": [{"id": "c-l1", "title": "First"},
+                                 {"id": "c-l2", "title": "Second"}]}],
+    }))
+    return root
+
+
+def _made_lesson_for(lesson_id):
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = lesson_id
+    made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
+    return made
+
+
+def test_ensure_lesson_injects_earlier_spine_into_prompt(tmp_path):
+    cdir = _course_with_two_lessons(tmp_path)  # a manifest with c-l1 then c-l2
+    from backend import spine as spine_mod
+    spine_mod.upsert_entry(cdir, "c", "c-l1", _ok_spine())
+    prompts = []
+
+    def fake_generate(prompt):
+        prompts.append(prompt)
+        made = _made_lesson_for("c-l2")  # complete valid lesson dict incl. preQuiz + spine
+        return made
+
+    generation.ensure_lesson(cdir, "c", "c-l2", {}, generate=fake_generate)
+    assert "recursion = A function calling itself on a smaller input." in prompts[0]
+    assert 'As you saw in' in prompts[0]

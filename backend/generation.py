@@ -221,8 +221,55 @@ def valid_lesson(obj):
     return all(valid_check(c) for c in checks)
 
 
+SPINE_RECENT = 8
+
+
+def spine_block(earlier, spine_lessons):
+    """Render the 'already covered' prompt block for a lesson at position N.
+
+    earlier: flatten_lessons entries for syllabus positions 1..N-1, in order.
+    spine_lessons: the course spine's "lessons" map. The most recent SPINE_RECENT
+    lessons get full term definitions; older ones contribute summary + term names
+    (bounds prompt growth on long courses). A lesson with no spine entry yet (never
+    generated) falls back to its syllabus objectives, marked as planned-only.
+    """
+    if not earlier:
+        return ""
+    cutoff = max(0, len(earlier) - SPINE_RECENT)
+    lines = []
+    for i, meta in enumerate(earlier):
+        title = meta.get("title", "")
+        entry = spine_lessons.get(meta["id"])
+        if isinstance(entry, dict):
+            concepts = [c for c in entry.get("concepts", []) if isinstance(c, dict)]
+            if i >= cutoff:
+                taught = "; ".join(
+                    f"{c.get('term', '')} = {c.get('definition', '')}" for c in concepts)
+            else:
+                terms = ", ".join(c.get("term", "") for c in concepts)
+                taught = f"{entry.get('summary', '')} (terms: {terms})"
+            lines.append(f'- "{title}" taught: {taught}')
+        else:
+            objs = "; ".join(
+                o.get("text", "") for o in meta.get("objectives", [])
+                if isinstance(o, dict) and o.get("text"))
+            lines.append(
+                f'- "{title}" (planned, not yet studied — assume familiarity at '
+                f"objective level only): {objs or 'no stated objectives'}")
+    return (
+        "\n\nThe learner has ALREADY covered these earlier lessons of this course, "
+        "in order:\n" + "\n".join(lines) + "\n"
+        "Build directly on that material and do NOT re-teach it — a one-clause "
+        "reminder is fine, a re-explanation is not. Reuse the EXACT terms listed "
+        "above; never switch to a synonym for a concept an earlier lesson already "
+        "named. Where it genuinely helps (at most twice), reference an earlier "
+        'lesson by its quoted title, e.g. As you saw in "<lesson title>", ... '
+        "Never refer to lessons by number.\n"
+    )
+
+
 def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, position, total,
-                  performance="", directive="", objectives=None):
+                  performance="", directive="", objectives=None, spine_context=""):
     perf_line = f"Learner performance so far: {performance}\n" if performance else ""
     directive_line = f"\n{directive}\n" if directive else ""
     obj_block = ""
@@ -317,7 +364,7 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "established textbooks), and base your explanation on what you find. In the `sources` field, "
         "list ONLY the specific sources you actually drew on, each with its exact real URL from your "
         "search — never invent or guess a URL. If a claim is contested, prefer the primary source."
-        + obj_block + directive_line
+        + spine_context + obj_block + directive_line
     )
 
 
@@ -869,6 +916,7 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
             break
     if meta is None:
         return None
+    spine_data = spine.load_spine(content_dir, course_id)
     prompt = lesson_prompt(
         brief=manifest.get("brief", ""),
         profile=profile,
@@ -880,6 +928,7 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
         performance=performance,
         directive=directive,
         objectives=meta.get("objectives"),
+        spine_context=spine_block(flat[:position - 1], spine_data["lessons"]),
     )
     result = generate(prompt)
     # Phase 2: a sourced generator returns (lesson, captured_web_sources); a plain one
