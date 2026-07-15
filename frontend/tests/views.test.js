@@ -9,6 +9,7 @@ import { capstoneHTML } from "../src/views/capstone.js";
 import { loadingHTML, LESSON_STAGES, CAPSTONE_STAGES } from "../src/views/loading.js";
 import { libraryHTML } from "../src/views/library.js";
 import { syllabusHTML } from "../src/views/syllabus.js";
+import { homeHTML } from "../src/views/home.js";
 const DASHBOARD_SEED = {
   topic: "Backpropagation, intuitively",
   sub: "Module 3 · Neural Networks · Lesson 2",
@@ -621,4 +622,29 @@ test("explain card shows no seed button without followUp", () => {
     explain: { grade: { verdict: "close", note: "n" } },
   }, {});
   assert.ok(!html.includes("explain-chat"));
+});
+
+test("curriculumHTML renders exam rows with status and final row", () => {
+  const manifest = { title: "T", modules: [{ id: "m1", title: "M1", lessons: [{ id: "l1", title: "L1" }] }] };
+  const exams = { m1: { attempts: 2, bestScore: 0.9, passed: true } };
+  const html = curriculumHTML(manifest, {}, null, exams, false);
+  assert.ok(html.includes('data-exam="m1"'));
+  assert.ok(html.includes("Passed — best 90%"));
+  assert.ok(html.includes('data-exam="final"'));
+  assert.ok(html.includes("Not taken"));
+  const passedHtml = curriculumHTML(manifest, {}, null, exams, true);
+  assert.ok(passedHtml.includes("Course passed"));
+});
+
+test("curriculumHTML failed exam row shows best score and attempts", () => {
+  const manifest = { title: "T", modules: [{ id: "m1", title: "M1", lessons: [{ id: "l1", title: "L1" }] }] };
+  const html = curriculumHTML(manifest, {}, null, { m1: { attempts: 1, bestScore: 0.62, passed: false } }, false);
+  assert.ok(html.includes("62%") && html.includes("1 attempt"));
+});
+
+test("homeHTML shows passed badge on passed courses", () => {
+  const courses = [{ id: "c1", title: "T", subtitle: "s", progress: { done: 1, total: 2, pct: 50 }, reviewsDue: 0, passed: true }];
+  assert.ok(homeHTML(courses).includes("Passed"));
+  courses[0].passed = false;
+  assert.ok(!homeHTML(courses).includes("course-passed"));
 });

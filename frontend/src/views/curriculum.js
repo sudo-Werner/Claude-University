@@ -34,7 +34,23 @@ function lessonRow(lesson, mastery, currentId) {
   );
 }
 
-function moduleBlock(module, mastery, currentId) {
+function examRow(examKey, exams, label) {
+  const s = exams && exams[examKey];
+  let badge = `<span class="exam-status">Not taken</span>`;
+  if (s && s.passed) {
+    badge = `<span class="exam-status passed">Passed — best ${Math.round(s.bestScore * 100)}%</span>`;
+  } else if (s && s.attempts) {
+    badge = `<span class="exam-status failed">Best ${Math.round(s.bestScore * 100)}% (${s.attempts} attempt${s.attempts === 1 ? "" : "s"})</span>`;
+  }
+  const cta = s && s.attempts ? "Retake" : "Take exam";
+  return (
+    `<button class="c-exam" data-exam="${esc(examKey)}">` +
+    `<span class="c-etitle">${esc(label)}</span>${badge}` +
+    `<span class="c-ecta">${cta} →</span></button>`
+  );
+}
+
+function moduleBlock(module, mastery, currentId, exams) {
   const p = moduleProgress(module, mastery);
   const rows = (module.lessons || []).map((l) => lessonRow(l, mastery, currentId)).join("");
   // #1: once every lesson in the module is done, offer its real-world capstone.
@@ -46,15 +62,15 @@ function moduleBlock(module, mastery, currentId) {
     `<section class="c-module">` +
     `<div class="c-mhead"><span class="c-mtitle">${esc(module.title)}</span>` +
     `<span class="c-mprog">${p.done}/${p.total}</span></div>` +
-    `<div class="c-lessons">${rows}</div>${capstone}</section>`
+    `<div class="c-lessons">${rows}</div>${capstone}${examRow(module.id, exams, "Module exam")}</section>`
   );
 }
 
-export function curriculumHTML(manifest, mastery, currentId) {
+export function curriculumHTML(manifest, mastery, currentId, exams, coursePassed) {
   const m = mastery || {};
   const flat = flatten(manifest);
   const done = flat.filter((l) => m[l.id]).length;
-  const modules = (manifest.modules || []).map((mod) => moduleBlock(mod, m, currentId)).join("");
+  const modules = (manifest.modules || []).map((mod) => moduleBlock(mod, m, currentId, exams)).join("");
   // #1: when the whole course is done, offer a course-wide real-world capstone.
   const courseDone = flat.length > 0 && done === flat.length;
   const courseCapstone = courseDone
@@ -63,6 +79,7 @@ export function curriculumHTML(manifest, mastery, currentId) {
   return (
     `<div class="curriculum">` +
     `<div class="greeting"><h1>${esc(manifest.title)}</h1>` +
-    `<span>${done} of ${flat.length} lessons</span></div>${modules}${courseCapstone}</div>`
+    `<span>${coursePassed ? '<span class="course-passed">Course passed</span> ' : ""}${done} of ${flat.length} lessons</span></div>` +
+    `${modules}${courseCapstone}${examRow("final", exams, "Final exam")}</div>`
   );
 }

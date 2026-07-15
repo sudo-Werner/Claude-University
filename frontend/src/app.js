@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
@@ -13,7 +13,8 @@ import { lessonHTML } from "./views/lesson.js";
 import { curriculumHTML } from "./views/curriculum.js";
 import { capstoneHTML } from "./views/capstone.js";
 import { libraryHTML } from "./views/library.js";
-import { loadingHTML, LESSON_STAGES, DEEPEN_STAGES, CAPSTONE_STAGES, PROGRAM_STAGES } from "./views/loading.js";
+import { loadingHTML, LESSON_STAGES, DEEPEN_STAGES, CAPSTONE_STAGES, PROGRAM_STAGES, EXAM_STAGES } from "./views/loading.js";
+import { examHTML, examResultHTML, examReady } from "./views/exam.js";
 import { diagnosticHTML } from "./views/diagnostic.js";
 import { chatHTML } from "./views/chat.js";
 import { syllabusHTML } from "./views/syllabus.js";
@@ -320,12 +321,15 @@ export async function init({ window, fetch }) {
 
   function paintCurriculum() {
     const view = root.querySelector("#view");
-    view.innerHTML = curriculumHTML(ui.manifest, (ui.manifest && ui.manifest.mastery) || {}, currentLessonId());
+    view.innerHTML = curriculumHTML(ui.manifest, (ui.manifest && ui.manifest.mastery) || {}, currentLessonId(), ui.manifest && ui.manifest.exams, !!(ui.manifest && ui.manifest.coursePassed));
     view.querySelectorAll("[data-lesson]").forEach((row) => {
       row.addEventListener("click", () => openLesson(row.getAttribute("data-lesson")));
     });
     view.querySelectorAll("[data-capstone]").forEach((b) => {
       b.addEventListener("click", () => showCapstone(b.getAttribute("data-capstone")));
+    });
+    view.querySelectorAll("[data-exam]").forEach((b) => {
+      b.addEventListener("click", () => showExam(b.getAttribute("data-exam")));
     });
   }
 
@@ -350,6 +354,88 @@ export async function init({ window, fetch }) {
     }
     view.innerHTML = capstoneHTML(cap);
     view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
+  }
+
+  // ---- summative exams (sub-project C) ----
+  function examLabel(examKey) {
+    if (examKey === "final") return `Final exam — ${(ui.manifest && ui.manifest.title) || ""}`;
+    const mod = ((ui.manifest && ui.manifest.modules) || []).find((m) => m.id === examKey);
+    return mod ? `Module exam — ${mod.title}` : "Exam";
+  }
+
+  async function showExam(examKey) {
+    pauseTimer();
+    ui.loadSeq = (ui.loadSeq || 0) + 1;
+    const seq = ui.loadSeq;
+    ui.screen = "exam-loading";
+    root.innerHTML = shellHTML({ back: ui.manifest ? ui.manifest.title : "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showCurriculum);
+    const view = root.querySelector("#view");
+    startLoading(view, "lesson", EXAM_STAGES);
+    const exam = await startExam({ fetch, courseId: ui.courseId, examKey });
+    if (ui.screen !== "exam-loading" || ui.loadSeq !== seq) return; // navigated away mid-load
+    if (!exam || exam.error) {
+      view.innerHTML =
+        `<div class="card"><div class="prompt">${esc((exam && exam.error) || "Couldn't prepare the exam right now.")}</div>` +
+        `<div class="nav"><button class="btn-back" data-action="back">Back</button></div></div>`;
+      view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
+      return;
+    }
+    ui.screen = "exam";
+    ui.examState = { examKey, exam, answers: {}, submitting: false, error: "" };
+    paintExam();
+  }
+
+  function paintExam() {
+    const st = ui.examState;
+    const view = root.querySelector("#view");
+    view.innerHTML = examHTML({ ...st.exam, title: examLabel(st.examKey) }, st);
+    view.querySelectorAll("[data-choice]").forEach((b) => {
+      b.addEventListener("click", () => {
+        st.answers[Number(b.getAttribute("data-q"))] = Number(b.getAttribute("data-choice"));
+        paintExam();
+      });
+    });
+    // Textareas update state without a repaint (a repaint would steal focus on
+    // every keystroke); only the submit button's disabled state is refreshed.
+    view.querySelectorAll("textarea[data-q]").forEach((t) => {
+      t.addEventListener("input", () => {
+        st.answers[Number(t.getAttribute("data-q"))] = t.value;
+        const btn = view.querySelector('[data-action="submit-exam"]');
+        if (btn) btn.disabled = !(examReady(st.exam, st.answers) && !st.submitting);
+      });
+    });
+    const submit = view.querySelector('[data-action="submit-exam"]');
+    if (submit) submit.addEventListener("click", submitCurrentExam);
+  }
+
+  async function submitCurrentExam() {
+    const st = ui.examState;
+    if (!st || st.submitting || !examReady(st.exam, st.answers)) return;
+    st.submitting = true;
+    st.error = "";
+    paintExam();
+    const answers = st.exam.questions.map((q, i) => (q.type === "mcq" ? st.answers[i] : st.answers[i] || ""));
+    const result = await submitExam({ fetch, courseId: ui.courseId, examKey: st.examKey, answers });
+    if (ui.screen !== "exam" || ui.examState !== st) return; // navigated away mid-grade
+    st.submitting = false;
+    if (!result || result.error) {
+      st.error = (result && result.error) || "Couldn't grade the exam right now — your answers are still here, try again.";
+      paintExam();
+      return;
+    }
+    // Paint the result even if the summary refresh fails — this screen is the
+    // only place the graded report exists; stale status self-heals on next load.
+    try { await refreshSummary(); } catch (e) {}
+    if (ui.screen !== "exam" || ui.examState !== st) return; // navigated away during refresh
+    ui.screen = "exam-result";
+    const view = root.querySelector("#view");
+    view.innerHTML = examResultHTML(result);
+    view.querySelectorAll("[data-lesson]").forEach((b) => {
+      b.addEventListener("click", () => openLesson(b.getAttribute("data-lesson")));
+    });
+    view.querySelector('[data-action="retake-exam"]').addEventListener("click", () => showExam(st.examKey));
+    view.querySelector('[data-action="back-curriculum"]').addEventListener("click", showCurriculum);
   }
 
   // #3b: render a skeleton + cycle the "what Claude is doing" status. The interval
