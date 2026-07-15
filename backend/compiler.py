@@ -157,7 +157,14 @@ def _objectives_and_graph(outline, *, verify):
         module_in = {"id": m.get("id"), "title": m.get("title"),
                      "lessons": [{"id": l.get("id"), "title": l.get("title"), "estMinutes": l.get("estMinutes")}
                                  for l in m.get("lessons", [])]}
-        res = verify(_module_objectives_prompt(module_in, earlier), valid_module_objectives)
+        # Require the response to carry EVERY lesson we sent: a dropped lesson would pass
+        # shape validation, get objectives: [], and 502 the whole compile downstream —
+        # rejecting here converts that into run_structured's cheap targeted retry.
+        expected = len(module_in["lessons"])
+        res = verify(
+            _module_objectives_prompt(module_in, earlier),
+            lambda o: valid_module_objectives(o) and len(o.get("lessons", [])) == expected,
+        )
         outcomes = res.get("outcomes", []) if isinstance(res, dict) else []
         lessons = res.get("lessons", []) if isinstance(res, dict) else []
         modules_out.append({"id": m.get("id"), "title": m.get("title"), "outcomes": outcomes, "lessons": lessons})

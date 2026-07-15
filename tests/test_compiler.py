@@ -278,3 +278,40 @@ def test_revise_course_keeps_retained_objectives_mints_new_and_skips_sweep(monke
     assert flat[1]["id"] == "c-l2"
     assert flat[1]["objectives"] == [{"text": "Design new solution", "bloom": "create", "knowledge": "procedural"}]  # new -> generated
     assert generation.valid_compiled_course(out)
+
+
+def test_module_objectives_validator_rejects_dropped_lessons():
+    outline = {
+        "title": "T",
+        "modules": [{"id": "m1", "title": "M1", "lessons": [
+            {"id": "l1", "title": "A", "estMinutes": 30},
+            {"id": "l2", "title": "B", "estMinutes": 30},
+        ]}],
+    }
+    captured = {}
+
+    def fake_verify(prompt, validate):
+        # Capture module validator (first call, where "roll" is not in prompt)
+        if "roll" not in prompt.lower():
+            captured["validate"] = validate
+        return {
+            "outcomes": [{"text": "Do X", "bloom": "apply", "knowledge": "procedural"}],
+            "lessons": [
+                {"id": "l1", "title": "A",
+                 "objectives": [{"text": "Calc", "bloom": "apply", "knowledge": "procedural"}],
+                 "prereqs": []},
+                {"id": "l2", "title": "B",
+                 "objectives": [{"text": "Calc", "bloom": "apply", "knowledge": "procedural"}],
+                 "prereqs": []},
+            ],
+        } if "roll" not in prompt.lower() else {
+            "outcomes": [{"text": "Do X", "bloom": "apply", "knowledge": "procedural"}],
+            "skills": ["x"],
+        }
+
+    compiler._objectives_and_graph(outline, verify=fake_verify)
+    validate = captured["validate"]
+    full = fake_verify("module", lambda o: True)
+    assert validate(full) is True
+    short = {**full, "lessons": full["lessons"][:1]}  # model dropped a lesson
+    assert validate(short) is False
