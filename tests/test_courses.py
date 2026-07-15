@@ -251,3 +251,21 @@ def test_apply_revision_rejects_tampered_course(tmp_path):
         "estMinutes": 30, "prereqs": [f"c-l1", f"c-l2"]})  # bad id pattern
     assert courses.apply_revision(cdir, "c", foreign, now="t") is None
     assert courses.apply_revision(cdir, "c", {**foreign, "id": "d"}, now="t") is None  # id mismatch
+
+
+def test_apply_revision_prunes_spine_entries_for_removed_lessons(tmp_path):
+    from backend import courses, spine
+    cdir = tmp_path
+    course = cdir / "c"
+    (course / "lessons").mkdir(parents=True)
+    (course / "course.json").write_text(json.dumps({"id": "c", "title": "Old",
+        "modules": [{"id": "m1", "title": "M", "lessons": [
+            {"id": "c-l1", "title": "One"}, {"id": "c-l2", "title": "Two"}]}]}))
+    entry = {"summary": "s", "concepts": [{"term": "t", "definition": "d"}]}
+    spine.upsert_entry(cdir, "c", "c-l1", entry)
+    spine.upsert_entry(cdir, "c", "c-l2", entry)
+    revised = _valid_compiled("c")
+    revised["modules"][0]["lessons"] = revised["modules"][0]["lessons"][:1]  # keep only c-l1
+    out = courses.apply_revision(cdir, "c", revised, now="20260715T120000Z")
+    assert out is not None
+    assert set(spine.load_spine(cdir, "c")["lessons"]) == {"c-l1"}

@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from backend import fsutil
+from backend import fsutil, spine
 
 CONTENT_DIR = Path(__file__).resolve().parent.parent / "content" / "courses"
 
@@ -156,7 +156,8 @@ def apply_revision(content_dir, course_id, revised, *, now=None):
     """Validate, back up, and atomically write a revised course manifest in-place.
 
     Returns the revised dict on success, or None if validation fails or the course
-    directory does not exist. Never touches the lessons/ directory.
+    directory does not exist. Never touches the lessons/ directory. Prunes spine.json
+    entries for lessons removed from the syllabus.
     """
     content_dir = Path(content_dir)
     course_dir = content_dir / course_id
@@ -184,4 +185,5 @@ def apply_revision(content_dir, course_id, revised, *, now=None):
         now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     (course_dir / f"course.json.pre-revise-{now}").write_text(manifest_path.read_text())
     fsutil.write_text_atomic(manifest_path, json.dumps(revised, indent=2, ensure_ascii=False))
+    spine.prune(content_dir, course_id, seen)
     return revised
