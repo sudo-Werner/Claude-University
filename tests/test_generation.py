@@ -1021,3 +1021,21 @@ def test_lesson_prompt_omits_block_without_objectives():
     p = generation.lesson_prompt(brief="b", profile=None, lesson_id="c-l1", lesson_title="A",
         module_title="M", position=1, total=3)
     assert "constructive alignment" not in p
+
+
+# ---- corrupt-cache self-heal: ensure_lesson regenerates instead of hitting a dead end ----
+
+def test_ensure_lesson_regenerates_corrupt_cache(tmp_path):
+    # same manifest + stub generate as test_ensure_lesson_generates_validates_and_caches
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    made["checks"] = [dict(_OK_CHECK)]
+    def generate(prompt):
+        return made
+    lesson_path = root / "demo" / "lessons" / "demo-l1.json"
+    lesson_path.parent.mkdir(parents=True, exist_ok=True)
+    lesson_path.write_text('{"truncated": ')  # corrupt cache — must NOT be a dead end
+    lesson = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=generate)
+    assert lesson is not None
+    assert _json.loads(lesson_path.read_text())  # cache repaired with valid JSON

@@ -12,14 +12,20 @@ def load_manifest(content_dir, course_id):
     path = Path(content_dir) / course_id / "course.json"
     if not path.exists():
         return None
-    return json.loads(path.read_text())
+    try:
+        return json.loads(path.read_text())
+    except ValueError:
+        return None  # corrupt manifest reads as missing (404), never a 500
 
 
 def load_lesson(content_dir, course_id, lesson_id):
     path = Path(content_dir) / course_id / "lessons" / f"{lesson_id}.json"
     if not path.exists():
         return None
-    return json.loads(path.read_text())
+    try:
+        return json.loads(path.read_text())
+    except ValueError:
+        return None  # corrupt cache reads as missing so ensure_lesson regenerates it
 
 
 def flatten_lessons(manifest):

@@ -69,6 +69,22 @@ def test_flatten_lessons_keeps_order_and_module(tmp_path):
     assert flat[0]["moduleTitle"] == "Module One"
 
 
+def test_load_manifest_returns_none_on_corrupt_json(tmp_path):
+    from backend import courses
+    course_dir = tmp_path / "c1"
+    course_dir.mkdir()
+    (course_dir / "course.json").write_text('{"id": "c1", "title": ')  # truncated write
+    assert courses.load_manifest(tmp_path, "c1") is None
+
+
+def test_load_lesson_returns_none_on_corrupt_json(tmp_path):
+    from backend import courses
+    lessons = tmp_path / "c1" / "lessons"
+    lessons.mkdir(parents=True)
+    (lessons / "c1-l1.json").write_text('{"id": "c1-l1"')  # truncated write
+    assert courses.load_lesson(tmp_path, "c1", "c1-l1") is None
+
+
 def test_progress_starts_at_zero_and_points_at_first(conn, tmp_path):
     from backend import courses
     root = _make_course(tmp_path)
