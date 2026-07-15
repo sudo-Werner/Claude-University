@@ -1,4 +1,5 @@
 import datetime
+import json
 
 from backend import events, stats
 
@@ -72,3 +73,80 @@ def test_non_study_events_do_not_count(conn):
         _ev(3, "hint_revealed", "2026-07-15T09:06:00+00:00"),
     ])
     assert stats.streak_days(conn, today=TODAY) == 0
+
+
+def _write_course(tmp_path):
+    course = {
+        "id": "c1",
+        "title": "Machine Learning",
+        "modules": [
+            {"id": "m1", "title": "Foundations", "lessons": [
+                {"id": "c1-l1", "title": "What is learning?"},
+            ]},
+        ],
+    }
+    d = tmp_path / "c1"
+    d.mkdir(parents=True)
+    (d / "course.json").write_text(json.dumps(course))
+    return tmp_path
+
+
+def test_activity_newest_first_with_resolved_titles(conn, tmp_path):
+    content = _write_course(tmp_path)
+    events.insert_events(conn, [
+        _ev(1, "lesson_view", "2026-07-14T10:00:00+00:00"),
+        _ev(2, "lesson_reviewed", "2026-07-15T10:00:00+00:00"),
+    ])
+    conn.execute(
+        "UPDATE events SET payload = ? WHERE client_event_id = 'e2'",
+        (json.dumps({"quality": "good"}),),
+    )
+    conn.commit()
+    out = stats.recent_activity(conn, content, limit=10)
+    assert [e["type"] for e in out] == ["lesson_reviewed", "lesson_view"]
+    assert out[0]["courseTitle"] == "Machine Learning"
+    assert out[0]["lessonTitle"] == "What is learning?"
+    assert out[0]["quality"] == "good"
+    assert out[1]["quality"] is None
+
+
+def test_activity_excludes_noise_event_types(conn, tmp_path):
+    content = _write_course(tmp_path)
+    events.insert_events(conn, [
+        _ev(1, "session_start", "2026-07-15T09:00:00+00:00"),
+        _ev(2, "lesson_check", "2026-07-15T09:05:00+00:00"),
+        _ev(3, "lesson_view", "2026-07-15T09:10:00+00:00"),
+    ])
+    out = stats.recent_activity(conn, content, limit=10)
+    assert [e["type"] for e in out] == ["lesson_view"]
+
+
+def test_activity_respects_limit(conn, tmp_path):
+    content = _write_course(tmp_path)
+    events.insert_events(conn, [
+        _ev(i, "lesson_view", f"2026-07-15T0{i}:00:00+00:00") for i in range(1, 6)
+    ])
+    out = stats.recent_activity(conn, content, limit=3)
+    assert len(out) == 3
+    assert out[0]["occurredAt"].startswith("2026-07-15T05")
+
+
+def test_activity_falls_back_to_ids_for_missing_course(conn, tmp_path):
+    events.insert_events(conn, [
+        _ev(1, "lesson_view", "2026-07-15T10:00:00+00:00",
+            course_id="deleted-course", topic_id="deleted-course-l9"),
+    ])
+    out = stats.recent_activity(conn, tmp_path, limit=10)
+    assert out[0]["courseTitle"] == "deleted-course"
+    assert out[0]["lessonTitle"] is None
+
+
+def test_activity_course_created_has_no_lesson(conn, tmp_path):
+    content = _write_course(tmp_path)
+    events.insert_events(conn, [
+        _ev(1, "course_created", "2026-07-15T10:00:00+00:00", topic_id=None),
+    ])
+    out = stats.recent_activity(conn, content, limit=10)
+    assert out[0]["type"] == "course_created"
+    assert out[0]["courseTitle"] == "Machine Learning"
+    assert out[0]["lessonTitle"] is None
