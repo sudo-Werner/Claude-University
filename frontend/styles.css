@@ -539,3 +539,5 @@ textarea::placeholder{color:#b3a994}
 .exam-fb { margin-top: 8px; font-size: 14px; }
 .exam-fb.good { color: var(--ok, #2e7d32); }
 .exam-fb.mid { color: var(--warn, #b26a00); }
+.exam-fb.bad { color: var(--warn, #b26a00); }
+.exam-prompt { font-family: var(--serif); font-size: 16px; line-height: 1.6; color: var(--read); margin: 0 0 6px; }
