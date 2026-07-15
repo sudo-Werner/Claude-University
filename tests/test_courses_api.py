@@ -258,7 +258,10 @@ def test_deepen_endpoint_regenerates_lesson(client, tmp_path, monkeypatch):
               "solutionAns": "a", "solutionNote": "n",
               "checks": [{"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}],
               "preQuiz": {"type": "mcq", "prompt": "Guess?", "choices": ["A", "B"],
-                          "answer": 0, "explanation": "Because."}}
+                          "answer": 0, "explanation": "Because."},
+              "spine": {"summary": "Teaches what recursion is.",
+                        "concepts": [{"term": "recursion",
+                                      "definition": "A function calling itself on a smaller input."}]}}
     # deepen now generates WITH web search: run_sourced returns (lesson, captured_sources)
     monkeypatch.setattr(claude_client, "run_sourced", lambda prompt, **kw: (deeper, []))
     # ...then a non-web verification pass reconciles it; the reviewer returns it unchanged here.

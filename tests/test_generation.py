@@ -5,6 +5,12 @@ _OK_CHECK = {"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}
 _OK_PREQUIZ = {"type": "mcq", "prompt": "Guess?", "choices": ["A", "B"], "answer": 0, "explanation": "Because."}
 
 
+def _ok_spine():
+    return {"summary": "Teaches what recursion is.",
+            "concepts": [{"term": "recursion",
+                          "definition": "A function calling itself on a smaller input."}]}
+
+
 def test_sanitize_html_allows_safe_block_tags():
     # Block tags the generator actually emits should render, not show as literal text.
     src = (
@@ -128,6 +134,7 @@ def test_valid_lesson_requires_all_keys():
     good = {k: "x" for k in gen.LESSON_KEYS}
     good["checks"] = [dict(_OK_CHECK)]
     good["preQuiz"] = dict(_OK_PREQUIZ)
+    good["spine"] = _ok_spine()
     assert gen.valid_lesson(good) is True
     missing = dict(good)
     del missing["promptHtml"]
@@ -226,6 +233,7 @@ def test_ensure_lesson_generates_validates_and_caches(tmp_path):
     made["id"] = "demo-l1"
     made["checks"] = [dict(_OK_CHECK)]
     made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
     calls = []
     def generate(prompt):
         calls.append(prompt)
@@ -257,6 +265,7 @@ def test_ensure_lesson_sanitizes_unsafe_html(tmp_path):
     made["promptHtml"] = '<code>w</code><img src=x onerror=alert(1)>'
     made["checks"] = [dict(_OK_CHECK)]
     made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made))
     assert "<img" not in out["promptHtml"]
     assert "&lt;img" in out["promptHtml"]
@@ -272,6 +281,7 @@ def test_ensure_lesson_reconciles_ids_and_step(tmp_path):
     made["totalSteps"] = 99
     made["checks"] = [dict(_OK_CHECK)]
     made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made))
     assert out["id"] == "demo-l1"
     assert out["courseId"] == "demo"
@@ -306,6 +316,7 @@ def test_valid_check_rejects_malformed():
 def test_valid_lesson_requires_checks():
     base = {k: "x" for k in gen.LESSON_KEYS}
     base["preQuiz"] = dict(_OK_PREQUIZ)
+    base["spine"] = _ok_spine()
     assert not gen.valid_lesson(base)  # no checks
     base["checks"] = []
     assert not gen.valid_lesson(base)  # empty
@@ -336,6 +347,7 @@ def test_ensure_lesson_sanitizes_check_html(tmp_path):
     made["checks"] = [{"type": "mcq", "prompt": "<img src=x onerror=alert(1)>pick", "choices": ["<b>a</b>", "ok"],
                         "answer": 1, "explanation": "<code>fine</code>"}]
     made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: made)
     chk = out["checks"][0]
     assert "<img" not in chk["prompt"] and "&lt;img" in chk["prompt"]   # unsafe escaped
@@ -367,6 +379,7 @@ def test_ensure_lesson_forwards_performance(tmp_path):
     made = {k: "x" for k in gen.LESSON_KEYS}
     made["checks"] = [dict(_OK_CHECK)]
     made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
 
     def fake_generate(prompt):
         captured["prompt"] = prompt
@@ -389,6 +402,7 @@ def test_valid_lesson_rejects_empty_prose():
     good = {k: "x" for k in gen.LESSON_KEYS}
     good["checks"] = [dict(_OK_CHECK)]
     good["preQuiz"] = dict(_OK_PREQUIZ)
+    good["spine"] = _ok_spine()
     assert gen.valid_lesson(good) is True
     blank = dict(good); blank["promptHtml"] = "   "
     assert gen.valid_lesson(blank) is False
@@ -495,7 +509,7 @@ def test_deepen_lesson_regenerates_and_overwrites(tmp_path):
         return {"id": "wrong", "courseId": "wrong", "topic": "deeper", "step": 9, "totalSteps": 9,
                 "eyebrow": "EXERCISE", "promptHtml": "<p>now with fundamentals</p>",
                 "hintHtml": "h2", "solutionAns": "a2", "solutionNote": "n2", "checks": [dict(_OK_CHECK)],
-                "preQuiz": dict(_OK_PREQUIZ)}
+                "preQuiz": dict(_OK_PREQUIZ), "spine": _ok_spine()}
 
     lesson = gen.deepen_lesson(root, cid, lid, {}, generate=fake_generate)
     assert "rusty" in captured["prompt"].lower() or "fundamentals" in captured["prompt"].lower()
@@ -691,6 +705,7 @@ def test_ensure_lesson_stores_only_really_retrieved_sources(tmp_path):
     made["id"] = "demo-l1"
     made["checks"] = [dict(_OK_CHECK)]
     made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
     made["sources"] = [
         {"title": "Stanford CS231n", "url": "https://cs231n.stanford.edu/"},
         {"title": "Hallucinated", "url": "https://not-real.example.com/x"}]
@@ -712,6 +727,7 @@ def test_ensure_lesson_without_tuple_defaults_to_no_sources(tmp_path):
     made = {k: "x" for k in gen.LESSON_KEYS}
     made["id"] = "demo-l1"; made["checks"] = [dict(_OK_CHECK)]
     made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: made)
     assert out["sources"] == []
 
@@ -784,7 +800,7 @@ def _full_lesson(**over):
     base = {"id": "demo-l1", "courseId": "demo", "topic": "t", "step": 1, "totalSteps": 1,
             "eyebrow": "EXERCISE", "promptHtml": "<p>body</p>", "hintHtml": "h",
             "solutionAns": "a", "solutionNote": "n", "checks": [dict(_OK_CHECK)],
-            "preQuiz": dict(_OK_PREQUIZ)}
+            "preQuiz": dict(_OK_PREQUIZ), "spine": _ok_spine()}
     base.update(over)
     return base
 
@@ -1054,6 +1070,7 @@ def test_ensure_lesson_regenerates_corrupt_cache(tmp_path):
     made["id"] = "demo-l1"
     made["checks"] = [dict(_OK_CHECK)]
     made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
     def generate(prompt):
         return made
     lesson_path = root / "demo" / "lessons" / "demo-l1.json"
@@ -1077,6 +1094,7 @@ def test_ensure_lesson_single_flight(tmp_path):
     made["id"] = "demo-l1"
     made["checks"] = [dict(_OK_CHECK)]
     made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
     calls = []
 
     def slow_generate(prompt):
@@ -1108,6 +1126,7 @@ def _valid_lesson_base():
         "checks": [{"type": "fill", "prompt": "q", "answer": "a", "explanation": "e"}],
         "preQuiz": {"type": "mcq", "prompt": "Guess?", "choices": ["A", "B"],
                     "answer": 0, "explanation": "Because."},
+        "spine": _ok_spine(),
     }
 
 
@@ -1130,3 +1149,45 @@ def test_lesson_prompt_mentions_prequiz():
         module_title="M", position=1, total=1,
     )
     assert "preQuiz" in prompt
+
+
+# ---- Task 2: Harvest — generated lessons carry a required spine entry ----
+
+def test_valid_lesson_requires_spine():
+    good = {
+        "id": "l1", "courseId": "c", "topic": "t", "step": 1, "totalSteps": 1,
+        "eyebrow": "EXERCISE", "promptHtml": "<p>q</p>", "hintHtml": "<p>h</p>",
+        "solutionAns": "a", "solutionNote": "n",
+        "checks": [{"type": "fill", "prompt": "p", "answer": "a", "explanation": "e"}],
+        "preQuiz": dict(_OK_PREQUIZ),
+    }
+    assert not generation.valid_lesson(good)  # missing spine
+    good["spine"] = _ok_spine()
+    assert generation.valid_lesson(good)
+    good["spine"] = {"summary": "s", "concepts": []}
+    assert not generation.valid_lesson(good)
+
+
+def test_lesson_prompt_asks_for_spine():
+    prompt = generation.lesson_prompt(
+        brief="b", profile={}, lesson_id="l1", lesson_title="T",
+        module_title="M", position=1, total=2)
+    assert "spine:" in prompt
+    assert "NO HTML in any spine field" in prompt
+    assert "EXACT term spelling" in prompt
+
+
+def test_ensure_lesson_pops_spine_and_writes_spine_json(tmp_path):
+    # same manifest + lesson-dict style as test_ensure_lesson_generates_validates_and_caches
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
+    lesson = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: made)
+    assert "spine" not in lesson
+    cached = _json.loads((root / "demo" / "lessons" / "demo-l1.json").read_text())
+    assert "spine" not in cached
+    from backend import spine as spine_mod
+    assert spine_mod.load_spine(root, "demo")["lessons"]["demo-l1"] == _ok_spine()

@@ -4,7 +4,7 @@ import re as _re
 import threading
 from pathlib import Path
 
-from backend import claude_client, courses, fsutil
+from backend import claude_client, courses, fsutil, spine
 
 # Single-flight: expensive generations (a lesson is ~110s of Max-plan web search) must
 # never run twice concurrently for the same artifact. The second caller blocks on the
@@ -216,6 +216,8 @@ def valid_lesson(obj):
         return False
     if not valid_check(obj.get("preQuiz")):
         return False
+    if not spine.valid_spine_entry(obj.get("spine")):
+        return False
     return all(valid_check(c) for c in checks)
 
 
@@ -263,6 +265,11 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "require a term, label, or fact that only this lesson introduces. Make mcq "
         "distractors plausible. Its explanation is shown immediately after the attempt as a "
         "one-sentence preview of the key insight.\n"
+        '  spine: {"summary":"<one plain-text sentence stating what this lesson taught>",'
+        '"concepts":[{"term":"<term name>","definition":"<one plain-text sentence>"}]} '
+        "with 1-4 concepts. This indexes the lesson so FUTURE lessons can build on it: "
+        "name only the concepts THIS lesson introduces, use the EXACT term spelling from "
+        "your lesson body, and use NO HTML in any spine field.\n"
         "Shape every learner-facing field to the learner preferences above.\n\n"
         # Slice A: evidence-backed readability/engagement guidance (conversational tone,
         # chunking/scannability, worked examples, warm feedback) applied to every lesson.
@@ -914,8 +921,15 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
             pq["choices"] = [sanitize_html(c) if isinstance(c, str) else c for c in pq["choices"]]
     if not valid_lesson(lesson):
         raise claude_client.ClaudeError("generated lesson failed validation")
+    # The spine entry is generation-side state, not lesson content: pop it before
+    # caching so lesson files keep their existing shape, then record it for future
+    # lessons. The per-course lock serializes concurrent read-modify-writes of
+    # spine.json (the per-lesson lock alone does not).
+    spine_entry = lesson.pop("spine")
     path = Path(content_dir) / course_id / "lessons" / f"{lesson_id}.json"
     fsutil.write_text_atomic(path, json.dumps(lesson, indent=2, ensure_ascii=False))
+    with _gen_lock(("spine", course_id)):
+        spine.upsert_entry(content_dir, course_id, lesson_id, spine_entry)
     return lesson
 
 
