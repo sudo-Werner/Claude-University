@@ -638,11 +638,26 @@ def test_lesson_prompt_has_visual_aid_guidance():
 def test_source_type_from_domain():
     assert gen.source_type("https://cs231n.stanford.edu/slides/lecture_4.pdf") == "university"
     assert gen.source_type("https://www.cl.cam.ac.uk/teaching/x") == "university"
-    assert gen.source_type("https://arxiv.org/abs/1404.7828") == "peer-reviewed"
-    assert gen.source_type("https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4863083/") == "peer-reviewed"
+    assert gen.source_type("https://arxiv.org/abs/1404.7828") == "preprint"           # not peer-reviewed
+    assert gen.source_type("https://www.biorxiv.org/content/x") == "preprint"
+    assert gen.source_type("https://doi.org/10.1000/xyz123") == "preprint"            # resolves anything
+    assert gen.source_type("https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4863083/") == "preprint"
+    assert gen.source_type("https://nature.com/articles/x") == "peer-reviewed"        # genuine journal venue
+    assert gen.source_type("https://www.sciencedirect.com/science/article/x") == "peer-reviewed"
     assert gen.source_type("https://link.springer.com/content/pdf/x.pdf") == "textbook"
     assert gen.source_type("https://pytorch.org/docs/stable/notes/autograd.html") == "official-docs"
+    assert gen.source_type("https://docs.python.org/3/library/x.html") == "official-docs"
+    assert gen.source_type("https://docs.foo.com/getting-started") == "official-docs"  # first-label rule
     assert gen.source_type("https://someblog.example.com/post") == "reference"
+
+
+def test_source_type_matches_host_labels_not_raw_substrings():
+    # The must-fix bug: substring matching let "summit.org" pass as a university because
+    # it contains "mit." — label-boundary matching must reject it.
+    assert gen.source_type("https://summit.org/conference") != "university"
+    assert gen.source_type("https://summit.org/conference") == "reference"
+    assert gen.source_type("https://mit.edu/about") == "university"
+    assert gen.source_type("https://web.mit.edu/some/path") == "university"
 
 
 def test_valid_bibliography_shape():
@@ -688,11 +703,31 @@ def test_ensure_bibliography_filters_to_really_retrieved_urls(tmp_path):
     assert "https://cs231n.stanford.edu/" in urls and "https://arxiv.org/abs/1404.7828" in urls
     types = {s["url"]: s["type"] for s in lib["sources"]}
     assert types["https://cs231n.stanford.edu/"] == "university"
-    assert types["https://arxiv.org/abs/1404.7828"] == "peer-reviewed"
+    assert types["https://arxiv.org/abs/1404.7828"] == "preprint"
     assert "<script" not in lib["sources"][0]["title"]          # title sanitized
     # cached: second call returns without regenerating
     lib2 = gen.ensure_bibliography(root, cid, generate_sourced=lambda p: (_ for _ in ()).throw(AssertionError("regen")))
     assert lib2["courseId"] == cid
+
+
+def test_ensure_bibliography_normalizes_legacy_cached_source_types(tmp_path):
+    # A library.json written before the source_type() honesty fix has arxiv mislabeled
+    # "peer-reviewed" on disk. Reading it back must relabel it live (not just fresh writes),
+    # without needing to touch/rewrite the cache file itself.
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "T", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]
+    path = root / cid / "library.json"
+    legacy = {"courseId": cid, "title": "T", "sources": [
+        {"title": "arXiv survey", "url": "https://arxiv.org/abs/1404.7828",
+         "type": "peer-reviewed", "note": "n"}]}
+    path.write_text(_json.dumps(legacy))
+    on_disk_before = path.read_text()
+    lib = gen.ensure_bibliography(root, cid, generate_sourced=lambda p: (_ for _ in ()).throw(AssertionError("regen")))
+    assert lib["sources"][0]["type"] == "preprint"     # relabeled honestly on read
+    assert path.read_text() == on_disk_before          # cache file itself untouched
 
 
 # ---- Phase 2: per-lesson grounding + roll-up ----
@@ -746,6 +781,8 @@ def test_course_lesson_sources_rolls_up_and_dedupes(tmp_path):
         "modules": [{"title": "M", "lessons": [{"title": "L1"}, {"title": "L2"}]}]})
     cid = manifest["id"]
     ldir = root / cid / "lessons"
+    # "peer-reviewed" here simulates a legacy on-disk type predating the source_type()
+    # honesty fix — course_lesson_sources() must recompute from the URL, not trust it.
     l1 = {"id": "a", "sources": [
         {"title": "arXiv", "url": "https://arxiv.org/abs/1", "type": "peer-reviewed"},
         {"title": "MIT", "url": "https://mit.edu/x", "type": "university"}]}
@@ -759,6 +796,8 @@ def test_course_lesson_sources_rolls_up_and_dedupes(tmp_path):
     assert urls.count("https://arxiv.org/abs/1") == 1   # deduped across lessons
     assert "https://mit.edu/x" in urls and "https://pytorch.org/docs" in urls
     assert rolled[0]["type"] == "university"            # sorted: university first
+    types = {s["url"]: s["type"] for s in rolled}
+    assert types["https://arxiv.org/abs/1"] == "preprint"  # legacy "peer-reviewed" relabeled
 
 
 def test_course_system_prompt_decouples_depth_from_daily_time():

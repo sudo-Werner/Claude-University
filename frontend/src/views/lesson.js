@@ -68,8 +68,8 @@ function explainHTML(state) {
 
 // Phase 2 — the accredited sources this lesson was grounded in (real, web-retrieved).
 const SRC_TYPE_LABEL = {
-  university: "University", "peer-reviewed": "Peer-reviewed", textbook: "Textbook",
-  "official-docs": "Official docs", reference: "Reference",
+  university: "University", preprint: "Preprint / scholarly", "peer-reviewed": "Peer-reviewed",
+  textbook: "Textbook", "official-docs": "Official docs", reference: "Reference",
 };
 
 function lessonSourcesHTML(sources) {
@@ -81,7 +81,7 @@ function lessonSourcesHTML(sources) {
   return (
     `<section class="card lesson-sources"><div class="ls-head">Sources</div>` +
     `<ul class="lsrc-list">${rows}</ul>` +
-    `<div class="ls-foot">Accredited sources this lesson drew on — retrieved from the web, not invented.</div></section>`
+    `<div class="ls-foot">Grounded sources this lesson drew on — retrieved from the web, not invented.</div></section>`
   );
 }
 

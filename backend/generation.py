@@ -563,23 +563,36 @@ def ensure_capstone(content_dir, course_id, scope, profile, *, generate):
         return capstone
 
 
-# ---- accredited sources / course Library (Phase 1) ----
+# ---- grounded sources / course Library (Phase 1) ----
 # The teaching is grounded in REAL sources retrieved via web search. We display a source
 # only if the URL the model cites was actually in the captured search results, and we derive
-# the accreditation "type" from the domain (reliable) rather than trusting the model.
+# the source "type" from the domain (reliable) rather than trusting the model. Labels are
+# honest, not aspirational: preprint servers (arxiv, biorxiv) and DOI resolvers are labeled
+# "preprint" — they are explicitly NOT peer review — while genuine peer-reviewed journal
+# venues keep "peer-reviewed".
 
-_SOURCE_TYPE_RANK = ["university", "peer-reviewed", "textbook", "official-docs", "reference"]
+_SOURCE_TYPE_RANK = ["university", "preprint", "peer-reviewed", "textbook", "official-docs", "reference"]
 
-_UNIVERSITY = (".edu", ".edu.", ".ac.uk", ".ac.", "stanford.", "mit.", "berkeley.",
-               "cmu.", "ox.ac.uk", "cam.ac.uk", "harvard.", "princeton.", "ethz.ch")
-_PEER_REVIEWED = ("arxiv.org", "biorxiv.org", "ncbi.nlm.nih.gov", ".nih.gov", "hal.science",
-                  "hal.", "doi.org", "acm.org", "ieee.org", "nature.com", "sciencedirect.com",
-                  "jstor.org", "plos.org", "pubmed", "semanticscholar.org")
-_TEXTBOOK = ("link.springer.com", "springer.com", "oreilly.com", "cambridge.org", "oup.com",
-             "manning.com", "packtpub.com", "wiley.com", "taylorfrancis.com", "mitpress.")
-_OFFICIAL_DOCS = ("docs.", "python.org", "pytorch.org", "tensorflow.org", "scikit-learn.org",
-                  "developer.mozilla.org", "kubernetes.io", "readthedocs.io", "numpy.org",
-                  "pandas.pydata.org", "developer.")
+# Named domains matched on registrable-suffix (host equals the domain, or is a subdomain of
+# it) — never on raw substring, so e.g. "summit.org" can never match "mit.edu".
+_UNIVERSITY_DOMAINS = ("ethz.ch",)                 # institutions without a generic academic TLD
+_UNIVERSITY_LAST_LABELS = ("edu",)                 # bare .edu TLD, e.g. mit.edu, web.mit.edu
+_UNIVERSITY_SECOND_LABELS = ("ac", "edu")          # ac.uk, ac.jp, edu.au, edu.sg, ...
+
+_PREPRINT_DOMAINS = ("arxiv.org", "biorxiv.org", "doi.org", "hal.science", "semanticscholar.org")
+_PREPRINT_SECOND_LABELS = ("nih",)                 # *.nih.gov — PubMed/PMC: indexes, not journals
+
+_PEER_REVIEWED_DOMAINS = ("acm.org", "ieee.org", "nature.com", "sciencedirect.com",
+                           "jstor.org", "plos.org")
+
+_TEXTBOOK_DOMAINS = ("link.springer.com", "springer.com", "oreilly.com", "cambridge.org",
+                     "oup.com", "manning.com", "packtpub.com", "wiley.com",
+                     "taylorfrancis.com", "mitpress.org")
+
+_OFFICIAL_DOCS_DOMAINS = ("python.org", "pytorch.org", "tensorflow.org", "scikit-learn.org",
+                          "developer.mozilla.org", "kubernetes.io", "readthedocs.io",
+                          "numpy.org", "pandas.pydata.org")
+_OFFICIAL_DOCS_FIRST_LABELS = ("docs", "developer")  # only as the host's FIRST label
 
 
 def _url_host(url):
@@ -587,15 +600,44 @@ def _url_host(url):
     return m.group(1).lower() if m else ""
 
 
+def _host_labels(host):
+    return host.split(".") if host else []
+
+
+def _domain_suffix_match(labels, domains):
+    """True if `labels` (a dot-split host) IS or ENDS WITH one of the given registrable
+    domains — matched whole-label, so "summit.org" never matches a "mit.*" pattern."""
+    for d in domains:
+        d_labels = d.split(".")
+        if len(labels) >= len(d_labels) and labels[-len(d_labels):] == d_labels:
+            return True
+    return False
+
+
+def _first_label_match(labels, first_labels):
+    """True only if the host's FIRST label is one of `first_labels` and the host has more
+    than one label — e.g. "docs" matches "docs.python.org" but not a bare "docs" host."""
+    return len(labels) > 1 and labels[0] in first_labels
+
+
 def source_type(url):
     host = _url_host(url)
-    if any(k in host for k in _UNIVERSITY):
+    labels = _host_labels(host)
+    if not labels:
+        return "reference"
+    if (_domain_suffix_match(labels, _UNIVERSITY_DOMAINS)
+            or labels[-1] in _UNIVERSITY_LAST_LABELS
+            or (len(labels) >= 2 and labels[-2] in _UNIVERSITY_SECOND_LABELS)):
         return "university"
-    if any(k in host for k in _PEER_REVIEWED):
+    if (_domain_suffix_match(labels, _PREPRINT_DOMAINS)
+            or (len(labels) >= 2 and labels[-2] in _PREPRINT_SECOND_LABELS)):
+        return "preprint"
+    if _domain_suffix_match(labels, _PEER_REVIEWED_DOMAINS):
         return "peer-reviewed"
-    if any(k in host for k in _TEXTBOOK):
+    if _domain_suffix_match(labels, _TEXTBOOK_DOMAINS):
         return "textbook"
-    if any(k in host for k in _OFFICIAL_DOCS):
+    if (_domain_suffix_match(labels, _OFFICIAL_DOCS_DOMAINS)
+            or _first_label_match(labels, _OFFICIAL_DOCS_FIRST_LABELS)):
         return "official-docs"
     return "reference"
 
@@ -639,8 +681,11 @@ def _resolve_sources(cited, captured):
 
 def course_lesson_sources(content_dir, course_id):
     """Deduped roll-up of the sources cited across every generated lesson (Phase 2).
-    Read live so the course Library reflects lessons as they are generated. Lesson sources
-    are already sanitized/typed at store time, so we just merge and dedupe by URL."""
+    Read live so the course Library reflects lessons as they are generated. Sanitizing is
+    already done at store time, but the "type" is ALWAYS recomputed from the URL here (not
+    trusted from disk) — cached lesson JSON can predate a source_type() rule change and
+    carry a now-stale/legacy type string, so re-deriving it keeps the label honest without
+    needing to rewrite the cache."""
     lessons_dir = Path(content_dir) / course_id / "lessons"
     if not lessons_dir.exists():
         return []
@@ -658,7 +703,7 @@ def course_lesson_sources(content_dir, course_id):
                 seen[n] = {
                     "title": s.get("title", ""),
                     "url": s["url"],
-                    "type": s.get("type") or source_type(s["url"]),
+                    "type": source_type(s["url"]),
                 }
     out = list(seen.values())
     out.sort(key=lambda s: _SOURCE_TYPE_RANK.index(s.get("type", "reference")))
@@ -702,17 +747,31 @@ def bibliography_prompt(*, title, brief, module_titles):
     )
 
 
+def _with_refreshed_source_types(library):
+    """Recompute each source's "type" from its URL rather than trusting the persisted value.
+    A cached library.json can predate a source_type() rule change (e.g. arxiv used to be
+    mislabeled "peer-reviewed") — re-deriving at read time keeps the label honest without
+    rewriting the cache file on disk."""
+    sources = library.get("sources") if isinstance(library, dict) else None
+    if isinstance(sources, list):
+        library = {**library, "sources": [
+            {**s, "type": source_type(s["url"])} if isinstance(s, dict) and isinstance(s.get("url"), str) else s
+            for s in sources
+        ]}
+    return library
+
+
 def ensure_bibliography(content_dir, course_id, *, generate_sourced):
     path = Path(content_dir) / course_id / "library.json"
     if path.exists():
         try:
-            return json.loads(path.read_text())
+            return _with_refreshed_source_types(json.loads(path.read_text()))
         except ValueError:
             pass  # regenerate a corrupt cache
     with _gen_lock(("library", course_id)):
         if path.exists():
             try:
-                return json.loads(path.read_text())
+                return _with_refreshed_source_types(json.loads(path.read_text()))
             except ValueError:
                 pass  # regenerate a corrupt cache
         manifest = courses.load_manifest(content_dir, course_id)

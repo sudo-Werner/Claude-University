@@ -292,7 +292,7 @@ export async function init({ window, fetch }) {
     root.innerHTML = shellHTML({ back: ui.manifest ? ui.manifest.title : "Courses" });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
     const view = root.querySelector("#view");
-    startLoading(view, "capstone", ["Searching for accredited sources…", "Checking universities & journals…", "Compiling the reading list…", "Almost ready…"]);
+    startLoading(view, "capstone", ["Searching for grounded sources…", "Checking universities & journals…", "Compiling the reading list…", "Almost ready…"]);
     log("library_opened", { courseId: ui.courseId });
     const library = await loadLibrary({ fetch, courseId: ui.courseId });
     if (ui.screen !== "library") return;

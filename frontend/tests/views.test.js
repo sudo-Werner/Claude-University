@@ -141,21 +141,22 @@ test("loadingHTML renders a skeleton and the first status message", () => {
 test("libraryHTML groups sources by type with badges and real links", () => {
   const lib = { courseId: "c", title: "Intro ML", sources: [
     { title: "Stanford CS231n", url: "https://cs231n.stanford.edu/", type: "university", note: "course notes" },
-    { title: "arXiv survey", url: "https://arxiv.org/abs/1404.7828", type: "peer-reviewed", note: "overview" },
+    { title: "arXiv survey", url: "https://arxiv.org/abs/1404.7828", type: "preprint", note: "overview" },
   ] };
   const html = libraryHTML(lib);
   assert.match(html, /Library/);
   assert.match(html, /University/);
-  assert.match(html, /Peer-reviewed/);
+  assert.match(html, /Preprint \/ scholarly/);
   assert.match(html, /href="https:\/\/cs231n\.stanford\.edu\/"[^>]*target="_blank"/);
   assert.match(html, /rel="noopener noreferrer"/);
   assert.match(html, /src-university/);
+  assert.match(html, /src-preprint/);
   assert.match(html, /data-action="back"/);
 });
 
 test("libraryHTML handles an empty source list", () => {
   const html = libraryHTML({ courseId: "c", title: "X", sources: [] });
-  assert.match(html, /No accredited sources/);
+  assert.match(html, /No grounded sources/);
 });
 
 test("libraryHTML shows a 'used in your lessons' roll-up when present", () => {
@@ -166,7 +167,7 @@ test("libraryHTML shows a 'used in your lessons' roll-up when present", () => {
   assert.match(html, /href="https:\/\/mit\.edu\/ocw"[^>]*target="_blank"/);
 });
 
-test("lesson renders its accredited sources section", () => {
+test("lesson renders its grounded sources section", () => {
   const withSources = { ...SAMPLE_LESSON, sources: [
     { title: "Stanford CS231n", url: "https://cs231n.stanford.edu/", type: "university" }] };
   const html = lessonHTML(withSources, { answer: "", hintVisible: false, solutionRevealed: false });
@@ -174,6 +175,7 @@ test("lesson renders its accredited sources section", () => {
   assert.match(html, /Stanford CS231n/);
   assert.match(html, /rel="noopener noreferrer"/);
   assert.match(html, /src-university/);
+  assert.match(html, /Grounded sources this lesson drew on/);
 });
 
 test("lesson omits the sources section when there are none", () => {
@@ -423,6 +425,12 @@ test("syllabusHTML renders level, hours, skills, objectives, and sources", () =>
   assert.ok(html.includes("MIT 6.036"));
   assert.ok(html.includes('data-action="accept-syllabus"'));
   assert.ok(html.includes('data-action="revise-syllabus"'));
+});
+
+test("syllabusHTML labels a single course, not a program", () => {
+  const html = syllabusHTML(COURSE);
+  assert.ok(html.includes("PROPOSED COURSE"));
+  assert.ok(!html.includes("PROPOSED PROGRAM"));
 });
 
 test("syllabusHTML escapes learner-derived text", () => {

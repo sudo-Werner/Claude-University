@@ -24,18 +24,26 @@ function courseBlock(c) {
     : "";
   const counts = c.masteryCounts || {};
   const mastered = (counts.proficient || 0) + (counts.mastered || 0);
+  // Level and targetHours are legacy-optional (older manifests predate these fields) —
+  // omit each part cleanly when missing rather than rendering "null"/"undefined".
+  const metaParts = [
+    c.level ? esc(c.level) : "",
+    c.targetHours ? `~${esc(String(c.targetHours))} h` : "",
+    `${c.lessonsCompleted} of ${c.lessonsTotal} lessons studied`,
+    `${mastered} at proficient or above`,
+  ].filter(Boolean);
   return (
     `<section class="card tr-course"><div class="tr-chead">` +
     `<h2>${esc(c.title)}</h2>${passed}</div>` +
-    `<div class="tr-meta">${c.lessonsCompleted} of ${c.lessonsTotal} lessons studied · ` +
-    `${mastered} at proficient or above</div>${rows}</section>`
+    `<div class="tr-meta">${metaParts.join(" · ")}</div>${rows}</section>`
   );
 }
 
 export function transcriptHTML(data) {
   const courses = (data && data.courses) || [];
   const head = `<div class="greeting"><h1>Transcript</h1><span>Your academic record</span></div>`;
-  const note = `<div class="tr-note">This transcript records learning on a personal platform. It is not an accredited credential.</div>`;
+  const note = `<div class="tr-note">This transcript records learning on a personal platform. It is not an accredited credential.</div>` +
+    `<div class="tr-note">Mastery standard: a course is passed when every module exam and the final are passed at 80% or above.</div>`;
   if (!courses.length) {
     return `<div class="transcript">${head}` +
       `<div class="card"><div class="prompt">No courses yet — your record will build as you study and sit exams.</div></div>${note}</div>`;

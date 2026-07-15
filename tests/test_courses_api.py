@@ -379,7 +379,7 @@ def test_library_endpoint_returns_filtered_sources(client, tmp_path, monkeypatch
     urls = [s["url"] for s in body["sources"]]
     assert "https://arxiv.org/abs/1404.7828" in urls
     assert "https://nope.example.com/x" not in urls
-    assert body["sources"][0]["type"] == "peer-reviewed"
+    assert body["sources"][0]["type"] == "preprint"
 
 
 def test_library_endpoint_reauth(client, tmp_path, monkeypatch):

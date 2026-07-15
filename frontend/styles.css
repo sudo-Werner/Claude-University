@@ -460,6 +460,7 @@ textarea::placeholder{color:#b3a994}
 .src-badge{flex:none; font-size:10px; font-weight:600; padding:3px 8px; border-radius:999px; white-space:nowrap;
   background:rgba(131,122,108,.12); color:var(--text-mut); border:1px solid rgba(131,122,108,.2)}
 .src-badge.src-university{background:rgba(124,106,255,.14); color:var(--purple); border-color:rgba(124,106,255,.25)}
+.src-badge.src-preprint{background:rgba(90,110,140,.16); color:#3f5470; border-color:rgba(90,110,140,.3)}
 .src-badge.src-peer-reviewed{background:rgba(37,180,120,.14); color:#0f7a4f; border-color:rgba(37,180,120,.3)}
 .src-badge.src-textbook{background:rgba(224,137,47,.16); color:#a05c12; border-color:rgba(224,137,47,.3)}
 .src-badge.src-official-docs{background:rgba(47,143,208,.14); color:var(--blue-text); border-color:rgba(47,143,208,.3)}

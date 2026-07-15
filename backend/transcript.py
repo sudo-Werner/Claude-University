@@ -43,6 +43,7 @@ def course_record(conn, content_dir, course_id, manifest):
         keys = [m.get("id") for m in manifest.get("modules", [])] + ["final"]
         passed_on = max(dates[k] for k in keys)  # the day the last requirement fell
     m = mastery.lesson_mastery(conn, content_dir, course_id)
+    level = manifest.get("level") or {}
     return {
         "courseId": course_id,
         "title": manifest.get("title", ""),
@@ -53,6 +54,8 @@ def course_record(conn, content_dir, course_id, manifest):
         "masteryCounts": mastery.mastery_counts(m),
         "lessonsTotal": len(courses.flatten_lessons(manifest)),
         "lessonsCompleted": len(m),
+        "level": level.get("label") or level.get("code"),
+        "targetHours": manifest.get("targetHours"),
     }
 
 
