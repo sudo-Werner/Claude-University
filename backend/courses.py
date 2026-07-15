@@ -191,10 +191,11 @@ def apply_revision(content_dir, course_id, revised, *, now=None):
     # racing a concurrent lesson generation could clobber the just-written entry.
     with generation._gen_lock(("spine", course_id)):
         spine.prune(content_dir, course_id, seen)
-    # Pending exams for modules dropped by the revision are dead — remove them.
-    # (Not locked: a concurrent start_exam for a just-dropped module can at worst
-    # leave one stale file, which exam_status ignores and the next revision removes.)
-    from backend import exams
+    # Pending exams and gap reviews for modules dropped by the revision are dead.
+    # (Not locked: a concurrent start for a just-dropped module can at worst leave
+    # one stale file, which status/freshness checks ignore and the next revision removes.)
+    from backend import exams, remediation
     module_ids = {m.get("id") for m in revised.get("modules", [])}
     exams.prune_pending(content_dir, course_id, module_ids | {"final"})
+    remediation.prune(content_dir, course_id, module_ids | {"final"})
     return revised

@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
@@ -284,6 +284,34 @@ def create_app(db_path=None):
         if result is None:
             return jsonify({"error": "no exam in progress — start it again"}), 404
         return jsonify(result)
+
+    @app.post("/api/courses/<course_id>/exams/<exam_key>/remediation")
+    def start_remediation(course_id, exam_key):
+        if not _ID_RE.match(course_id) or not (exam_key == "final" or _ID_RE.match(exam_key)):
+            return jsonify({"error": "exam not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        conn = db.get_connection(path)
+        try:
+            failed = remediation.latest_failed_result(conn, course_id, exam_key)
+        finally:
+            conn.close()
+        if failed is None:
+            return jsonify({"error": "nothing to review — the latest attempt passed"}), 404
+        spine_lessons = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"]
+        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        try:
+            with generation._gen_lock(("remediation", course_id, exam_key)):
+                session = remediation.ensure_session(
+                    courses.CONTENT_DIR, course_id, exam_key, failed,
+                    manifest=manifest, spine_lessons=spine_lessons, generate=generate,
+                )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not prepare the gap review — try again"}), 502
+        return jsonify(session)
 
     @app.post("/api/courses/<course_id>/lessons/<lesson_id>/deepen")
     def deepen_lesson_route(course_id, lesson_id):
