@@ -1,9 +1,25 @@
 import html as _html
 import json
 import re as _re
+import threading
 from pathlib import Path
 
 from backend import claude_client, courses, fsutil
+
+# Single-flight: expensive generations (a lesson is ~110s of Max-plan web search) must
+# never run twice concurrently for the same artifact. The second caller blocks on the
+# per-key lock, then finds the cache the first caller just wrote.
+_GEN_LOCKS = {}
+_GEN_LOCKS_GUARD = threading.Lock()
+
+
+def _gen_lock(key):
+    with _GEN_LOCKS_GUARD:
+        lock = _GEN_LOCKS.get(key)
+        if lock is None:
+            lock = _GEN_LOCKS[key] = threading.Lock()
+    return lock
+
 
 # Default-deny HTML sanitizer: escape everything, then restore a tiny safe allowlist.
 # Lessons carry inline formatting (<code>, <em>, <strong>, <br>, <span class="mono">)
@@ -399,45 +415,51 @@ def ensure_capstone(content_dir, course_id, scope, profile, *, generate):
             return json.loads(path.read_text())
         except ValueError:
             pass  # regenerate a corrupt cache
-    manifest = courses.load_manifest(content_dir, course_id)
-    if manifest is None:
-        return None
-    modules = manifest.get("modules", [])
-    if scope == "course":
-        scope_label = "this course"
-        scope_title = manifest.get("title", "")
-        concept_titles = [m.get("title", "") for m in modules]
-    else:
-        module = next((m for m in modules if m.get("id") == scope), None)
-        if module is None:
+    with _gen_lock(("capstone", course_id, scope)):
+        if path.exists():
+            try:
+                return json.loads(path.read_text())
+            except ValueError:
+                pass  # regenerate a corrupt cache
+        manifest = courses.load_manifest(content_dir, course_id)
+        if manifest is None:
             return None
-        scope_label = "the module"
-        scope_title = module.get("title", "")
-        concept_titles = [l.get("title", "") for l in module.get("lessons", [])]
-    prompt = capstone_prompt(
-        scope_label=scope_label, scope_title=scope_title, concept_titles=concept_titles,
-        brief=manifest.get("brief", ""), profile=profile,
-    )
-    capstone = generate(prompt)
-    if not isinstance(capstone, dict):
-        raise claude_client.ClaudeError("capstone generator returned a non-dict result")
-    if not valid_capstone(capstone):
-        raise claude_client.ClaudeError("generated capstone failed validation")
-    capstone["scope"] = scope
-    capstone["title"] = scope_title
-    capstone["intro"] = sanitize_html(capstone.get("intro", ""))
-    for it in capstone.get("items", []):
-        if not isinstance(it, dict):
-            continue
-        if isinstance(it.get("detail"), str):
-            it["detail"] = sanitize_html(it["detail"])
-        if isinstance(it.get("title"), str):
-            it["title"] = _html.escape(it["title"], quote=True)
-        if isinstance(it.get("source"), str):
-            it["source"] = _html.escape(it["source"], quote=True)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fsutil.write_text_atomic(path, json.dumps(capstone, indent=2, ensure_ascii=False))
-    return capstone
+        modules = manifest.get("modules", [])
+        if scope == "course":
+            scope_label = "this course"
+            scope_title = manifest.get("title", "")
+            concept_titles = [m.get("title", "") for m in modules]
+        else:
+            module = next((m for m in modules if m.get("id") == scope), None)
+            if module is None:
+                return None
+            scope_label = "the module"
+            scope_title = module.get("title", "")
+            concept_titles = [l.get("title", "") for l in module.get("lessons", [])]
+        prompt = capstone_prompt(
+            scope_label=scope_label, scope_title=scope_title, concept_titles=concept_titles,
+            brief=manifest.get("brief", ""), profile=profile,
+        )
+        capstone = generate(prompt)
+        if not isinstance(capstone, dict):
+            raise claude_client.ClaudeError("capstone generator returned a non-dict result")
+        if not valid_capstone(capstone):
+            raise claude_client.ClaudeError("generated capstone failed validation")
+        capstone["scope"] = scope
+        capstone["title"] = scope_title
+        capstone["intro"] = sanitize_html(capstone.get("intro", ""))
+        for it in capstone.get("items", []):
+            if not isinstance(it, dict):
+                continue
+            if isinstance(it.get("detail"), str):
+                it["detail"] = sanitize_html(it["detail"])
+            if isinstance(it.get("title"), str):
+                it["title"] = _html.escape(it["title"], quote=True)
+            if isinstance(it.get("source"), str):
+                it["source"] = _html.escape(it["source"], quote=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fsutil.write_text_atomic(path, json.dumps(capstone, indent=2, ensure_ascii=False))
+        return capstone
 
 
 # ---- accredited sources / course Library (Phase 1) ----
@@ -586,22 +608,28 @@ def ensure_bibliography(content_dir, course_id, *, generate_sourced):
             return json.loads(path.read_text())
         except ValueError:
             pass  # regenerate a corrupt cache
-    manifest = courses.load_manifest(content_dir, course_id)
-    if manifest is None:
-        return None
-    module_titles = [m.get("title", "") for m in manifest.get("modules", [])]
-    prompt = bibliography_prompt(
-        title=manifest.get("title", ""), brief=manifest.get("brief", ""),
-        module_titles=module_titles,
-    )
-    obj, captured = generate_sourced(prompt)
-    if not isinstance(obj, dict):
-        raise claude_client.ClaudeError("bibliography generator returned a non-dict result")
-    kept = _resolve_sources(obj.get("sources"), captured)
-    library = {"courseId": course_id, "title": manifest.get("title", ""), "sources": kept}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fsutil.write_text_atomic(path, json.dumps(library, indent=2, ensure_ascii=False))
-    return library
+    with _gen_lock(("library", course_id)):
+        if path.exists():
+            try:
+                return json.loads(path.read_text())
+            except ValueError:
+                pass  # regenerate a corrupt cache
+        manifest = courses.load_manifest(content_dir, course_id)
+        if manifest is None:
+            return None
+        module_titles = [m.get("title", "") for m in manifest.get("modules", [])]
+        prompt = bibliography_prompt(
+            title=manifest.get("title", ""), brief=manifest.get("brief", ""),
+            module_titles=module_titles,
+        )
+        obj, captured = generate_sourced(prompt)
+        if not isinstance(obj, dict):
+            raise claude_client.ClaudeError("bibliography generator returned a non-dict result")
+        kept = _resolve_sources(obj.get("sources"), captured)
+        library = {"courseId": course_id, "title": manifest.get("title", ""), "sources": kept}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fsutil.write_text_atomic(path, json.dumps(library, indent=2, ensure_ascii=False))
+        return library
 
 
 def build_chat_prompt(messages, profile):
@@ -858,10 +886,14 @@ def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, perfo
     existing = courses.load_lesson(content_dir, course_id, lesson_id)
     if existing is not None:
         return existing
-    return _generate_and_store_lesson(
-        content_dir, course_id, lesson_id, profile, generate=generate, performance=performance,
-        verify_generate=verify_generate,
-    )
+    with _gen_lock(("lesson", course_id, lesson_id)):
+        existing = courses.load_lesson(content_dir, course_id, lesson_id)
+        if existing is not None:
+            return existing  # a concurrent request generated it while we waited
+        return _generate_and_store_lesson(
+            content_dir, course_id, lesson_id, profile, generate=generate,
+            performance=performance, verify_generate=verify_generate,
+        )
 
 
 # #5 — the learner says they are rusty; regenerate this one lesson deeper, assuming

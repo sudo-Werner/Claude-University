@@ -1039,3 +1039,34 @@ def test_ensure_lesson_regenerates_corrupt_cache(tmp_path):
     lesson = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=generate)
     assert lesson is not None
     assert _json.loads(lesson_path.read_text())  # cache repaired with valid JSON
+
+
+# ---- Task 4: single-flight lock — concurrent ensure_lesson calls must not double-generate ----
+
+import threading
+import time
+
+
+def test_ensure_lesson_single_flight(tmp_path):
+    # same manifest + stub generate as test_ensure_lesson_generates_validates_and_caches
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    made["checks"] = [dict(_OK_CHECK)]
+    calls = []
+
+    def slow_generate(prompt):
+        calls.append(1)
+        time.sleep(0.3)
+        return made
+
+    results = [None, None]
+
+    def hit(i):
+        results[i] = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=slow_generate)
+
+    t1 = threading.Thread(target=hit, args=(0,))
+    t2 = threading.Thread(target=hit, args=(1,))
+    t1.start(); t2.start(); t1.join(); t2.join()
+    assert len(calls) == 1  # second caller waited, then served the cache
+    assert results[0] == results[1]
