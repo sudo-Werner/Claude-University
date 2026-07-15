@@ -1,10 +1,9 @@
 import json
 import os
-import select
+import signal
 import subprocess
 import tempfile
 import threading
-import time
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/home/werner/.local/bin/claude")
@@ -78,45 +77,51 @@ def _spawn_cli(args):
     with tempfile.TemporaryFile(mode="w+") as tmpfile:
         proc = subprocess.Popen(
             [CLAUDE_BIN, *args], stdout=subprocess.PIPE, stderr=tmpfile,
-            text=True, env=_env(),
+            text=True, env=_env(), start_new_session=True,
         )
-        timed_out = False
-        start_time = time.time()
+
+        def _kill_group():
+            # start_new_session=True makes proc the leader of its own process group,
+            # so killing the group (not just proc.pid) also kills any grandchildren a
+            # wrapper script spawns — and closes every write end of the stdout pipe,
+            # which is what actually wakes the blocking `for line in proc.stdout` below.
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+        timed_out = threading.Event()
+
+        def _kill_on_timeout():
+            timed_out.set()
+            _kill_group()
+
+        watchdog = threading.Timer(_STREAM_TIMEOUT, _kill_on_timeout)
+        watchdog.start()
         try:
-            while True:
-                elapsed = time.time() - start_time
-                if elapsed > _STREAM_TIMEOUT:
-                    timed_out = True
-                    proc.kill()
-                    proc.wait()
-                    raise ClaudeError(f"claude stream timed out after {_STREAM_TIMEOUT}s")
-
-                timeout = max(0.1, _STREAM_TIMEOUT - elapsed)
-                ready, _, _ = select.select([proc.stdout], [], [], timeout)
-
-                if ready:
-                    line = proc.stdout.readline()
-                    if not line:
-                        break
-                    yield line
-
-                if proc.poll() is not None:
-                    break
-
-            if not timed_out:
-                if proc.returncode != 0:
-                    tmpfile.seek(0)
-                    err = tmpfile.read() or ""
-                    reason = _auth_failure_reason("", err, scan_text=True)
-                    if reason:
-                        raise ClaudeAuthError(reason)
-                    raise ClaudeError(f"claude stream exited {proc.returncode}: {err[:500]}")
+            for line in proc.stdout:
+                yield line
+            # Must wait() before reading returncode: the read loop ending only means
+            # the pipe closed, not that the process has been reaped yet. Checking
+            # returncode before wait() intermittently reads None on a successful run.
+            proc.wait()
+            if timed_out.is_set():
+                raise ClaudeError(f"claude stream timed out after {_STREAM_TIMEOUT}s")
+            if proc.returncode != 0:
+                tmpfile.seek(0)
+                err = tmpfile.read() or ""
+                reason = _auth_failure_reason("", err, scan_text=True)
+                if reason:
+                    raise ClaudeAuthError(reason)
+                raise ClaudeError(f"claude stream exited {proc.returncode}: {err[:500]}")
         finally:
             # Runs on normal exit, on error, AND on GeneratorExit (consumer abandoned
-            # the stream, e.g. browser disconnect) — never leave an orphan claude -p.
+            # the stream, e.g. browser disconnect) — never leave an orphan claude -p,
+            # or an orphan grandchild the wrapper spawned.
+            watchdog.cancel()
             if proc.poll() is None:
-                proc.kill()
-                proc.wait()
+                _kill_group()
+            proc.wait()
 
 
 def extract_json(text):

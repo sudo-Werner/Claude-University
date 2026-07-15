@@ -206,15 +206,25 @@ def test_spawn_cli_times_out_and_kills(monkeypatch, tmp_path):
 
 
 def test_spawn_cli_kills_process_when_generator_abandoned(monkeypatch, tmp_path):
+    # The direct child forks a grandchild (`sleep 30 &`) and records its PID, then
+    # `wait`s on it — mirroring a real wrapper script. proc.kill() only kills the
+    # direct child and would leave this grandchild (and its open pipe fd) alive;
+    # this test proves the whole process TREE dies, not just the shell leader.
     pidfile = tmp_path / "pid"
     script = tmp_path / "fake-claude"
-    script.write_text(f"#!/bin/sh\necho $$ > {pidfile}\necho line1\nsleep 30\n")
+    script.write_text(f"#!/bin/sh\necho line1\nsleep 30 &\necho $! > {pidfile}\nwait\n")
     script.chmod(0o755)
     monkeypatch.setattr(cc, "CLAUDE_BIN", str(script))
     gen = cc._spawn_cli(["-p", "x"])
     assert next(gen) == "line1\n"
-    gen.close()  # simulates the SSE consumer disconnecting
+    for _ in range(50):
+        if pidfile.exists() and pidfile.read_text().strip():
+            break
+        time.sleep(0.1)
+    else:
+        pytest.fail("grandchild never recorded its PID")
     pid = int(pidfile.read_text().strip())
+    gen.close()  # simulates the SSE consumer disconnecting
     for _ in range(50):
         try:
             os.kill(pid, 0)
@@ -222,4 +232,18 @@ def test_spawn_cli_kills_process_when_generator_abandoned(monkeypatch, tmp_path)
             break
         time.sleep(0.1)
     else:
-        pytest.fail("CLI process still alive after generator close")
+        pytest.fail("grandchild process still alive after generator close (process tree not killed)")
+
+
+def test_spawn_cli_delivers_bursted_lines_without_returncode_race(monkeypatch, tmp_path):
+    # Two things under test at once, both from the review findings:
+    # 1. A burst of lines written in one shot (before the read loop gets scheduled
+    #    again) must all be delivered in order, not just the first one.
+    # 2. proc.returncode must never be read before proc.wait() — this raced ~20% of
+    #    the time in the select()-based implementation, so loop to catch it.
+    script = tmp_path / "fake-claude"
+    script.write_text("#!/bin/sh\nprintf 'a\\nb\\nc\\n'\nsleep 0.05\nprintf 'd\\n'\n")
+    script.chmod(0o755)
+    monkeypatch.setattr(cc, "CLAUDE_BIN", str(script))
+    for _ in range(10):
+        assert list(cc._spawn_cli(["-p", "x"])) == ["a\n", "b\n", "c\n", "d\n"]
