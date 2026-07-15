@@ -2,6 +2,7 @@ from backend import generation as gen
 from backend import generation
 
 _OK_CHECK = {"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}
+_OK_PREQUIZ = {"type": "mcq", "prompt": "Guess?", "choices": ["A", "B"], "answer": 0, "explanation": "Because."}
 
 
 def test_sanitize_html_allows_safe_block_tags():
@@ -126,6 +127,7 @@ def test_sanitize_html_entity_restore_stays_inert():
 def test_valid_lesson_requires_all_keys():
     good = {k: "x" for k in gen.LESSON_KEYS}
     good["checks"] = [dict(_OK_CHECK)]
+    good["preQuiz"] = dict(_OK_PREQUIZ)
     assert gen.valid_lesson(good) is True
     missing = dict(good)
     del missing["promptHtml"]
@@ -223,6 +225,7 @@ def test_ensure_lesson_generates_validates_and_caches(tmp_path):
     made = {k: "x" for k in gen.LESSON_KEYS}
     made["id"] = "demo-l1"
     made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
     calls = []
     def generate(prompt):
         calls.append(prompt)
@@ -253,6 +256,7 @@ def test_ensure_lesson_sanitizes_unsafe_html(tmp_path):
     made = {k: "x" for k in gen.LESSON_KEYS}
     made["promptHtml"] = '<code>w</code><img src=x onerror=alert(1)>'
     made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made))
     assert "<img" not in out["promptHtml"]
     assert "&lt;img" in out["promptHtml"]
@@ -267,6 +271,7 @@ def test_ensure_lesson_reconciles_ids_and_step(tmp_path):
     made["step"] = 99
     made["totalSteps"] = 99
     made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made))
     assert out["id"] == "demo-l1"
     assert out["courseId"] == "demo"
@@ -300,6 +305,7 @@ def test_valid_check_rejects_malformed():
 
 def test_valid_lesson_requires_checks():
     base = {k: "x" for k in gen.LESSON_KEYS}
+    base["preQuiz"] = dict(_OK_PREQUIZ)
     assert not gen.valid_lesson(base)  # no checks
     base["checks"] = []
     assert not gen.valid_lesson(base)  # empty
@@ -329,6 +335,7 @@ def test_ensure_lesson_sanitizes_check_html(tmp_path):
     made["id"] = "demo-l1"
     made["checks"] = [{"type": "mcq", "prompt": "<img src=x onerror=alert(1)>pick", "choices": ["<b>a</b>", "ok"],
                         "answer": 1, "explanation": "<code>fine</code>"}]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: made)
     chk = out["checks"][0]
     assert "<img" not in chk["prompt"] and "&lt;img" in chk["prompt"]   # unsafe escaped
@@ -359,6 +366,7 @@ def test_ensure_lesson_forwards_performance(tmp_path):
     captured = {}
     made = {k: "x" for k in gen.LESSON_KEYS}
     made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
 
     def fake_generate(prompt):
         captured["prompt"] = prompt
@@ -380,6 +388,7 @@ def test_valid_check_rejects_empty_fields():
 def test_valid_lesson_rejects_empty_prose():
     good = {k: "x" for k in gen.LESSON_KEYS}
     good["checks"] = [dict(_OK_CHECK)]
+    good["preQuiz"] = dict(_OK_PREQUIZ)
     assert gen.valid_lesson(good) is True
     blank = dict(good); blank["promptHtml"] = "   "
     assert gen.valid_lesson(blank) is False
@@ -485,7 +494,8 @@ def test_deepen_lesson_regenerates_and_overwrites(tmp_path):
         captured["prompt"] = prompt
         return {"id": "wrong", "courseId": "wrong", "topic": "deeper", "step": 9, "totalSteps": 9,
                 "eyebrow": "EXERCISE", "promptHtml": "<p>now with fundamentals</p>",
-                "hintHtml": "h2", "solutionAns": "a2", "solutionNote": "n2", "checks": [dict(_OK_CHECK)]}
+                "hintHtml": "h2", "solutionAns": "a2", "solutionNote": "n2", "checks": [dict(_OK_CHECK)],
+                "preQuiz": dict(_OK_PREQUIZ)}
 
     lesson = gen.deepen_lesson(root, cid, lid, {}, generate=fake_generate)
     assert "rusty" in captured["prompt"].lower() or "fundamentals" in captured["prompt"].lower()
@@ -680,6 +690,7 @@ def test_ensure_lesson_stores_only_really_retrieved_sources(tmp_path):
     made = {k: "x" for k in gen.LESSON_KEYS}
     made["id"] = "demo-l1"
     made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
     made["sources"] = [
         {"title": "Stanford CS231n", "url": "https://cs231n.stanford.edu/"},
         {"title": "Hallucinated", "url": "https://not-real.example.com/x"}]
@@ -700,6 +711,7 @@ def test_ensure_lesson_without_tuple_defaults_to_no_sources(tmp_path):
     root = _course(tmp_path)
     made = {k: "x" for k in gen.LESSON_KEYS}
     made["id"] = "demo-l1"; made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: made)
     assert out["sources"] == []
 
@@ -771,7 +783,8 @@ def test_lesson_chat_sse_emits_reauth_on_auth_error():
 def _full_lesson(**over):
     base = {"id": "demo-l1", "courseId": "demo", "topic": "t", "step": 1, "totalSteps": 1,
             "eyebrow": "EXERCISE", "promptHtml": "<p>body</p>", "hintHtml": "h",
-            "solutionAns": "a", "solutionNote": "n", "checks": [dict(_OK_CHECK)]}
+            "solutionAns": "a", "solutionNote": "n", "checks": [dict(_OK_CHECK)],
+            "preQuiz": dict(_OK_PREQUIZ)}
     base.update(over)
     return base
 
@@ -1016,6 +1029,7 @@ def test_ensure_lesson_regenerates_corrupt_cache(tmp_path):
     made = {k: "x" for k in gen.LESSON_KEYS}
     made["id"] = "demo-l1"
     made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
     def generate(prompt):
         return made
     lesson_path = root / "demo" / "lessons" / "demo-l1.json"
@@ -1038,6 +1052,7 @@ def test_ensure_lesson_single_flight(tmp_path):
     made = {k: "x" for k in gen.LESSON_KEYS}
     made["id"] = "demo-l1"
     made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
     calls = []
 
     def slow_generate(prompt):
@@ -1055,3 +1070,39 @@ def test_ensure_lesson_single_flight(tmp_path):
     t1.start(); t2.start(); t1.join(); t2.join()
     assert len(calls) == 1  # second caller waited, then served the cache
     assert results[0] == results[1]
+
+
+# ---- Task 1: required preQuiz field (pretesting effect) ----
+
+def _valid_lesson_base():
+    # Build from the file's existing valid-lesson fixture; shown here explicitly
+    # so this test is self-contained if the fixture name differs.
+    return {
+        "id": "c-l1", "courseId": "c", "topic": "T", "step": 1, "totalSteps": 1,
+        "eyebrow": "EXERCISE", "promptHtml": "<p>Body</p>", "hintHtml": "h",
+        "solutionAns": "a", "solutionNote": "n",
+        "checks": [{"type": "fill", "prompt": "q", "answer": "a", "explanation": "e"}],
+        "preQuiz": {"type": "mcq", "prompt": "Guess?", "choices": ["A", "B"],
+                    "answer": 0, "explanation": "Because."},
+    }
+
+
+def test_valid_lesson_requires_prequiz():
+    lesson = _valid_lesson_base()
+    assert generation.valid_lesson(lesson)
+    del lesson["preQuiz"]
+    assert not generation.valid_lesson(lesson)
+
+
+def test_valid_lesson_rejects_malformed_prequiz():
+    lesson = _valid_lesson_base()
+    lesson["preQuiz"] = {"type": "mcq", "prompt": "", "choices": ["A"], "answer": 0, "explanation": "e"}
+    assert not generation.valid_lesson(lesson)
+
+
+def test_lesson_prompt_mentions_prequiz():
+    prompt = generation.lesson_prompt(
+        brief="b", profile={}, lesson_id="c-l1", lesson_title="T",
+        module_title="M", position=1, total=1,
+    )
+    assert "preQuiz" in prompt

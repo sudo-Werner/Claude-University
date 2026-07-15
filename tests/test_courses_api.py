@@ -256,7 +256,9 @@ def test_deepen_endpoint_regenerates_lesson(client, tmp_path, monkeypatch):
     deeper = {"id": "x", "courseId": "x", "topic": "t", "step": 9, "totalSteps": 9,
               "eyebrow": "EXERCISE", "promptHtml": "<p>deeper now</p>", "hintHtml": "h",
               "solutionAns": "a", "solutionNote": "n",
-              "checks": [{"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}]}
+              "checks": [{"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}],
+              "preQuiz": {"type": "mcq", "prompt": "Guess?", "choices": ["A", "B"],
+                          "answer": 0, "explanation": "Because."}}
     # deepen now generates WITH web search: run_sourced returns (lesson, captured_sources)
     monkeypatch.setattr(claude_client, "run_sourced", lambda prompt, **kw: (deeper, []))
     # ...then a non-web verification pass reconciles it; the reviewer returns it unchanged here.

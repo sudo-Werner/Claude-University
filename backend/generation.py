@@ -214,6 +214,8 @@ def valid_lesson(obj):
     checks = obj.get("checks")
     if not (isinstance(checks, list) and 1 <= len(checks) <= 3):
         return False
+    if not valid_check(obj.get("preQuiz")):
+        return False
     return all(valid_check(c) for c in checks)
 
 
@@ -255,6 +257,12 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         '"explanation":"<specific, encouraging one-sentence why>"} '
         'or {"type":"fill","prompt":"<question>","answer":"<the exact expected answer>",'
         '"explanation":"<specific, encouraging one-sentence why>"}.\n'
+        '  preQuiz: ONE warm-up question in the same item format as a check (mcq or fill), '
+        "about the lesson's single core idea. The learner answers it BEFORE reading the "
+        "lesson, so it must be attemptable with intuition or general prior knowledge — never "
+        "require a term, label, or fact that only this lesson introduces. Make mcq "
+        "distractors plausible. Its explanation is shown immediately after the attempt as a "
+        "one-sentence preview of the key insight.\n"
         "Shape every learner-facing field to the learner preferences above.\n\n"
         # Slice A: evidence-backed readability/engagement guidance (conversational tone,
         # chunking/scannability, worked examples, warm feedback) applied to every lesson.
@@ -863,6 +871,13 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
                     chk[f] = sanitize_html(chk[f])
             if isinstance(chk.get("choices"), list):
                 chk["choices"] = [sanitize_html(c) if isinstance(c, str) else c for c in chk["choices"]]
+    pq = lesson.get("preQuiz")
+    if isinstance(pq, dict):
+        for f in ("prompt", "explanation"):
+            if isinstance(pq.get(f), str):
+                pq[f] = sanitize_html(pq[f])
+        if isinstance(pq.get("choices"), list):
+            pq["choices"] = [sanitize_html(c) if isinstance(c, str) else c for c in pq["choices"]]
     if not valid_lesson(lesson):
         raise claude_client.ClaudeError("generated lesson failed validation")
     path = Path(content_dir) / course_id / "lessons" / f"{lesson_id}.json"
