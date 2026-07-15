@@ -58,3 +58,7 @@ test("home banner escapes course titles", () => {
   const html = homeHTML([{ ...ML, title: "<b>Evil</b>", reviewsDue: 1 }]);
   assert.doesNotMatch(html, /<b>Evil<\/b>/);
 });
+
+test("home shows the recent-activity link", () => {
+  assert.match(homeHTML([ML]), /data-action="activity"/);
+});

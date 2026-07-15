@@ -496,3 +496,12 @@ textarea::placeholder{color:#b3a994}
 .ws-compose textarea{flex:1; min-height:44px; resize:vertical}
 .ws-send{padding:10px 14px; border:none; border-radius:var(--r-sm); cursor:pointer; font:600 13px/1 inherit; color:#fff; background:var(--grad)}
 .ws-send:disabled{opacity:.5; cursor:default}
+
+/* =================  ACTIVITY LOG  ================= */
+.activity-link{max-width:240px; margin:18px auto 0; display:block}
+.act-day{padding:16px 20px; margin-bottom:14px}
+.act-entry{display:flex; gap:12px; padding:8px 0; border-bottom:1px solid rgba(0,0,0,.05); font-size:14px}
+.act-entry:last-child{border-bottom:none}
+.act-time{color:var(--text-mut); font-variant-numeric:tabular-nums; flex:0 0 52px}
+.act-course{color:var(--text-dim); margin-left:6px}
+.act-quality{color:var(--blue-text); margin-left:6px}

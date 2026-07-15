@@ -5,7 +5,7 @@ import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
 import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision } from "./courses.js";
-import { loadStats } from "./stats.js";
+import { loadStats, loadActivity } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
@@ -19,6 +19,7 @@ import { chatHTML } from "./views/chat.js";
 import { syllabusHTML } from "./views/syllabus.js";
 import { gradeCheck } from "./views/checks.js";
 import { revisionHTML } from "./views/revision.js";
+import { activityHTML } from "./views/activity.js";
 import { streamChat } from "./chat.js";
 import { loadWorkspace, saveWorkspace } from "./notes.js";
 
@@ -97,6 +98,21 @@ export async function init({ window, fetch }) {
       log("add_course_clicked");
       showChat();
     });
+    const act = view.querySelector('[data-action="activity"]');
+    if (act) act.addEventListener("click", showActivity);
+  }
+
+  // ---- activity log ----
+  async function showActivity() {
+    pauseTimer();
+    ui.screen = "activity";
+    root.innerHTML = shellHTML({ back: "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showHome);
+    const view = root.querySelector("#view");
+    view.innerHTML = `<div class="card"><div class="prompt">Loading your activity...</div></div>`;
+    const entries = await loadActivity({ fetch });
+    if (ui.screen !== "activity") return; // navigated away mid-load
+    view.innerHTML = activityHTML(entries, { now: new Date() });
   }
 
   // ---- course session screen ----

@@ -34,6 +34,7 @@ export function homeHTML(courses) {
         <div class="course-sub">Tell Claude what you want to learn</div>
       </button>
     </div>
+    <button class="btn-secondary activity-link" data-action="activity">Recent activity</button>
     </div>
   `;
 }
