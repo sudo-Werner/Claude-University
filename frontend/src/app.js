@@ -534,6 +534,9 @@ export async function init({ window, fetch }) {
 
   // ---- lesson ----
   async function openLesson(lessonId, opts = {}) {
+    // Note: opts.review is currently dead; review entry points (startReviewSession,
+    // advanceAfterLesson) set isReview on their own state literals because openLesson
+    // resets reviewQueue and lessonState from scratch.
     if (!lessonId) return;
     ui.reviewQueue = [];
     ui.loadSeq = (ui.loadSeq || 0) + 1;
@@ -579,7 +582,7 @@ export async function init({ window, fetch }) {
       return;
     }
     ui.lesson = deeper;
-    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main" };
+    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, isReview: ui.lessonState.isReview, stage: "main" };
     log("lesson_view", { courseId: ui.courseId, topicId: lessonId });
     showLesson();
   }
