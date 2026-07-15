@@ -735,7 +735,13 @@ export async function init({ window, fetch }) {
     if (ui.creatingCourse) return;
     ui.creatingCourse = true;
     const proposed = ui.proposedCourse;
-    const course = await createCourse({ fetch, proposal: proposed });
+    let course = null;
+    try {
+      course = await createCourse({ fetch, proposal: proposed });
+    } catch (e) {
+      // network-level failure (connection drop, server restart) — fall through
+      // to the same error card as an HTTP failure; course stays null.
+    }
     if (ui.screen !== "syllabus") { ui.creatingCourse = false; return; } // navigated away mid-create
     if (!course) {
       ui.creatingCourse = false;
