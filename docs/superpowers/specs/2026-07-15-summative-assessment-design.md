@@ -21,7 +21,7 @@ An exam is generated from the manifest's objectives, never free-styled:
 
 ## Attempt lifecycle
 
-1. **Start** — `POST /api/courses/<cid>/exams/<examKey>` generates a fresh exam (streamed status like lesson generation). The full exam (with key) is written atomically to `content/courses/<cid>/exams/<examKey>.json` (same learner-state-in-content precedent as `notes/`; covered by deploy excludes and the daily backup). Starting again overwrites — one pending attempt per examKey. The response/stream delivers only the key-stripped questions.
+1. **Start** — `POST /api/courses/<cid>/exams/<examKey>` generates a fresh exam (blocking call with a client loading state, exactly like lesson generation). The full exam (with key) is written atomically to `content/courses/<cid>/exams/<examKey>.json` (same learner-state-in-content precedent as `notes/`; covered by deploy excludes and the daily backup). Starting again overwrites — one pending attempt per examKey. The response/stream delivers only the key-stripped questions.
 2. **Sit** — new exam screen: all questions on one page, answered at any pace, one submit. Client state is in-memory only; abandoning costs nothing (no attempt recorded until graded).
 3. **Submit** — `POST /api/courses/<cid>/exams/<examKey>/submit` with `{answers: [...]}` (index-aligned; mcq = choice index, free = text). 400 if the answer count does not match the pending exam, an mcq index is out of range, or a free answer exceeds 5,000 characters; 404 if no pending exam exists. Server grades:
    - MCQ against `answerIndex` locally.
