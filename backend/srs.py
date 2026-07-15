@@ -56,20 +56,66 @@ def reviews_by_lesson(conn, course_id):
     return out
 
 
+def _latest_exam_results(conn, course_id):
+    rows = conn.execute(
+        "SELECT topic_id, occurred_at, payload FROM events "
+        "WHERE event_type = 'exam_result' AND course_id = ? "
+        "ORDER BY occurred_at ASC, id ASC",
+        (course_id,),
+    ).fetchall()
+    latest = {}
+    for row in rows:
+        if not row["topic_id"]:
+            continue
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except ValueError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        try:
+            date = datetime.date.fromisoformat(row["occurred_at"][:10])
+        except ValueError:
+            continue
+        latest[row["topic_id"]] = {
+            "date": date,
+            "passed": bool(payload.get("passed")),
+            "weak": {w.get("lessonId") for w in payload.get("weakSpots") or []
+                     if isinstance(w, dict)},
+        }
+    return latest
+
+
+def _weak_since_review(lesson_id, module_id, latest_results, last_review):
+    """Bloom's corrective follow-up: a lesson flagged weak by the NEWEST result of an
+    exam covering it stays due until it is reviewed or a newer attempt passes."""
+    for key in (module_id, "final"):
+        r = latest_results.get(key)
+        if r and not r["passed"] and lesson_id in r["weak"]:
+            if last_review is None or r["date"] > last_review:
+                return True
+    return False
+
+
 def due_lesson_ids(conn, content_dir, course_id, today=None):
     today = today or datetime.date.today()
     manifest = courses.load_manifest(content_dir, course_id)
     if manifest is None:
         return []
     by_lesson = reviews_by_lesson(conn, course_id)
+    latest_results = _latest_exam_results(conn, course_id)
     due = []
-    for lesson in courses.flatten_lessons(manifest):
-        revs = by_lesson.get(lesson["id"])
-        if not revs:
-            continue
-        sched = sm2(revs)
-        if sched["next_review"] is not None and sched["next_review"] <= today:
-            due.append(lesson["id"])
+    for module in manifest.get("modules", []):
+        for lesson in module.get("lessons", []):
+            lid = lesson.get("id")
+            revs = by_lesson.get(lid)
+            sched = sm2(revs) if revs else None
+            if sched and sched["next_review"] is not None and sched["next_review"] <= today:
+                due.append(lid)
+                continue
+            last = sched["last_reviewed"] if sched else None
+            if _weak_since_review(lid, module.get("id"), latest_results, last):
+                due.append(lid)
     return due
 
 

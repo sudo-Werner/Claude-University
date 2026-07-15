@@ -151,3 +151,32 @@ def test_activity_course_created_has_no_lesson(conn, tmp_path):
     assert out[0]["type"] == "course_created"
     assert out[0]["courseTitle"] == "Machine Learning"
     assert out[0]["lessonTitle"] is None
+
+
+def test_exam_and_prequiz_and_remediation_count_toward_streak(conn):
+    events.insert_events(conn, [_ev(1, "exam_result", "2026-07-15T09:00:00+00:00")])
+    assert stats.streak_days(conn, today=TODAY) == 1
+    events.insert_events(conn, [_ev(2, "prequiz_attempt", "2026-07-14T09:00:00+00:00")])
+    events.insert_events(conn, [_ev(3, "remediation_started", "2026-07-13T09:00:00+00:00")])
+    assert stats.streak_days(conn, today=TODAY) == 3
+
+
+def test_activity_labels_exam_results(conn, tmp_path):
+    root = tmp_path / "courses"
+    (root / "c1").mkdir(parents=True)
+    (root / "c1" / "course.json").write_text(json.dumps({
+        "id": "c1", "title": "Algo", "modules": [
+            {"id": "m1", "title": "Sorting", "lessons": [{"id": "c1-l1", "title": "L1"}]}],
+    }))
+    ev = _ev(1, "exam_result", "2026-07-15T09:00:00+00:00", topic_id="m1")
+    ev["payload"] = {"score": 0.85, "passed": True, "attempt": 1}
+    fv = _ev(2, "exam_result", "2026-07-15T10:00:00+00:00", topic_id="final")
+    fv["payload"] = {"score": 0.7, "passed": False, "attempt": 1}
+    rv = _ev(3, "remediation_started", "2026-07-15T11:00:00+00:00", topic_id="final")
+    events.insert_events(conn, [ev, fv, rv])
+    entries = stats.recent_activity(conn, root)
+    assert entries[0]["examLabel"] == "Final exam"          # remediation_started
+    assert entries[1]["examLabel"] == "Final exam"
+    assert entries[1]["score"] == 0.7 and entries[1]["passed"] is False
+    assert entries[2]["examLabel"] == "Sorting exam"
+    assert entries[2]["passed"] is True

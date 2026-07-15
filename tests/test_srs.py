@@ -67,3 +67,57 @@ def test_due_lesson_ids_reflects_schedule(conn, tmp_path):
     assert srs.reviews_due_count(conn, root, "demo", today=D(2026, 1, 2)) == 1
     # before the due date, nothing is due
     assert srs.due_lesson_ids(conn, root, "demo", today=D(2026, 1, 1)) == []
+
+
+def _exam_fail(conn, exam_key, weak_lessons, occurred):
+    events.insert_events(conn, [{
+        "client_event_id": f"exam-{exam_key}-{occurred}", "session_id": "s1",
+        "event_type": "exam_result", "occurred_at": occurred,
+        "course_id": "demo", "topic_id": exam_key,
+        "payload": {"score": 0.5, "passed": False, "attempt": 1,
+                    "weakSpots": [{"lessonId": l, "lessonTitle": l, "objectives": []}
+                                  for l in weak_lessons]},
+    }])
+
+
+def _exam_pass(conn, exam_key, occurred):
+    events.insert_events(conn, [{
+        "client_event_id": f"examp-{exam_key}-{occurred}", "session_id": "s1",
+        "event_type": "exam_result", "occurred_at": occurred,
+        "course_id": "demo", "topic_id": exam_key,
+        "payload": {"score": 0.9, "passed": True, "attempt": 2, "weakSpots": []},
+    }])
+
+
+def test_weak_spot_makes_unreviewed_lesson_due(conn, tmp_path):
+    root = _fixture(tmp_path)
+    _exam_fail(conn, "m1", ["demo-l1"], "2026-07-14T10:00:00+00:00")
+    due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15))
+    assert due == ["demo-l1"]
+
+
+def test_review_after_fail_clears_weak_spot(conn, tmp_path):
+    root = _fixture(tmp_path)
+    _exam_fail(conn, "m1", ["demo-l1"], "2026-07-10T10:00:00+00:00")
+    events.insert_events(conn, [{
+        "client_event_id": "r1", "session_id": "s1", "event_type": "lesson_reviewed",
+        "occurred_at": "2026-07-12T10:00:00+00:00", "course_id": "demo",
+        "topic_id": "demo-l1", "payload": {"quality": "good"},
+    }])
+    # SM-2 next_review = 07-13 which is <= today, so it IS due via SM-2; use a
+    # today inside the interval to isolate the weak-spot rule.
+    due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 12))
+    assert "demo-l1" not in due
+
+
+def test_later_pass_clears_weak_spot(conn, tmp_path):
+    root = _fixture(tmp_path)
+    _exam_fail(conn, "m1", ["demo-l1"], "2026-07-10T10:00:00+00:00")
+    _exam_pass(conn, "m1", "2026-07-14T10:00:00+00:00")
+    assert srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15)) == []
+
+
+def test_final_weak_spots_also_count(conn, tmp_path):
+    root = _fixture(tmp_path)
+    _exam_fail(conn, "final", ["demo-l2"], "2026-07-14T10:00:00+00:00")
+    assert srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15)) == ["demo-l2"]
