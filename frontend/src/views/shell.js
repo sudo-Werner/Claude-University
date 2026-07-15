@@ -1,6 +1,8 @@
+import { esc } from "../escape.js";
+
 export function shellHTML({ back = null }) {
   const backBtn = back
-    ? `<button class="nav-back-top" data-action="nav-back">← ${back}</button>`
+    ? `<button class="nav-back-top" data-action="nav-back">← ${esc(back)}</button>`
     : "";
   return `
     <header class="topbar">

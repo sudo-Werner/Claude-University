@@ -498,3 +498,51 @@ test("revisionHTML escapes XSS in progressAtRisk titles", () => {
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
 });
+
+test("dashboardHTML escapes model-derived topic and sub", () => {
+  const html = dashboardHTML(
+    { topic: "<script>x</script>", sub: "<img src=x onerror=1>", durationMin: 90,
+      progressPct: 0, lessonsDone: 0, lessonsTotal: 2, reviewsDue: 0,
+      masteryCounts: {}, contract: null, complete: false },
+    { fills: [0, 0, 0], activePhaseIndex: 0, statusLabel: "", clock: "0:00" },
+  );
+  assert.ok(!html.includes("<script>x</script>"));
+  assert.ok(!html.includes("<img src=x"));
+  assert.ok(html.includes("&lt;script&gt;"));
+});
+
+test("dashboardHTML disables Start session when the course is complete", () => {
+  const data = { topic: "Course complete", sub: "T", durationMin: 90, progressPct: 100,
+    lessonsDone: 2, lessonsTotal: 2, reviewsDue: 0, masteryCounts: {}, contract: null,
+    complete: true };
+  const tv = { fills: [0, 0, 0], activePhaseIndex: 0, statusLabel: "", clock: "0:00" };
+  const html = dashboardHTML(data, tv);
+  assert.match(html, /data-action="start-session"[^>]*disabled/);
+});
+
+test("dashboardHTML disables Review when nothing is due", () => {
+  const data = { topic: "T", sub: "S", durationMin: 90, progressPct: 0, lessonsDone: 0,
+    lessonsTotal: 2, reviewsDue: 0, masteryCounts: {}, contract: null, complete: false };
+  const tv = { fills: [0, 0, 0], activePhaseIndex: 0, statusLabel: "", clock: "0:00" };
+  const html = dashboardHTML(data, tv);
+  assert.match(html, /data-action="review"[^>]*disabled/);
+  const due = dashboardHTML({ ...data, reviewsDue: 3 }, tv);
+  assert.ok(!/data-action="review"[^>]*disabled/.test(due));
+});
+
+test("shellHTML escapes the back label", () => {
+  const html = shellHTML({ back: '<img src=x onerror=1>' });
+  assert.ok(!html.includes("<img src=x"));
+  assert.ok(html.includes("&lt;img"));
+});
+
+test("syllabusHTML drops non-http(s) source URLs", () => {
+  const course = { title: "T", subtitle: "", level: {}, modules: [],
+    groundingSources: [
+      { url: "javascript:alert(1)", title: "evil", type: "other" },
+      { url: "https://ok.example/x", title: "fine", type: "university" },
+    ] };
+  const html = syllabusHTML(course);
+  assert.ok(!html.includes("javascript:alert"));
+  assert.ok(html.includes("https://ok.example/x"));
+});

@@ -73,3 +73,16 @@ test("streamChat dispatches brief event to onBrief", async () => {
   });
   assert.equal(brief.goal, "build models");
 });
+
+test("chatHTML escapes message content", () => {
+  const html = chatHTML([{ role: "assistant", content: "<script>x</script>" }]);
+  assert.ok(!html.includes("<script>x</script>"));
+  assert.ok(html.includes("&lt;script&gt;"));
+});
+
+test("chatHTML accepts a custom placeholder", () => {
+  const html = chatHTML([], { placeholder: "describe your change" });
+  assert.ok(html.includes('placeholder="describe your change"'));
+  const dflt = chatHTML([]);
+  assert.ok(dflt.includes("intermediate linear algebra"));
+});

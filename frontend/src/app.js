@@ -145,6 +145,7 @@ export async function init({ window, fetch }) {
       lessonsDone: p.done,
       lessonsTotal: p.total,
       reviewsDue: ui.summary ? ui.summary.reviewsDue : 0,
+      complete: !next,
       masteryCounts: (ui.manifest && ui.manifest.masteryCounts) || {},
       contract: (ui.manifest && ui.manifest.schemaVersion === 2) ? {
         level: (ui.manifest.level && (ui.manifest.level.label || ui.manifest.level.code)) || "",
@@ -180,7 +181,10 @@ export async function init({ window, fetch }) {
   function paintRefine() {
     const view = root.querySelector("#view");
     const msgs = ui.refine.messages;
-    view.innerHTML = chatHTML(msgs, { pending: false });
+    view.innerHTML = chatHTML(msgs, {
+      pending: false,
+      placeholder: "e.g. add a module on transformers, drop the intro lesson, go deeper in module 2",
+    });
 
     // Replace the greeting with a refine-specific lead-in card
     const greeting = view.querySelector(".greeting");

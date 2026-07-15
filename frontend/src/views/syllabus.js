@@ -17,7 +17,7 @@ function moduleBlock(module) {
 
 function sourceList(sources) {
   const items = (sources || [])
-    .filter((s) => s && s.url)
+    .filter((s) => s && typeof s.url === "string" && /^https?:\/\//.test(s.url))
     .map((s) => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a> <span class="src-type">${esc(s.type || "")}</span></li>`)
     .join("");
   return items ? `<ul class="src-list">${items}</ul>` : "<div class='muted'>No sources retrieved.</div>";

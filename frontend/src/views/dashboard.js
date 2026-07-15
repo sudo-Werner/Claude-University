@@ -53,12 +53,12 @@ export function dashboardHTML(data, timerView) {
         <span class="eyebrow">TODAY'S SESSION</span>
         <span class="meta">${CLOCK_ICON} ${data.durationMin} min</span>
       </div>
-      <h2 class="session-topic">${data.topic}</h2>
-      <div class="session-sub">${data.sub}</div>
+      <h2 class="session-topic">${esc(data.topic)}</h2>
+      <div class="session-sub">${esc(data.sub)}</div>
       <div class="phase-bar" aria-label="Session plan">${tracks}</div>
       <div class="phase-labels">${labels}</div>
       <div class="timer-status"><span>${timerView.statusLabel}</span><span class="clock">${timerView.clock}</span></div>
-      <button class="btn-primary" data-action="start-session">${PLAY_ICON} Start session</button>
+      <button class="btn-primary" data-action="start-session"${data.complete ? " disabled" : ""}>${PLAY_ICON} Start session</button>
       <button class="btn-secondary" data-action="curriculum" style="margin-top:8px">View all lessons</button>
       <button class="btn-secondary" data-action="refine" style="margin-top:8px">Refine this course</button>
       <button class="btn-secondary" data-action="library" style="margin-top:8px">Library · accredited sources</button>
@@ -74,7 +74,7 @@ export function dashboardHTML(data, timerView) {
         <span class="eyebrow mut">REVIEWS DUE</span>
         <div style="display:flex; align-items:baseline; gap:6px; margin-top:12px"><span class="big" style="color:var(--blue)">${data.reviewsDue}</span><span class="unit">cards</span></div>
         <div class="stat-note" style="margin:10px 0 14px">Spaced repetition</div>
-        <button class="btn-secondary" data-action="review">Review</button>
+        <button class="btn-secondary" data-action="review"${data.reviewsDue ? "" : " disabled"}>Review</button>
       </section>
     </div>
     ${masteryHTML(data.masteryCounts)}
