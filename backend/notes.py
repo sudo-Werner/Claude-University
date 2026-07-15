@@ -2,6 +2,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from backend import fsutil
+
 _MAX_BYTES = 100_000  # ~100 KB cap on the serialized notes + chat
 _EMPTY = {"notes": "", "chat": [], "updatedAt": None}
 
@@ -55,5 +57,5 @@ def save_workspace(content_dir, course_id, lesson_id, notes, chat):
         raise WorkspaceTooLarge("workspace too large")
     path = _path(content_dir, course_id, lesson_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(blob)
+    fsutil.write_text_atomic(path, blob)
     return record

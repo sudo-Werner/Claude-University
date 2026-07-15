@@ -3,7 +3,7 @@ import json
 import re as _re
 from pathlib import Path
 
-from backend import claude_client, courses
+from backend import claude_client, courses, fsutil
 
 # Default-deny HTML sanitizer: escape everything, then restore a tiny safe allowlist.
 # Lessons carry inline formatting (<code>, <em>, <strong>, <br>, <span class="mono">)
@@ -436,7 +436,7 @@ def ensure_capstone(content_dir, course_id, scope, profile, *, generate):
         if isinstance(it.get("source"), str):
             it["source"] = _html.escape(it["source"], quote=True)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(capstone, indent=2, ensure_ascii=False))
+    fsutil.write_text_atomic(path, json.dumps(capstone, indent=2, ensure_ascii=False))
     return capstone
 
 
@@ -600,7 +600,7 @@ def ensure_bibliography(content_dir, course_id, *, generate_sourced):
     kept = _resolve_sources(obj.get("sources"), captured)
     library = {"courseId": course_id, "title": manifest.get("title", ""), "sources": kept}
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(library, indent=2, ensure_ascii=False))
+    fsutil.write_text_atomic(path, json.dumps(library, indent=2, ensure_ascii=False))
     return library
 
 
@@ -849,7 +849,7 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
     if not valid_lesson(lesson):
         raise claude_client.ClaudeError("generated lesson failed validation")
     path = Path(content_dir) / course_id / "lessons" / f"{lesson_id}.json"
-    path.write_text(json.dumps(lesson, indent=2, ensure_ascii=False))
+    fsutil.write_text_atomic(path, json.dumps(lesson, indent=2, ensure_ascii=False))
     return lesson
 
 

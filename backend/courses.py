@@ -1,8 +1,9 @@
 import json
-import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+
+from backend import fsutil
 
 CONTENT_DIR = Path(__file__).resolve().parent.parent / "content" / "courses"
 
@@ -141,7 +142,7 @@ def write_course(content_dir, proposal):
 
     course_dir = content_dir / course_id
     (course_dir / "lessons").mkdir(parents=True, exist_ok=True)
-    (course_dir / "course.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
+    fsutil.write_text_atomic(course_dir / "course.json", json.dumps(manifest, indent=2, ensure_ascii=False))
     return manifest
 
 
@@ -176,7 +177,5 @@ def apply_revision(content_dir, course_id, revised, *, now=None):
     if now is None:
         now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     (course_dir / f"course.json.pre-revise-{now}").write_text(manifest_path.read_text())
-    tmp = course_dir / "course.json.tmp"
-    tmp.write_text(json.dumps(revised, indent=2, ensure_ascii=False))
-    os.replace(tmp, manifest_path)
+    fsutil.write_text_atomic(manifest_path, json.dumps(revised, indent=2, ensure_ascii=False))
     return revised
