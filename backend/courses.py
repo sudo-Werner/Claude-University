@@ -185,5 +185,8 @@ def apply_revision(content_dir, course_id, revised, *, now=None):
         now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     (course_dir / f"course.json.pre-revise-{now}").write_text(manifest_path.read_text())
     fsutil.write_text_atomic(manifest_path, json.dumps(revised, indent=2, ensure_ascii=False))
-    spine.prune(content_dir, course_id, seen)
+    # Same per-course lock generation holds for its spine upsert: an unlocked prune
+    # racing a concurrent lesson generation could clobber the just-written entry.
+    with generation._gen_lock(("spine", course_id)):
+        spine.prune(content_dir, course_id, seen)
     return revised
