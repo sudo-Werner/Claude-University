@@ -62,3 +62,8 @@ test("home banner escapes course titles", () => {
 test("home shows the recent-activity link", () => {
   assert.match(homeHTML([ML]), /data-action="activity"/);
 });
+
+test("home shows a transcript link", () => {
+  const html = homeHTML([]);
+  assert.ok(html.includes('data-action="transcript"'));
+});

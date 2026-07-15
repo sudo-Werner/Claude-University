@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -219,4 +219,21 @@ test("submitExam posts answers and maps errors", async () => {
   assert.equal(res.passed, true);
   const failing = async () => ({ ok: false, json: async () => { throw new Error("no body"); } });
   assert.ok((await submitExam({ fetch: failing, courseId: "c1", examKey: "final", answers: [] })).error);
+});
+
+test("startRemediation maps errors and returns session JSON", async () => {
+  const ok = { examKey: "m1", gaps: [] };
+  let session = await startRemediation({
+    fetch: async () => ({ ok: true, json: async () => ok }), courseId: "c1", examKey: "m1" });
+  assert.deepEqual(session, ok);
+  session = await startRemediation({
+    fetch: async () => ({ ok: false, json: async () => ({ error: "nothing to review" }) }),
+    courseId: "c1", examKey: "m1" });
+  assert.equal(session.error, "nothing to review");
+});
+
+test("loadTranscript returns body or null", async () => {
+  const body = { courses: [] };
+  assert.deepEqual(await loadTranscript({ fetch: async () => ({ ok: true, json: async () => body }) }), body);
+  assert.equal(await loadTranscript({ fetch: async () => ({ ok: false }) }), null);
 });

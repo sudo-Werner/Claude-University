@@ -4,7 +4,7 @@ import { shellHTML } from "../src/views/shell.js";
 import { dashboardHTML } from "../src/views/dashboard.js";
 import { lessonHTML } from "../src/views/lesson.js";
 import { diagnosticHTML } from "../src/views/diagnostic.js";
-import { curriculumHTML, lessonStatus, moduleProgress } from "../src/views/curriculum.js";
+import { curriculumHTML, lessonStatus, moduleProgress, recommendedStep } from "../src/views/curriculum.js";
 import { capstoneHTML } from "../src/views/capstone.js";
 import { loadingHTML, LESSON_STAGES, CAPSTONE_STAGES } from "../src/views/loading.js";
 import { libraryHTML } from "../src/views/library.js";
@@ -647,4 +647,44 @@ test("homeHTML shows passed badge on passed courses", () => {
   assert.ok(homeHTML(courses).includes("Passed"));
   courses[0].passed = false;
   assert.ok(!homeHTML(courses).includes("course-passed"));
+});
+
+const GATE_MANIFEST = {
+  title: "T", modules: [
+    { id: "m1", title: "M1", lessons: [{ id: "l1", title: "A" }] },
+    { id: "m2", title: "M2", lessons: [{ id: "l2", title: "B" }] },
+  ],
+};
+
+test("recommendedStep walks lessons, then module exam, then final", () => {
+  assert.deepEqual(recommendedStep(GATE_MANIFEST, {}, {}), { type: "lesson", id: "l1" });
+  assert.deepEqual(recommendedStep(GATE_MANIFEST, { l1: "familiar" }, {}), { type: "exam", id: "m1" });
+  const exams = { m1: { passed: true }, m2: { passed: true } };
+  assert.deepEqual(
+    recommendedStep(GATE_MANIFEST, { l1: "familiar", l2: "familiar" }, exams),
+    { type: "exam", id: "final" });
+  assert.equal(
+    recommendedStep(GATE_MANIFEST, { l1: "familiar", l2: "familiar" }, { ...exams, final: { passed: true } }),
+    null);
+});
+
+test("curriculum locks the final until every module exam is passed", () => {
+  const html = curriculumHTML(GATE_MANIFEST, {}, null, {}, false);
+  assert.ok(html.includes("Locked — pass every module exam first"));
+  assert.ok(!html.includes('data-exam="final"'));
+  const open = curriculumHTML(GATE_MANIFEST, {}, null,
+    { m1: { passed: true, bestScore: 0.9, attempts: 1 }, m2: { passed: true, bestScore: 0.9, attempts: 1 } }, false);
+  assert.ok(open.includes('data-exam="final"'));
+});
+
+test("curriculum flags a module you moved beyond without passing its exam", () => {
+  const html = curriculumHTML(GATE_MANIFEST, { l2: "familiar" }, null, {}, false);
+  assert.ok(html.includes("Exam not passed"));
+  const none = curriculumHTML(GATE_MANIFEST, { l1: "familiar" }, null, {}, false);
+  assert.ok(!none.includes("Exam not passed"));
+});
+
+test("curriculum marks the recommended next step with a chip", () => {
+  const html = curriculumHTML(GATE_MANIFEST, {}, null, {}, false);
+  assert.ok(/data-lesson="l1"[^>]*>[\s\S]*?c-next/.test(html.split('data-lesson="l2"')[0]));
 });

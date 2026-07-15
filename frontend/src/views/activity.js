@@ -21,6 +21,18 @@ function dayLabel(d, now) {
 
 function entryHTML(e) {
   const when = new Date(e.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (e.type === "exam_result") {
+    const pct = Math.round((e.score || 0) * 100);
+    return `<div class="act-entry"><span class="act-time">${when}</span>` +
+      `<span class="act-text"><b>Exam</b> ${esc(e.examLabel || "")} ` +
+      `<span class="act-course">${esc(e.courseTitle || "")}</span>` +
+      `<span class="act-quality">${pct}% — ${e.passed ? "passed" : "not passed"}</span></span></div>`;
+  }
+  if (e.type === "remediation_started") {
+    return `<div class="act-entry"><span class="act-time">${when}</span>` +
+      `<span class="act-text"><b>Reviewed gaps</b> ${esc(e.examLabel || "")} ` +
+      `<span class="act-course">${esc(e.courseTitle || "")}</span></span></div>`;
+  }
   const verb = VERBS[e.type] || e.type;
   const what = e.lessonTitle ? esc(e.lessonTitle) : (e.courseTitle ? esc(e.courseTitle) : "");
   const context = e.lessonTitle && e.courseTitle ? `<span class="act-course">${esc(e.courseTitle)}</span>` : "";
