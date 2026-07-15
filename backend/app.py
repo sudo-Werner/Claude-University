@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
@@ -47,6 +47,28 @@ def create_app(db_path=None):
         finally:
             conn.close()
         return jsonify({"events": result})
+
+    @app.get("/api/stats")
+    def get_stats():
+        conn = db.get_connection(path)
+        try:
+            streak = stats.streak_days(conn)
+        finally:
+            conn.close()
+        return jsonify({"streakDays": streak})
+
+    @app.get("/api/activity")
+    def get_activity():
+        try:
+            limit = min(int(request.args.get("limit", 50)), 200)
+        except ValueError:
+            limit = 50
+        conn = db.get_connection(path)
+        try:
+            activity = stats.recent_activity(conn, courses.CONTENT_DIR, limit=limit)
+        finally:
+            conn.close()
+        return jsonify({"activity": activity})
 
     @app.post("/api/profile")
     def post_profile():

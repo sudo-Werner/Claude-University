@@ -51,3 +51,41 @@ def test_profile_roundtrip(client):
     client.post("/api/profile", json={"analogies": True})
     latest = client.get("/api/profile").get_json()
     assert latest["data"] == {"analogies": True}
+
+
+def test_stats_streak_from_study_events(client):
+    client.post("/api/events", json={"events": [{
+        "client_event_id": "st1", "session_id": "s1",
+        "event_type": "lesson_view", "occurred_at": "2026-06-21T10:00:00+00:00",
+    }]})
+    resp = client.get("/api/stats")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert isinstance(body["streakDays"], int)
+
+
+def test_activity_returns_resolved_entries(client, tmp_path, monkeypatch):
+    import json as _json
+    from backend import courses
+    root = tmp_path / "content"
+    d = root / "c1"
+    d.mkdir(parents=True)
+    (d / "course.json").write_text(_json.dumps({
+        "id": "c1", "title": "Machine Learning",
+        "modules": [{"id": "m1", "title": "M1", "lessons": [{"id": "c1-l1", "title": "Intro"}]}],
+    }))
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    client.post("/api/events", json={"events": [{
+        "client_event_id": "ac1", "session_id": "s1", "event_type": "lesson_view",
+        "occurred_at": "2026-06-21T10:00:00+00:00", "course_id": "c1", "topic_id": "c1-l1",
+    }]})
+    resp = client.get("/api/activity?limit=10")
+    assert resp.status_code == 200
+    entries = resp.get_json()["activity"]
+    assert entries[0]["courseTitle"] == "Machine Learning"
+    assert entries[0]["lessonTitle"] == "Intro"
+
+
+def test_activity_limit_is_bounded_and_tolerant(client):
+    assert client.get("/api/activity?limit=99999").status_code == 200
+    assert client.get("/api/activity?limit=banana").status_code == 200
