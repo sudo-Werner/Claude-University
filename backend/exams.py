@@ -458,3 +458,10 @@ def course_passed(status, manifest):
         return False
     keys = [m.get("id") for m in modules] + ["final"]
     return all(status.get(k, {}).get("passed") for k in keys)
+
+
+def final_unlocked(status, manifest):
+    """The comprehensive final is earned: it opens only once every module exam
+    is passed (mastery-learning gate — the single hard gate in the platform)."""
+    modules = manifest.get("modules", [])
+    return bool(modules) and all(status.get(m.get("id"), {}).get("passed") for m in modules)

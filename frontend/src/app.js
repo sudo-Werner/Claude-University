@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
@@ -13,7 +13,7 @@ import { lessonHTML } from "./views/lesson.js";
 import { curriculumHTML } from "./views/curriculum.js";
 import { capstoneHTML } from "./views/capstone.js";
 import { libraryHTML } from "./views/library.js";
-import { loadingHTML, LESSON_STAGES, DEEPEN_STAGES, CAPSTONE_STAGES, PROGRAM_STAGES, EXAM_STAGES } from "./views/loading.js";
+import { loadingHTML, LESSON_STAGES, DEEPEN_STAGES, CAPSTONE_STAGES, PROGRAM_STAGES, EXAM_STAGES, REMEDIATION_STAGES } from "./views/loading.js";
 import { examHTML, examResultHTML, examReady } from "./views/exam.js";
 import { diagnosticHTML } from "./views/diagnostic.js";
 import { chatHTML } from "./views/chat.js";
@@ -21,6 +21,8 @@ import { syllabusHTML } from "./views/syllabus.js";
 import { gradeCheck } from "./views/checks.js";
 import { revisionHTML } from "./views/revision.js";
 import { activityHTML } from "./views/activity.js";
+import { remediationHTML, flatPractice } from "./views/remediation.js";
+import { transcriptHTML } from "./views/transcript.js";
 import { streamChat } from "./chat.js";
 import { loadWorkspace, saveWorkspace } from "./notes.js";
 
@@ -101,6 +103,8 @@ export async function init({ window, fetch }) {
     });
     const act = view.querySelector('[data-action="activity"]');
     if (act) act.addEventListener("click", showActivity);
+    const tr = view.querySelector('[data-action="transcript"]');
+    if (tr) tr.addEventListener("click", showTranscript);
   }
 
   // ---- activity log ----
@@ -435,7 +439,83 @@ export async function init({ window, fetch }) {
       b.addEventListener("click", () => openLesson(b.getAttribute("data-lesson")));
     });
     view.querySelector('[data-action="retake-exam"]').addEventListener("click", () => showExam(st.examKey));
+    const fix = view.querySelector('[data-action="fix-gaps"]');
+    if (fix) fix.addEventListener("click", () => showRemediation(st.examKey));
     view.querySelector('[data-action="back-curriculum"]').addEventListener("click", showCurriculum);
+  }
+
+  // ---- gap review (sub-project D): Bloom's corrective loop after a failed exam ----
+  async function showRemediation(examKey) {
+    pauseTimer();
+    ui.loadSeq = (ui.loadSeq || 0) + 1;
+    const seq = ui.loadSeq;
+    ui.screen = "remediation-loading";
+    root.innerHTML = shellHTML({ back: ui.manifest ? ui.manifest.title : "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showCurriculum);
+    const view = root.querySelector("#view");
+    startLoading(view, "lesson", REMEDIATION_STAGES);
+    const session = await startRemediation({ fetch, courseId: ui.courseId, examKey });
+    if (ui.screen !== "remediation-loading" || ui.loadSeq !== seq) return; // navigated away
+    if (!session || session.error) {
+      view.innerHTML =
+        `<div class="card"><div class="prompt">${esc((session && session.error) || "Couldn't prepare the gap review right now.")}</div>` +
+        `<div class="nav"><button class="btn-back" data-action="back">Back</button></div></div>`;
+      view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
+      return;
+    }
+    ui.screen = "remediation";
+    ui.remState = { examKey, session, items: flatPractice(session), answers: {}, results: {} };
+    log("remediation_started", { courseId: ui.courseId, topicId: examKey });
+    paintRemediation();
+  }
+
+  function paintRemediation() {
+    const st = ui.remState;
+    const view = root.querySelector("#view");
+    view.innerHTML = remediationHTML(st.session, st);
+    view.querySelectorAll("[data-rq-choice]").forEach((b) => {
+      b.addEventListener("click", () =>
+        answerPractice(Number(b.getAttribute("data-rq")), Number(b.getAttribute("data-rq-choice"))));
+    });
+    view.querySelectorAll('[data-action="rq-fill"]').forEach((b) => {
+      b.addEventListener("click", () => {
+        const k = Number(b.getAttribute("data-rq"));
+        const inp = view.querySelector(`[data-rq-input="${k}"]`);
+        answerPractice(k, inp ? inp.value : "");
+      });
+    });
+    view.querySelector('[data-action="retake-exam"]').addEventListener("click", () => showExam(st.examKey));
+    view.querySelector('[data-action="back-curriculum"]').addEventListener("click", showCurriculum);
+  }
+
+  function answerPractice(k, answer) {
+    const st = ui.remState;
+    if (!st || st.results[k]) return; // already answered
+    const item = st.items[k];
+    if (!item) return;
+    const result = gradeCheck(item.check, answer);
+    st.answers[k] = answer;
+    st.results[k] = result;
+    // Practice evidence feeds mastery through the same lesson_check pool as lesson
+    // checks; the source tag keeps the provenance readable in the event log.
+    log("lesson_check", {
+      courseId: ui.courseId, topicId: item.lessonId,
+      payload: { index: k, type: item.check.type, correct: result.correct, source: "remediation" },
+    });
+    paintRemediation();
+  }
+
+  // ---- transcript (sub-project D): the global academic record ----
+  async function showTranscript() {
+    pauseTimer();
+    ui.screen = "transcript";
+    root.innerHTML = shellHTML({ back: "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showHome);
+    const view = root.querySelector("#view");
+    view.innerHTML = `<div class="card"><div class="prompt">Assembling your record…</div></div>`;
+    const data = await loadTranscript({ fetch });
+    if (ui.screen !== "transcript") return; // navigated away mid-load
+    view.innerHTML = transcriptHTML(data || { courses: [] });
   }
 
   // #3b: render a skeleton + cycle the "what Claude is doing" status. The interval

@@ -108,3 +108,83 @@ def test_performance_summary_strong():
     _ev(conn, "lesson_check", "demo-l1", {"index": 0, "type": "mcq", "correct": True}, "2026-06-20T10:01:00Z")
     s = mastery.performance_summary(conn, root, "demo")
     assert "strongly" in s.lower()
+
+
+# --- sub-project D: widened accuracy pool ---
+
+def _completed(conn, lesson):
+    _ev(conn, "lesson_completed", lesson, {}, "2026-07-10T10:00:00+00:00")
+
+
+def _exam_ev(conn, exam_key, per_question, occurred="2026-07-12T10:00:00+00:00"):
+    payload = {"score": 0.5, "passed": False, "attempt": 1,
+               "perQuestion": per_question, "weakSpots": []}
+    _ev(conn, "exam_result", exam_key, payload, occurred)
+
+
+def test_explain_verdicts_join_accuracy_pool(tmp_path):
+    conn = _conn()
+    root = _course(tmp_path)
+    _completed(conn, "demo-l1")
+    # one wrong check (0/1) + one correct explain (1/1) -> acc 0.5, capped proficient
+    _ev(conn, "lesson_check", "demo-l1", {"correct": False}, "2026-07-11T10:00:00+00:00")
+    _ev(conn, "lesson_explained", "demo-l1", {"verdict": "correct"}, "2026-07-11T10:05:00+00:00")
+    pool = mastery._accuracy_pool(conn, "demo")
+    assert pool["demo-l1"] == (1.0, 2.0)
+
+
+def test_explain_close_is_half_and_unknown_verdict_ignored(tmp_path):
+    conn = _conn()
+    _ev(conn, "lesson_explained", "demo-l1", {"verdict": "close"}, "2026-07-11T10:00:00+00:00")
+    _ev(conn, "lesson_explained", "demo-l1", {"verdict": "banana"}, "2026-07-11T10:01:00+00:00")
+    pool = mastery._accuracy_pool(conn, "demo")
+    assert pool["demo-l1"] == (0.5, 1.0)
+
+
+def test_exam_questions_count_double(tmp_path):
+    conn = _conn()
+    # one correct check (1/1) + one 0-point exam question at weight 2 -> 1.0/3.0
+    _ev(conn, "lesson_check", "demo-l1", {"correct": True}, "2026-07-11T10:00:00+00:00")
+    _exam_ev(conn, "m1", [{"lessonId": "demo-l1", "points": 0.0}])
+    pool = mastery._accuracy_pool(conn, "demo")
+    assert pool["demo-l1"] == (1.0, 3.0)
+
+
+def test_exam_partial_points_scale_by_weight(tmp_path):
+    conn = _conn()
+    _exam_ev(conn, "m1", [{"lessonId": "demo-l1", "points": 0.5}])
+    pool = mastery._accuracy_pool(conn, "demo")
+    assert pool["demo-l1"] == (1.0, 2.0)  # 0.5 * EXAM_WEIGHT / EXAM_WEIGHT
+
+
+def test_prequiz_never_counts(tmp_path):
+    conn = _conn()
+    _ev(conn, "prequiz_attempt", "demo-l1", {"correct": False, "type": "mcq"},
+        "2026-07-11T10:00:00+00:00")
+    assert mastery._accuracy_pool(conn, "demo") == {}
+
+
+def test_remediation_checks_count_like_checks(tmp_path):
+    conn = _conn()
+    _ev(conn, "lesson_check", "demo-l1", {"correct": True, "source": "remediation"},
+        "2026-07-11T10:00:00+00:00")
+    assert mastery._accuracy_pool(conn, "demo")["demo-l1"] == (1.0, 1.0)
+
+
+def test_exam_evidence_caps_mastery_level(tmp_path):
+    conn = _conn()
+    root = _course(tmp_path)
+    _completed(conn, "demo-l1")
+    # three good reviews would be "mastered"; an all-wrong exam drags acc to 0 -> attempted
+    for d in ("2026-07-01", "2026-07-02", "2026-07-08"):
+        _ev(conn, "lesson_reviewed", "demo-l1", {"quality": "good"}, f"{d}T10:00:00+00:00")
+    _exam_ev(conn, "m1", [{"lessonId": "demo-l1", "points": 0.0}])
+    assert mastery.lesson_mastery(conn, root, "demo")["demo-l1"] == "attempted"
+
+
+def test_malformed_exam_payload_rows_are_skipped(tmp_path):
+    conn = _conn()
+    _ev(conn, "exam_result", "m1", {"perQuestion": [{"lessonId": "demo-l1", "points": "x"},
+                                                    "junk", {"points": 1.0}]},
+        "2026-07-11T10:00:00+00:00")
+    assert mastery._accuracy_pool(conn, "demo") == {}

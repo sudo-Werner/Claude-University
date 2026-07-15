@@ -34,6 +34,12 @@ export const EXAM_STAGES = [
   "Setting plausible distractors…",
   "Almost ready…",
 ];
+export const REMEDIATION_STAGES = [
+  "Reading your exam results…",
+  "Re-explaining each gap from a new angle…",
+  "Writing fresh practice questions…",
+  "Almost ready…",
+];
 
 function bars(kind) {
   if (kind === "capstone") {

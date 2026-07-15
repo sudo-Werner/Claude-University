@@ -4,6 +4,12 @@ from backend import courses, srs
 
 LEVELS = ["attempted", "familiar", "proficient", "mastered"]
 
+# Summative evidence (exam questions) outweighs a formative check; the constant
+# is the single tunable knob for that judgment call.
+EXAM_WEIGHT = 2.0
+
+_EXPLAIN_POINTS = {"correct": 1.0, "close": 0.5, "incorrect": 0.0}
+
 
 def level_for(reps, acc):
     if reps >= 3:
@@ -22,23 +28,47 @@ def level_for(reps, acc):
     return LEVELS[base]
 
 
-def _checks_by_lesson(conn, course_id):
+def _accuracy_pool(conn, course_id):
+    """Per-lesson weighted (points, total) evidence: lesson checks (incl. remediation
+    practice, which logs as lesson_check), explain-it-back verdicts, and exam questions
+    at EXAM_WEIGHT. prequiz_attempt is deliberately absent — it precedes instruction."""
+    pool = {}
+
+    def add(lesson_id, points, weight):
+        if not lesson_id:
+            return
+        got, total = pool.get(lesson_id, (0.0, 0.0))
+        pool[lesson_id] = (got + points, total + weight)
+
     rows = conn.execute(
-        "SELECT topic_id, payload FROM events "
-        "WHERE event_type = 'lesson_check' AND course_id = ?",
+        "SELECT topic_id, event_type, payload FROM events "
+        "WHERE event_type IN ('lesson_check', 'lesson_explained', 'exam_result') "
+        "AND course_id = ?",
         (course_id,),
     ).fetchall()
-    out = {}
     for row in rows:
-        if not row["topic_id"]:
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except ValueError:
             continue
-        payload = json.loads(row["payload"]) if row["payload"] else {}
-        correct, total = out.get(row["topic_id"], (0, 0))
-        total += 1
-        if payload.get("correct"):
-            correct += 1
-        out[row["topic_id"]] = (correct, total)
-    return out
+        if not isinstance(payload, dict):
+            continue
+        if row["event_type"] == "lesson_check":
+            add(row["topic_id"], 1.0 if payload.get("correct") else 0.0, 1.0)
+        elif row["event_type"] == "lesson_explained":
+            points = _EXPLAIN_POINTS.get(payload.get("verdict"))
+            if points is not None:
+                add(row["topic_id"], points, 1.0)
+        else:  # exam_result: topic_id is the exam key — evidence lives per question
+            for q in payload.get("perQuestion") or []:
+                if not isinstance(q, dict):
+                    continue
+                try:
+                    points = float(q.get("points"))
+                except (TypeError, ValueError):
+                    continue
+                add(q.get("lessonId"), points * EXAM_WEIGHT, EXAM_WEIGHT)
+    return pool
 
 
 def lesson_mastery(conn, content_dir, course_id):
@@ -47,7 +77,7 @@ def lesson_mastery(conn, content_dir, course_id):
         return {}
     completed = courses.completed_lesson_ids(conn, course_id)
     reviews = srs.reviews_by_lesson(conn, course_id)
-    checks = _checks_by_lesson(conn, course_id)
+    pool = _accuracy_pool(conn, course_id)
     out = {}
     for lesson in courses.flatten_lessons(manifest):
         lid = lesson["id"]
@@ -55,8 +85,8 @@ def lesson_mastery(conn, content_dir, course_id):
             continue
         revs = reviews.get(lid)
         reps = srs.sm2(revs)["repetitions"] if revs else 0
-        c = checks.get(lid)
-        acc = (c[0] / c[1]) if c and c[1] else None
+        p = pool.get(lid)
+        acc = (p[0] / p[1]) if p and p[1] else None
         out[lid] = level_for(reps, acc)
     return out
 
@@ -73,9 +103,9 @@ def performance_summary(conn, content_dir, course_id):
     if not mastery_map:
         return ""
     counts = mastery_counts(mastery_map)
-    checks = _checks_by_lesson(conn, course_id)
-    correct = sum(c for c, _ in checks.values())
-    total = sum(t for _, t in checks.values())
+    pool = _accuracy_pool(conn, course_id)
+    correct = sum(p for p, _ in pool.values())
+    total = sum(t for _, t in pool.values())
     acc = (correct / total) if total else None
     n = len(mastery_map)
     proficient_plus = counts["proficient"] + counts["mastered"]

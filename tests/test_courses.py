@@ -293,6 +293,28 @@ def test_apply_revision_prunes_dropped_module_exams(tmp_path):
     assert not (exams_dir / "m2.json").exists()
 
 
+def test_apply_revision_prunes_dropped_module_remediation(tmp_path):
+    from backend import courses
+    cdir = tmp_path
+    course = cdir / "c"
+    (course / "lessons").mkdir(parents=True)
+    (course / "course.json").write_text(json.dumps({"id": "c", "title": "Old",
+        "modules": [
+            {"id": "m1", "title": "M1", "lessons": [{"id": "c-l1", "title": "One"}]},
+            {"id": "m2", "title": "M2", "lessons": [{"id": "c-l3", "title": "Three"}]},
+        ]}))
+    rem_dir = course / "remediation"
+    rem_dir.mkdir()
+    for key in ("m1", "m2", "final"):
+        (rem_dir / f"{key}.json").write_text(json.dumps({"examKey": key, "gaps": [], "attempt": 1}))
+    revised = _valid_compiled("c")  # keeps only module m1 -> m2 is dropped
+    out = courses.apply_revision(cdir, "c", revised, now="20260715T120002Z")
+    assert out is not None
+    assert (rem_dir / "m1.json").exists()
+    assert (rem_dir / "final.json").exists()
+    assert not (rem_dir / "m2.json").exists()
+
+
 def test_list_courses_includes_passed_flag(conn, tmp_path):
     from backend import courses
     root = _make_course(tmp_path)

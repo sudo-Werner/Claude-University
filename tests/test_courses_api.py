@@ -749,3 +749,94 @@ def test_get_course_includes_exam_status(client, tmp_path, monkeypatch):
     resp = client.get(f"/api/courses/{cid}")
     body = resp.get_json()
     assert body["exams"] == {} and body["coursePassed"] is False
+
+
+def _post_exam_result(client, course_id, exam_key, payload, i=0):
+    r = client.post("/api/events", json={"events": [{
+        "client_event_id": f"x-{exam_key}-{i}", "session_id": "s1",
+        "event_type": "exam_result", "occurred_at": f"2026-07-1{i}T10:00:00+00:00",
+        "course_id": course_id, "topic_id": exam_key, "payload": payload,
+    }]})
+    assert r.status_code == 200
+
+
+def test_remediation_404_without_failed_exam(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, _ = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    r = client.post(f"/api/courses/{cid}/exams/m1/remediation")
+    assert r.status_code == 404
+
+
+def test_remediation_generates_serves_and_reuses(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    weak = [{"lessonId": lesson_id, "lessonTitle": "A", "objectives": ["Calculate X"]}]
+    _post_exam_result(client, cid, "m1",
+                      {"score": 0.5, "passed": False, "attempt": 1, "weakSpots": weak})
+    gaps = {"gaps": [{"lessonId": lesson_id, "explanationHtml": "<p>angle</p>",
+                      "practice": [
+                          {"type": "mcq", "prompt": "q", "choices": ["a", "b"],
+                           "answer": 0, "explanation": "e"},
+                          {"type": "fill", "prompt": "q2", "answer": "w", "explanation": "e2"},
+                      ]}]}
+    calls = []
+
+    def fake_run(prompt, validate=None, **kw):
+        calls.append(prompt)
+        assert validate(gaps)
+        return gaps
+
+    monkeypatch.setattr(claude_client, "run_structured", fake_run)
+    r = client.post(f"/api/courses/{cid}/exams/m1/remediation")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["attempt"] == 1 and body["gaps"][0]["lessonTitle"] == "A"
+    assert (tmp_path / cid / "remediation" / "m1.json").exists()
+    r2 = client.post(f"/api/courses/{cid}/exams/m1/remediation")
+    assert r2.status_code == 200 and len(calls) == 1              # served from disk
+
+
+def test_remediation_maps_claude_errors(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    _post_exam_result(client, cid, "m1", {"score": 0.5, "passed": False, "attempt": 1,
+        "weakSpots": [{"lessonId": lesson_id, "lessonTitle": "A", "objectives": []}]})
+
+    def boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeError("nope")
+
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    r = client.post(f"/api/courses/{cid}/exams/m1/remediation")
+    assert r.status_code == 502
+    assert not (tmp_path / cid / "remediation" / "m1.json").exists()
+
+
+def test_final_locked_until_all_modules_passed(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    # Stub generation FIRST: if the 409 gate were broken, the route must hit this
+    # stub (502), never a real Claude call. 409 vs 502 is the whole assertion.
+    def boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeError("stub")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    r = client.post(f"/api/courses/{cid}/exams/final")
+    assert r.status_code == 409
+    for module in manifest["modules"]:
+        _post_exam_result(client, cid, module["id"],
+                          {"score": 0.9, "passed": True, "attempt": 1, "weakSpots": []}, i=1)
+    r2 = client.post(f"/api/courses/{cid}/exams/final")
+    assert r2.status_code == 502  # gate opened; generation stub reached
+
+
+def test_transcript_route_returns_courses(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, _ = _fixture_course(courses, tmp_path)
+    r = client.get("/api/transcript")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["courses"][0]["courseId"] == manifest["id"]
+    assert body["courses"][0]["final"]["passed"] is False

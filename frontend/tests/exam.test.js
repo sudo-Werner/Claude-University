@@ -58,3 +58,10 @@ test("examResultHTML fail banner names the bar", () => {
   const html = examResultHTML({ score: 0.5, passed: false, attempt: 1, perQuestion: [], weakSpots: [] });
   assert.ok(html.includes("50%") && html.includes("80%"));
 });
+
+test("failed result with weak spots offers Fix the gaps; passed result does not", () => {
+  const failed = { score: 0.5, passed: false, weakSpots: [{ lessonId: "l1", lessonTitle: "L", objectives: [] }], perQuestion: [] };
+  assert.ok(examResultHTML(failed).includes('data-action="fix-gaps"'));
+  const passed = { score: 0.9, passed: true, weakSpots: [], perQuestion: [] };
+  assert.ok(!examResultHTML(passed).includes('data-action="fix-gaps"'));
+});

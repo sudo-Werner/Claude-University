@@ -44,3 +44,14 @@ test("activity escapes titles", () => {
 test("activity shows an empty state", () => {
   assert.match(activityHTML([], { now: NOW }), /Nothing here yet/);
 });
+
+test("activity renders exam and gap-review entries", () => {
+  const html = activityHTML([
+    { occurredAt: "2026-07-15T09:00:00+00:00", type: "exam_result",
+      courseTitle: "Algo", examLabel: "Sorting exam", score: 0.85, passed: true },
+    { occurredAt: "2026-07-15T10:00:00+00:00", type: "remediation_started",
+      courseTitle: "Algo", examLabel: "Final exam" },
+  ], { now: new Date("2026-07-15T12:00:00+00:00") });
+  assert.ok(html.includes("Sorting exam") && html.includes("85% — passed"));
+  assert.ok(html.includes("Reviewed gaps") && html.includes("Final exam"));
+});
