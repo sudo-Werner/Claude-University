@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
@@ -70,6 +70,15 @@ def create_app(db_path=None):
         finally:
             conn.close()
         return jsonify({"activity": activity})
+
+    @app.get("/api/transcript")
+    def get_transcript():
+        conn = db.get_connection(path)
+        try:
+            result = transcript.transcript(conn, courses.CONTENT_DIR)
+        finally:
+            conn.close()
+        return jsonify({"courses": result})
 
     @app.post("/api/profile")
     def post_profile():
@@ -241,6 +250,14 @@ def create_app(db_path=None):
         slots = exams.blueprint(manifest, exam_key)
         if slots is None:
             return jsonify({"error": "exam not found"}), 404
+        if exam_key == "final":
+            conn = db.get_connection(path)
+            try:
+                status = exams.exam_status(conn, course_id, manifest)
+            finally:
+                conn.close()
+            if not exams.final_unlocked(status, manifest):
+                return jsonify({"error": "The final is locked — pass every module exam first."}), 409
         spine_lessons = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"]
         prompt = exams.exam_prompt(manifest=manifest, exam_key=exam_key,
                                    slots=slots, spine_lessons=spine_lessons)

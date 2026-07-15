@@ -372,3 +372,13 @@ def test_submit_exam_grading_failure_keeps_pending(tmp_path, conn):
         pass
     assert exams.load_pending(tmp_path, "c1", "m1") is not None  # NOT consumed
     assert conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"] == 0
+
+
+def test_final_unlocked_requires_every_module_passed():
+    manifest = _manifest()
+    locked = {"m1": {"passed": True}}
+    assert not exams.final_unlocked(locked, manifest)
+    assert not exams.final_unlocked({}, manifest)
+    both = {"m1": {"passed": True}, "m2": {"passed": True}}
+    assert exams.final_unlocked(both, manifest)
+    assert not exams.final_unlocked(both, {"modules": []})

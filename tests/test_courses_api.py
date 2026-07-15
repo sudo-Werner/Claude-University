@@ -812,3 +812,31 @@ def test_remediation_maps_claude_errors(tmp_path, monkeypatch):
     r = client.post(f"/api/courses/{cid}/exams/m1/remediation")
     assert r.status_code == 502
     assert not (tmp_path / cid / "remediation" / "m1.json").exists()
+
+
+def test_final_locked_until_all_modules_passed(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    # Stub generation FIRST: if the 409 gate were broken, the route must hit this
+    # stub (502), never a real Claude call. 409 vs 502 is the whole assertion.
+    def boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeError("stub")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    r = client.post(f"/api/courses/{cid}/exams/final")
+    assert r.status_code == 409
+    for module in manifest["modules"]:
+        _post_exam_result(client, cid, module["id"],
+                          {"score": 0.9, "passed": True, "attempt": 1, "weakSpots": []}, i=1)
+    r2 = client.post(f"/api/courses/{cid}/exams/final")
+    assert r2.status_code == 502  # gate opened; generation stub reached
+
+
+def test_transcript_route_returns_courses(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, _ = _fixture_course(courses, tmp_path)
+    r = client.get("/api/transcript")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["courses"][0]["courseId"] == manifest["id"]
+    assert body["courses"][0]["final"]["passed"] is False
