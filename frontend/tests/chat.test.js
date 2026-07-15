@@ -22,6 +22,20 @@ test("streamChat posts to a custom endpoint and tolerates a missing onBrief", as
   assert.equal(done, true);
 });
 
+test("streamChat merges extra fields into the POST body", async () => {
+  let sent;
+  const fetch = async (u, opts) => {
+    sent = JSON.parse(opts.body);
+    return { body: bodyFrom("event: done\ndata: {}\n\n") };
+  };
+  await streamChat({
+    fetch, messages: [{ role: "user", content: "hi" }], endpoint: "/x",
+    extra: { solutionRevealed: true }, onDelta: () => {}, onDone: () => {},
+  });
+  assert.equal(sent.solutionRevealed, true);
+  assert.equal(sent.messages.length, 1);
+});
+
 test("parseSSELines extracts complete events and keeps the partial tail", () => {
   const buffer =
     "event: delta\ndata: Hi\n\n" +

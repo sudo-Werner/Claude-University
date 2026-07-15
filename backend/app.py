@@ -216,7 +216,7 @@ def create_app(db_path=None):
         explanation = (body.get("explanation") or "").strip()
         if not explanation:
             return jsonify({"error": "explanation is required"}), 400
-        generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_grade)
+        generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_explain)
         try:
             result = generation.explain_answer(
                 courses.CONTENT_DIR, course_id, lesson_id, explanation, generate=generate,
@@ -333,7 +333,9 @@ def create_app(db_path=None):
         # The side-chat can web-search so it isn't limited to the model's training cutoff;
         # the model only searches when the question needs current/factual info.
         stream_fn = lambda p: claude_client.stream(p, tools=["WebSearch", "WebFetch"])
-        sse = generation.lesson_chat_sse(lesson, body.get("messages", []), stream_fn=stream_fn)
+        sse = generation.lesson_chat_sse(
+            lesson, body.get("messages", []), stream_fn=stream_fn,
+            solution_revealed=bool(body.get("solutionRevealed")))
         return app.response_class(sse, mimetype="text/event-stream")
 
     @app.get("/api/courses/<course_id>/reviews")

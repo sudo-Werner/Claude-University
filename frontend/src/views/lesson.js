@@ -48,6 +48,13 @@ function explainHTML(state) {
   } else if (g) {
     const v = GRADE_LABEL[g.verdict] ? g.verdict : "close";
     result = `<div class="grade grade-${v}" aria-live="polite"><div class="grade-verdict">${GRADE_LABEL[v]}</div><div class="grade-note">${g.note || ""}</div></div>`;
+    if (g.followUp) {
+      const seeded = !!ex.seeded;
+      result +=
+        `<div class="explain-followup"><div class="grade-note">${g.followUp}</div>` +
+        `<button class="btn-secondary" data-action="explain-chat"${seeded ? " disabled" : ""}>` +
+        `${seeded ? "Sent to side-chat" : "Explore in side-chat"}</button></div>`;
+    }
   }
   const canSend = (ex.text || "").trim() && !ex.grading;
   return (

@@ -595,3 +595,30 @@ test("explain card escapes the learner's text and shows the graded note raw", ()
   assert.match(html, /Good <em>start<\/em>/);
   assert.match(html, /Almost there/);
 });
+
+test("explain card renders followUp question and seed button after grading", () => {
+  const html = lessonHTML(SAMPLE_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true,
+    explain: { text: "my take", grade: { verdict: "close", note: "n", followUp: "Why <em>exactly</em>?" } },
+  }, {});
+  assert.ok(html.includes("Why <em>exactly</em>?"));          // server-sanitized, rendered raw
+  assert.ok(html.includes('data-action="explain-chat"'));
+  assert.ok(html.includes("Explore in side-chat"));
+});
+
+test("explain seed button disables after seeding", () => {
+  const html = lessonHTML(SAMPLE_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true,
+    explain: { seeded: true, grade: { verdict: "close", note: "n", followUp: "Q?" } },
+  }, {});
+  assert.ok(/data-action="explain-chat"[^>]*disabled/.test(html));
+  assert.ok(html.includes("Sent to side-chat"));
+});
+
+test("explain card shows no seed button without followUp", () => {
+  const html = lessonHTML(SAMPLE_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true,
+    explain: { grade: { verdict: "close", note: "n" } },
+  }, {});
+  assert.ok(!html.includes("explain-chat"));
+});

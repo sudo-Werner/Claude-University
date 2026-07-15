@@ -794,6 +794,22 @@ def test_lesson_chat_sse_emits_reauth_on_auth_error():
     assert msg and "re-authentication" in msg[0].lower()
 
 
+def test_lesson_chat_system_guides_first_with_escape_hatch():
+    s = generation.LESSON_CHAT_SYSTEM
+    assert "MAIN EXERCISE" in s
+    assert "ONE short guiding question" in s
+    assert "give it plainly" in s
+
+
+def test_lesson_chat_prompt_carries_solution_reveal_state():
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    hidden = generation.lesson_chat_prompt(lesson, [])
+    assert "has NOT yet revealed the solution" in hidden
+    shown = generation.lesson_chat_prompt(lesson, [], solution_revealed=True)
+    assert "has already revealed the solution" in shown
+    assert "has NOT yet revealed" not in shown
+
+
 # ---- self-consistency: prompt hardening + verification pass ----
 
 def _full_lesson(**over):
@@ -1049,7 +1065,8 @@ def test_explain_answer_grades_and_sanitizes(tmp_path):
     captured = {}
     def fake_generate(prompt):
         captured["prompt"] = prompt
-        return {"verdict": "close", "note": "Nice <script>alert(1)</script> effort"}
+        return {"verdict": "close", "note": "Nice <script>alert(1)</script> effort",
+                "followUp": "why?"}
     result = generation.explain_answer(tmp_path, "c1", "c1-l1", "my own words", generate=fake_generate)
     assert result["verdict"] == "close"
     assert "<script>" not in result["note"]
@@ -1059,6 +1076,37 @@ def test_explain_answer_grades_and_sanitizes(tmp_path):
 
 def test_explain_answer_none_for_missing_lesson(tmp_path):
     assert generation.explain_answer(tmp_path, "c1", "c1-l9", "x", generate=lambda p: {}) is None
+
+
+def test_valid_explain_requires_followup():
+    base = {"verdict": "close", "note": "good try"}
+    assert not generation.valid_explain(base)
+    assert not generation.valid_explain({**base, "followUp": "  "})
+    assert generation.valid_explain({**base, "followUp": "Why does that hold?"})
+    assert not generation.valid_explain({**base, "verdict": "nope", "followUp": "q"})
+
+
+def test_explain_prompt_asks_for_followup():
+    p = generation.explain_prompt(prompt_html="<p>q</p>", solution_ans="a",
+                                  solution_note="n", explanation="e")
+    assert "followUp" in p
+    assert "weakest point" in p
+    assert "transfer question" in p
+
+
+def test_explain_answer_sanitizes_followup(tmp_path):
+    import json as _json
+    d = tmp_path / "c1" / "lessons"
+    d.mkdir(parents=True)
+    (d / "c1-l1.json").write_text(_json.dumps({
+        "id": "c1-l1", "promptHtml": "<p>Body</p>", "solutionAns": "42", "solutionNote": "why",
+    }))
+    def fake_generate(prompt):
+        return {"verdict": "close", "note": "<script>x</script>ok", "followUp": "<script>y</script>why?"}
+    result = generation.explain_answer(tmp_path, "c1", "c1-l1", "my own words", generate=fake_generate)
+    assert "<script>" not in result["note"]
+    assert "<script>" not in result["followUp"]
+    assert "why?" in result["followUp"]
 
 
 # ---- corrupt-cache self-heal: ensure_lesson regenerates instead of hitting a dead end ----

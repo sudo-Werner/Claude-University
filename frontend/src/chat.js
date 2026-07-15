@@ -18,11 +18,11 @@ export function parseSSELines(buffer) {
   return { events, rest };
 }
 
-export async function streamChat({ fetch, messages, endpoint = "/api/courses/chat", onDelta, onBrief, onDone, onError }) {
+export async function streamChat({ fetch, messages, endpoint = "/api/courses/chat", extra = {}, onDelta, onBrief, onDone, onError }) {
   const resp = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, ...extra }),
   });
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();

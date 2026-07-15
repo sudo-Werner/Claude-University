@@ -380,6 +380,13 @@ def valid_grade(obj):
     return isinstance(note, str) and bool(note.strip())
 
 
+def valid_explain(obj):
+    if not valid_grade(obj):
+        return False
+    follow = obj.get("followUp")
+    return isinstance(follow, str) and bool(follow.strip())
+
+
 def grade_prompt(*, prompt_html, solution_ans, solution_note, answer):
     return (
         "You are a warm, honest tutor grading a learner's free-text answer to one "
@@ -426,7 +433,10 @@ def explain_prompt(*, prompt_html, solution_ans, solution_note, explanation):
         "incorrect. Reply with ONLY a JSON object, no prose, no fence:\n"
         '{"verdict":"correct"|"close"|"incorrect","note":"<one or two encouraging sentences '
         "addressed to 'you': what your explanation captured, then the single most important "
-        'idea it missed or got wrong>"}'
+        'idea it missed or got wrong>","followUp":"<ONE short reflective question addressed '
+        "to 'you' that targets the weakest point of the explanation and pushes you to justify "
+        "or connect it; if the explanation was fully correct, ask a transfer question that "
+        'connects the idea to a new situation instead>"}'
     )
 
 
@@ -443,7 +453,8 @@ def explain_answer(content_dir, course_id, lesson_id, explanation, *, generate):
     result = generate(prompt)
     if not isinstance(result, dict):
         raise claude_client.ClaudeError("explain grader returned a non-dict result")
-    return {"verdict": result["verdict"], "note": sanitize_html(result["note"])}
+    return {"verdict": result["verdict"], "note": sanitize_html(result["note"]),
+            "followUp": sanitize_html(result["followUp"])}
 
 
 # ---- #1 real-world evidence capstone: how the concepts show up in the real world ----
@@ -743,17 +754,28 @@ LESSON_CHAT_SYSTEM = (
     "You can use web search — do so when the question needs current, recent, or factual "
     "information you are unsure of (prices, dates, latest developments); for purely "
     "conceptual questions, just answer directly without searching."
+    " When the learner asks for help with the lesson's MAIN EXERCISE and the solution is "
+    "not yet revealed, do not hand over the full approach: respond first with ONE short "
+    "guiding question or a targeted hint that moves them a single step forward. The moment "
+    "they explicitly ask for the direct answer, say they are stuck, or ask a second time, "
+    "give it plainly — no gatekeeping, no lecture about how they should learn. Questions "
+    "about concepts, background, or tangents get a direct concise answer as always; once "
+    "the solution is revealed, discuss it directly."
 )
 
 
-def lesson_chat_prompt(lesson, messages):
+def lesson_chat_prompt(lesson, messages, solution_revealed=False):
+    revealed_line = ("The learner has already revealed the solution."
+                     if solution_revealed
+                     else "The learner has NOT yet revealed the solution.")
     ctx = (
         f"Lesson topic: {lesson.get('topic', '')}\n"
         f"Lesson prompt (HTML): {lesson.get('promptHtml', '')}\n"
         f"Reference answer: {lesson.get('solutionAns', '')}\n"
         f"Why it is right: {lesson.get('solutionNote', '')}\n"
     )
-    lines = [LESSON_CHAT_SYSTEM, "", "The lesson the learner is studying:", ctx, ""]
+    lines = [LESSON_CHAT_SYSTEM, "", "The lesson the learner is studying:", ctx,
+             revealed_line, ""]
     for m in messages:
         who = "Learner" if m.get("role") == "user" else "You"
         lines.append(f"{who}: {m.get('content', '')}")
@@ -761,8 +783,8 @@ def lesson_chat_prompt(lesson, messages):
     return "\n".join(lines)
 
 
-def lesson_chat_sse(lesson, messages, *, stream_fn):
-    prompt = lesson_chat_prompt(lesson, messages)
+def lesson_chat_sse(lesson, messages, *, stream_fn, solution_revealed=False):
+    prompt = lesson_chat_prompt(lesson, messages, solution_revealed=solution_revealed)
     try:
         for chunk in stream_fn(prompt):
             yield _sse("delta", chunk)
