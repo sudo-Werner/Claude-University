@@ -572,7 +572,8 @@ export async function init({ window, fetch }) {
       const lessonState = ui.lessonState;
       const grade = await explainAnswer({ fetch, courseId: ui.courseId, lessonId: ui.lesson.id, explanation: text });
       if (ui.lessonState !== lessonState || ui.screen !== "lesson") return;
-      lessonState.explain = { ...lessonState.explain, grading: false, grade };
+      // A fresh grading brings a fresh followUp — re-arm the seed button.
+      lessonState.explain = { ...lessonState.explain, grading: false, grade, seeded: false };
       if (grade && !grade.error) {
         log("lesson_explained", { courseId: ui.courseId, topicId: ui.lesson.id, payload: { verdict: grade.verdict } });
       }
