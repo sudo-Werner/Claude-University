@@ -50,8 +50,8 @@ On a failed exam the result screen gains a **"Fix the gaps"** button.
   attempt number it remediates. A repeat request re-serves the stored session free; a newer failed
   attempt (higher attempt number) regenerates; corrupt file → regenerate. Generation runs under
   `_gen_lock(("remediation", course_id, exam_key))`.
-- `GET` of the same path returns the stored session if fresh (matching latest failed attempt),
-  else 404 — so a page refresh never costs a Claude call.
+- A repeat `POST` re-serves the stored fresh session without a new Claude call (the attempt
+  stamp decides freshness), so revisiting never regenerates. No separate GET route (YAGNI).
 - Frontend remediation screen: per gap, the re-explanation, then practice items graded client-side
   exactly like lesson checks. Practice answers log `lesson_check` events with the gap's real
   `lessonId` as `topic_id` and `payload.source = "remediation"` — they feed the mastery pool with
