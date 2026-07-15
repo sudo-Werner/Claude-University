@@ -506,7 +506,7 @@ textarea::placeholder{color:#b3a994}
 .ws-send:disabled{opacity:.5; cursor:default}
 
 /* =================  ACTIVITY LOG  ================= */
-.activity-link{max-width:240px; margin:18px auto 0; display:block}
+.activity-link{max-width:240px; display:block}
 .act-day{padding:16px 20px; margin-bottom:14px}
 .act-day .eyebrow{text-transform:uppercase}
 .act-entry{display:flex; gap:12px; padding:8px 0; border-bottom:1px solid rgba(0,0,0,.05); font-size:14px}
@@ -541,3 +541,23 @@ textarea::placeholder{color:#b3a994}
 .exam-fb.mid { color: var(--warn, #b26a00); }
 .exam-fb.bad { color: var(--warn, #b26a00); }
 .exam-prompt { font-family: var(--serif); font-size: 16px; line-height: 1.6; color: var(--read); margin: 0 0 6px; }
+
+/* ---- mastery loop (sub-project D) ---- */
+.c-next { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--accent, #7a5c3e); border: 1px solid var(--border-field); border-radius: 999px; padding: 1px 8px; margin-left: 8px; }
+.c-mflag { font-size: 11px; color: var(--warn); margin-left: 8px; }
+.c-exam.locked { opacity: 0.65; cursor: default; }
+.rem-gap { margin: 18px 0; padding: 14px 0 4px; border-top: 1px solid var(--border-field); }
+.rem-gap h2 { font-size: 16px; margin: 0 0 6px; }
+.rem-objectives { margin: 0 0 8px; padding-left: 18px; color: var(--mut, #8a7d6d); font-size: 13px; }
+.rem-explain { font-family: var(--serif); font-size: 16px; line-height: 1.6; color: var(--read); margin: 0 0 10px; }
+.home-links { display: flex; gap: 10px; margin-top: 18px; }
+.tr-course { margin: 12px 0; }
+.tr-chead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tr-chead h2 { font-size: 17px; margin: 0; }
+.tr-meta { color: var(--mut, #8a7d6d); font-size: 13px; margin: 4px 0 10px; }
+.tr-row { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border-field); font-size: 14px; }
+.tr-name { color: var(--read); }
+.tr-status { color: var(--mut, #8a7d6d); }
+.tr-status.passed { color: var(--ok); font-weight: 600; }
+.tr-status.failed { color: var(--warn); }
+.tr-note { color: var(--mut, #8a7d6d); font-size: 12px; margin: 14px 0 4px; }
