@@ -109,7 +109,7 @@ export async function init({ window, fetch }) {
     root.innerHTML = shellHTML({ back: "Courses" });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showHome);
     const view = root.querySelector("#view");
-    view.innerHTML = `<div class="card"><div class="prompt">Loading your activity...</div></div>`;
+    view.innerHTML = `<div class="card"><div class="prompt">Loading your activity…</div></div>`;
     const entries = await loadActivity({ fetch });
     if (ui.screen !== "activity") return; // navigated away mid-load
     view.innerHTML = activityHTML(entries, { now: new Date() });
