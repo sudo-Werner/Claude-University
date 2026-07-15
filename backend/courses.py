@@ -65,7 +65,7 @@ def course_progress(conn, content_dir, course_id):
 
 def list_courses(conn, content_dir):
     # Deferred here to avoid a courses↔srs circular import (srs imports courses at module level).
-    from backend import srs
+    from backend import exams, srs
     content_dir = Path(content_dir)
     summaries = []
     if not content_dir.exists():
@@ -83,6 +83,8 @@ def list_courses(conn, content_dir):
                 "progress": {k: progress[k] for k in ("done", "total", "pct")},
                 "nextLesson": progress["nextLesson"],
                 "reviewsDue": srs.reviews_due_count(conn, content_dir, child.name),
+                "passed": exams.course_passed(
+                    exams.exam_status(conn, child.name, manifest), manifest),
             })
         except (json.JSONDecodeError, KeyError, TypeError):
             continue  # skip malformed course
@@ -189,4 +191,10 @@ def apply_revision(content_dir, course_id, revised, *, now=None):
     # racing a concurrent lesson generation could clobber the just-written entry.
     with generation._gen_lock(("spine", course_id)):
         spine.prune(content_dir, course_id, seen)
+    # Pending exams for modules dropped by the revision are dead — remove them.
+    # (Not locked: a concurrent start_exam for a just-dropped module can at worst
+    # leave one stale file, which exam_status ignores and the next revision removes.)
+    from backend import exams
+    module_ids = {m.get("id") for m in revised.get("modules", [])}
+    exams.prune_pending(content_dir, course_id, module_ids | {"final"})
     return revised

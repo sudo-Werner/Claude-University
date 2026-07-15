@@ -269,3 +269,32 @@ def test_apply_revision_prunes_spine_entries_for_removed_lessons(tmp_path):
     out = courses.apply_revision(cdir, "c", revised, now="20260715T120000Z")
     assert out is not None
     assert set(spine.load_spine(cdir, "c")["lessons"]) == {"c-l1"}
+
+
+def test_apply_revision_prunes_dropped_module_exams(tmp_path):
+    from backend import courses
+    cdir = tmp_path
+    course = cdir / "c"
+    (course / "lessons").mkdir(parents=True)
+    (course / "course.json").write_text(json.dumps({"id": "c", "title": "Old",
+        "modules": [
+            {"id": "m1", "title": "M1", "lessons": [{"id": "c-l1", "title": "One"}]},
+            {"id": "m2", "title": "M2", "lessons": [{"id": "c-l3", "title": "Three"}]},
+        ]}))
+    exams_dir = course / "exams"
+    exams_dir.mkdir()
+    for key in ("m1", "m2", "final"):
+        (exams_dir / f"{key}.json").write_text(json.dumps({"questions": []}))
+    revised = _valid_compiled("c")  # keeps only module m1 → m2 is dropped
+    out = courses.apply_revision(cdir, "c", revised, now="20260715T120001Z")
+    assert out is not None
+    assert (exams_dir / "m1.json").exists()
+    assert (exams_dir / "final.json").exists()
+    assert not (exams_dir / "m2.json").exists()
+
+
+def test_list_courses_includes_passed_flag(conn, tmp_path):
+    from backend import courses
+    root = _make_course(tmp_path)
+    summaries = courses.list_courses(conn, root)
+    assert summaries and summaries[0]["passed"] is False

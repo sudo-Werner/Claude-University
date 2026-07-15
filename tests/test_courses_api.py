@@ -1,6 +1,6 @@
 import json
 
-from backend import app as app_module, claude_client, compiler, courses
+from backend import app as app_module, claude_client, compiler, courses, exams
 
 OBJ = {"text": "Calculate X", "bloom": "apply", "knowledge": "procedural"}
 COMPILED = {"schemaVersion": 2, "title": "Deep ML", "subtitle": "s", "brief": "b",
@@ -642,3 +642,110 @@ def test_explain_route_requires_explanation(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     resp = client.post("/api/courses/c1/lessons/c1-l1/explain", json={})
     assert resp.status_code == 400
+
+
+# ---- summative assessment: exam routes ----
+
+def _exam_generate_ok(slots):
+    def fake(prompt, *, validate=None, **kw):
+        qs = []
+        for s in slots:
+            q = {"type": s["type"], "lessonId": s["lessonId"], "prompt": "<p>Q?</p>"}
+            if s["type"] == "mcq":
+                q.update(choices=["a", "b", "c", "d"], answerIndex=0)
+            else:
+                q.update(modelAnswer="ref", graderNotes="notes")
+            qs.append(q)
+        obj = {"questions": qs}
+        assert validate is None or validate(obj)
+        return obj
+    return fake
+
+
+def test_start_exam_returns_stripped_questions(client, tmp_path, monkeypatch):
+    root = tmp_path / "content"
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest = courses.load_manifest(root, cid)
+    slots = exams.blueprint(manifest, "m1")
+    monkeypatch.setattr(claude_client, "run_structured", _exam_generate_ok(slots))
+    resp = client.post(f"/api/courses/{cid}/exams/m1")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["examKey"] == "m1" and len(body["questions"]) == 10
+    blob = resp.get_data(as_text=True)
+    assert "answerIndex" not in blob and "modelAnswer" not in blob and "graderNotes" not in blob
+    assert (root / cid / "exams" / "m1.json").exists()
+
+
+def test_start_exam_unknown_key_404(client, tmp_path, monkeypatch):
+    root = tmp_path / "content"
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    assert client.post(f"/api/courses/{cid}/exams/m99").status_code == 404
+    assert client.post("/api/courses/nope/exams/m1").status_code == 404
+
+
+def test_start_exam_maps_claude_errors(client, tmp_path, monkeypatch):
+    root = tmp_path / "content"
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+
+    def boom(prompt, **kw):
+        raise claude_client.ClaudeError("nope")
+
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 502
+
+
+def test_submit_exam_roundtrip(client, tmp_path, monkeypatch):
+    root = tmp_path / "content"
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest = courses.load_manifest(root, cid)
+    slots = exams.blueprint(manifest, "m1")
+    monkeypatch.setattr(claude_client, "run_structured", _exam_generate_ok(slots))
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 200
+
+    def fake_grade(prompt, *, validate=None, **kw):
+        import re
+        idxs = [int(m) for m in re.findall(r'"index": (\d+)', prompt)]
+        return {"grades": [{"index": i, "verdict": "correct", "note": "Good."} for i in idxs]}
+
+    monkeypatch.setattr(claude_client, "run_structured", fake_grade)
+    exam = exams.load_pending(root, cid, "m1")
+    answers = [0 if q["type"] == "mcq" else "ans" for q in exam["questions"]]
+    resp = client.post(f"/api/courses/{cid}/exams/m1/submit", json={"answers": answers})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["passed"] is True and body["attempt"] == 1
+    # consumed: a second submit finds nothing pending
+    assert client.post(f"/api/courses/{cid}/exams/m1/submit", json={"answers": answers}).status_code == 404
+
+
+def test_submit_exam_bad_answers_400(client, tmp_path, monkeypatch):
+    root = tmp_path / "content"
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest = courses.load_manifest(root, cid)
+    slots = exams.blueprint(manifest, "m1")
+    monkeypatch.setattr(claude_client, "run_structured", _exam_generate_ok(slots))
+    client.post(f"/api/courses/{cid}/exams/m1")
+    resp = client.post(f"/api/courses/{cid}/exams/m1/submit", json={"answers": ["wrong shape"]})
+    assert resp.status_code == 400
+    assert (root / cid / "exams" / "m1.json").exists()  # still pending
+
+
+def test_get_course_includes_exam_status(client, tmp_path, monkeypatch):
+    root = tmp_path / "content"
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    resp = client.get(f"/api/courses/{cid}")
+    body = resp.get_json()
+    assert body["exams"] == {} and body["coursePassed"] is False

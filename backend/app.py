@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
@@ -150,9 +150,11 @@ def create_app(db_path=None):
         conn = db.get_connection(path)
         try:
             m = mastery.lesson_mastery(conn, courses.CONTENT_DIR, course_id)
+            ex = exams.exam_status(conn, course_id, manifest)
         finally:
             conn.close()
-        return jsonify({**manifest, "mastery": m, "masteryCounts": mastery.mastery_counts(m)})
+        return jsonify({**manifest, "mastery": m, "masteryCounts": mastery.mastery_counts(m),
+                        "exams": ex, "coursePassed": exams.course_passed(ex, manifest)})
 
     @app.get("/api/courses/<course_id>/lessons/<lesson_id>")
     def get_lesson(course_id, lesson_id):
@@ -227,6 +229,60 @@ def create_app(db_path=None):
             return jsonify({"error": "could not read your explanation"}), 502
         if result is None:
             return jsonify({"error": "lesson not found"}), 404
+        return jsonify(result)
+
+    @app.post("/api/courses/<course_id>/exams/<exam_key>")
+    def start_exam(course_id, exam_key):
+        if not _ID_RE.match(course_id) or not (exam_key == "final" or _ID_RE.match(exam_key)):
+            return jsonify({"error": "exam not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        slots = exams.blueprint(manifest, exam_key)
+        if slots is None:
+            return jsonify({"error": "exam not found"}), 404
+        spine_lessons = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"]
+        prompt = exams.exam_prompt(manifest=manifest, exam_key=exam_key,
+                                   slots=slots, spine_lessons=spine_lessons)
+        try:
+            with generation._gen_lock(("exam", course_id, exam_key)):
+                obj = claude_client.run_structured(
+                    prompt, validate=lambda o: exams.valid_exam(o, slots))
+                exam = exams.finalize_exam(obj, slots, exam_key, course_id)
+                exams.save_pending(courses.CONTENT_DIR, course_id, exam)
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not prepare this exam"}), 502
+        return jsonify(exams.client_view(exam))
+
+    @app.post("/api/courses/<course_id>/exams/<exam_key>/submit")
+    def submit_exam_route(course_id, exam_key):
+        if not _ID_RE.match(course_id) or not (exam_key == "final" or _ID_RE.match(exam_key)):
+            return jsonify({"error": "exam not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        body = request.get_json(silent=True) or {}
+        answers = body.get("answers")
+        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        conn = db.get_connection(path)
+        try:
+            with generation._gen_lock(("exam", course_id, exam_key)):
+                result = exams.submit_exam(
+                    courses.CONTENT_DIR, conn, course_id, exam_key, answers,
+                    manifest=manifest, generate=generate,
+                )
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not grade this exam — your answers were not lost, try again"}), 502
+        finally:
+            conn.close()
+        if result is None:
+            return jsonify({"error": "no exam in progress — start it again"}), 404
         return jsonify(result)
 
     @app.post("/api/courses/<course_id>/lessons/<lesson_id>/deepen")
