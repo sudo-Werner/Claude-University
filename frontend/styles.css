@@ -399,6 +399,9 @@ textarea::placeholder{color:#b3a994}
 .check-feedback.ok{background:rgba(37,180,120,.12); color:#0f7a4f}
 .check-feedback.no{background:rgba(208,0,102,.10); color:#a0064e}
 
+.prequiz{margin-top:14px}
+.pq-lead{color:var(--text-dim); font-size:14px; margin:8px 0 12px}
+
 /* =================  CURRICULUM SCREEN  ================= */
 .curriculum{display:flex; flex-direction:column; gap:12px}
 .c-module{background:var(--glass-stat); backdrop-filter:blur(22px) saturate(1.5); -webkit-backdrop-filter:blur(22px) saturate(1.5);
