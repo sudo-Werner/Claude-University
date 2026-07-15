@@ -603,3 +603,26 @@ def test_apply_revision_persists_and_rejects_bad(tmp_path, monkeypatch):
 def test_apply_revision_404_for_illegal_id(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     assert client.post("/api/courses/Bad_Id!/apply-revision", json={}).status_code == 404
+
+
+# ---- #5 explain-it-back grading ----
+
+def test_explain_route_grades_explanation(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    import json as _json
+    d = tmp_path / "c1" / "lessons"
+    d.mkdir(parents=True)
+    (d / "c1-l1.json").write_text(_json.dumps({
+        "id": "c1-l1", "promptHtml": "<p>Body</p>", "solutionAns": "42", "solutionNote": "why",
+    }))
+    monkeypatch.setattr(claude_client, "run_structured",
+                        lambda prompt, validate=None: {"verdict": "correct", "note": "well put"})
+    resp = client.post("/api/courses/c1/lessons/c1-l1/explain", json={"explanation": "because 42"})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"verdict": "correct", "note": "well put"}
+
+
+def test_explain_route_requires_explanation(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    resp = client.post("/api/courses/c1/lessons/c1-l1/explain", json={})
+    assert resp.status_code == 400

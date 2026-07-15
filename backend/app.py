@@ -208,6 +208,27 @@ def create_app(db_path=None):
             return jsonify({"error": "lesson not found"}), 404
         return jsonify(result)
 
+    @app.post("/api/courses/<course_id>/lessons/<lesson_id>/explain")
+    def explain_lesson(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
+        body = request.get_json(silent=True) or {}
+        explanation = (body.get("explanation") or "").strip()
+        if not explanation:
+            return jsonify({"error": "explanation is required"}), 400
+        generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_grade)
+        try:
+            result = generation.explain_answer(
+                courses.CONTENT_DIR, course_id, lesson_id, explanation, generate=generate,
+            )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not read your explanation"}), 502
+        if result is None:
+            return jsonify({"error": "lesson not found"}), 404
+        return jsonify(result)
+
     @app.post("/api/courses/<course_id>/lessons/<lesson_id>/deepen")
     def deepen_lesson_route(course_id, lesson_id):
         if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):

@@ -1021,6 +1021,30 @@ def test_lesson_prompt_omits_block_without_objectives():
     assert "constructive alignment" not in p
 
 
+# ---- #5 explain-it-back grading ----
+
+def test_explain_answer_grades_and_sanitizes(tmp_path):
+    import json as _json
+    d = tmp_path / "c1" / "lessons"
+    d.mkdir(parents=True)
+    (d / "c1-l1.json").write_text(_json.dumps({
+        "id": "c1-l1", "promptHtml": "<p>Body</p>", "solutionAns": "42", "solutionNote": "why",
+    }))
+    captured = {}
+    def fake_generate(prompt):
+        captured["prompt"] = prompt
+        return {"verdict": "close", "note": "Nice <script>alert(1)</script> effort"}
+    result = generation.explain_answer(tmp_path, "c1", "c1-l1", "my own words", generate=fake_generate)
+    assert result["verdict"] == "close"
+    assert "<script>" not in result["note"]
+    assert "my own words" in captured["prompt"]
+    assert "42" in captured["prompt"]
+
+
+def test_explain_answer_none_for_missing_lesson(tmp_path):
+    assert generation.explain_answer(tmp_path, "c1", "c1-l9", "x", generate=lambda p: {}) is None
+
+
 # ---- corrupt-cache self-heal: ensure_lesson regenerates instead of hitting a dead end ----
 
 def test_ensure_lesson_regenerates_corrupt_cache(tmp_path):

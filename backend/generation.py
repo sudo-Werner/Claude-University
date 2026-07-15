@@ -358,6 +358,40 @@ def grade_answer(content_dir, course_id, lesson_id, answer, *, generate):
     return {"verdict": result["verdict"], "note": sanitize_html(result["note"])}
 
 
+def explain_prompt(*, prompt_html, solution_ans, solution_note, explanation):
+    return (
+        "You are a warm, honest tutor. The learner just finished a lesson and is explaining "
+        "the core idea back in their own words — the strongest form of retrieval practice. "
+        "Judge whether their explanation shows real understanding of the core idea. Judge "
+        "understanding, not wording, and do not demand completeness of detail.\n\n"
+        f"Lesson body (HTML): {prompt_html}\n"
+        f"Reference answer: {solution_ans}\n"
+        f"Why it is right: {solution_note}\n"
+        f"Learner's explanation: {explanation}\n\n"
+        "Decide whether the explanation is correct, close (right idea, a gap or error), or "
+        "incorrect. Reply with ONLY a JSON object, no prose, no fence:\n"
+        '{"verdict":"correct"|"close"|"incorrect","note":"<one or two encouraging sentences '
+        "addressed to 'you': what your explanation captured, then the single most important "
+        'idea it missed or got wrong>"}'
+    )
+
+
+def explain_answer(content_dir, course_id, lesson_id, explanation, *, generate):
+    lesson = courses.load_lesson(content_dir, course_id, lesson_id)
+    if lesson is None:
+        return None
+    prompt = explain_prompt(
+        prompt_html=lesson.get("promptHtml", ""),
+        solution_ans=lesson.get("solutionAns", ""),
+        solution_note=lesson.get("solutionNote", ""),
+        explanation=explanation,
+    )
+    result = generate(prompt)
+    if not isinstance(result, dict):
+        raise claude_client.ClaudeError("explain grader returned a non-dict result")
+    return {"verdict": result["verdict"], "note": sanitize_html(result["note"])}
+
+
 # ---- #1 real-world evidence capstone: how the concepts show up in the real world ----
 # The model supplies real-world example names + descriptions + a SOURCE NAME (not a URL);
 # the frontend turns each into a live web-search link. This avoids hallucinated/dead links
