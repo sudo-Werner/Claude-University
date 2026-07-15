@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { shellHTML } from "../src/views/shell.js";
 import { dashboardHTML } from "../src/views/dashboard.js";
-import { lessonHTML } from "../src/views/lesson.js";
+import { lessonHTML, ratingLocked, suggestedQuality } from "../src/views/lesson.js";
 import { diagnosticHTML } from "../src/views/diagnostic.js";
 import { curriculumHTML, lessonStatus, moduleProgress, recommendedStep } from "../src/views/curriculum.js";
 import { capstoneHTML } from "../src/views/capstone.js";
@@ -248,6 +248,82 @@ test("lesson renders the checks section once the solution is revealed", () => {
 
   const notYet = lessonHTML(withChecks, { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} });
   assert.doesNotMatch(notYet, /Check your understanding/);
+});
+
+const TWO_CHECKS_LESSON = {
+  ...SAMPLE_LESSON,
+  checks: [
+    { type: "fill", prompt: "2+2?", answer: "4", explanation: "because" },
+    { type: "fill", prompt: "3+3?", answer: "6", explanation: "because" },
+  ],
+};
+
+test("ratingLocked is false outside review mode", () => {
+  assert.equal(ratingLocked(TWO_CHECKS_LESSON, { isReview: false, checkResults: {} }), false);
+  assert.equal(ratingLocked(TWO_CHECKS_LESSON, { checkResults: {} }), false);
+});
+
+test("ratingLocked is false in review mode when the lesson has no checks", () => {
+  assert.equal(ratingLocked(SAMPLE_LESSON, { isReview: true, checkResults: {} }), false);
+});
+
+test("ratingLocked is true in review mode with checks partially answered", () => {
+  const state = { isReview: true, checkResults: { 0: { correct: true } } };
+  assert.equal(ratingLocked(TWO_CHECKS_LESSON, state), true);
+});
+
+test("ratingLocked is false in review mode once all checks are answered", () => {
+  const state = { isReview: true, checkResults: { 0: { correct: true }, 1: { correct: false } } };
+  assert.equal(ratingLocked(TWO_CHECKS_LESSON, state), false);
+});
+
+test("suggestedQuality is null outside review mode", () => {
+  assert.equal(suggestedQuality(TWO_CHECKS_LESSON, { isReview: false, checkResults: { 0: { correct: true } } }), null);
+});
+
+test("suggestedQuality is null in review mode before any check is answered", () => {
+  assert.equal(suggestedQuality(TWO_CHECKS_LESSON, { isReview: true, checkResults: {} }), null);
+});
+
+test("suggestedQuality is again when any answered check is wrong", () => {
+  const state = { isReview: true, checkResults: { 0: { correct: true }, 1: { correct: false } } };
+  assert.equal(suggestedQuality(TWO_CHECKS_LESSON, state), "again");
+});
+
+test("suggestedQuality is good when all answered checks are correct", () => {
+  const state = { isReview: true, checkResults: { 0: { correct: true }, 1: { correct: true } } };
+  assert.equal(suggestedQuality(TWO_CHECKS_LESSON, state), "good");
+});
+
+test("lessonHTML locks the rating in review mode until checks are answered", () => {
+  const locked = lessonHTML(TWO_CHECKS_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true, isReview: true,
+    checkAnswers: {}, checkResults: { 0: { correct: true } },
+  });
+  assert.match(locked, /Answer the checks above to rate your recall/);
+  const disabledButtons = (locked.match(/class="rate-btn[^"]*" data-quality="[^"]+" disabled/g) || []).length;
+  assert.equal(disabledButtons, 4);
+});
+
+test("lessonHTML unlocks the rating and suggests a quality once all checks are answered", () => {
+  const unlocked = lessonHTML(TWO_CHECKS_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true, isReview: true,
+    checkAnswers: {}, checkResults: { 0: { correct: true }, 1: { correct: false } },
+  });
+  assert.doesNotMatch(unlocked, /Answer the checks above to rate your recall/);
+  assert.doesNotMatch(unlocked, /data-quality="[^"]+" disabled/);
+  assert.match(unlocked, /class="rate-btn suggested" data-quality="again"/);
+});
+
+test("lessonHTML outside review mode is unaffected by the rating gate", () => {
+  const nonReview = lessonHTML(TWO_CHECKS_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true,
+    checkAnswers: {}, checkResults: {},
+  });
+  assert.doesNotMatch(nonReview, /Answer the checks above to rate your recall/);
+  assert.doesNotMatch(nonReview, /data-quality="[^"]+" disabled/);
+  assert.doesNotMatch(nonReview, /rate-btn suggested/);
+  assert.match(nonReview, /How well did you recall this\?/);
 });
 
 test("dashboard shows a mastery breakdown when there is mastery data", () => {

@@ -385,6 +385,8 @@ textarea::placeholder{color:#b3a994}
   background:var(--glass-field); color:var(--text); font:600 14px/1 inherit; cursor:pointer; transition:all .15s}
 .rate-btn:hover{background:rgba(255,255,255,.7)}
 .rate-btn:active{transform:translateY(1px)}
+.rate-btn.suggested{border-color:var(--accent, #7a5c3e); font-weight:700}
+.rate-btn:disabled{opacity:.5; cursor:default}
 
 /* =================  CONCEPT CHECKS  ================= */
 .checks{display:flex; flex-direction:column; gap:14px; margin-top:4px}

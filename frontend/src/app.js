@@ -9,7 +9,7 @@ import { loadStats, loadActivity } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
-import { lessonHTML } from "./views/lesson.js";
+import { lessonHTML, ratingLocked } from "./views/lesson.js";
 import { curriculumHTML } from "./views/curriculum.js";
 import { capstoneHTML } from "./views/capstone.js";
 import { libraryHTML } from "./views/library.js";
@@ -533,7 +533,7 @@ export async function init({ window, fetch }) {
   }
 
   // ---- lesson ----
-  async function openLesson(lessonId) {
+  async function openLesson(lessonId, opts = {}) {
     if (!lessonId) return;
     ui.reviewQueue = [];
     ui.loadSeq = (ui.loadSeq || 0) + 1;
@@ -545,7 +545,7 @@ export async function init({ window, fetch }) {
     if (ui.screen !== "lesson-loading" || ui.loadSeq !== seq) return; // navigated away mid-load
     ui.lesson = lesson;
     if (lessonFailed(ui.lesson)) { showLessonError(ui.lesson && ui.lesson.error || "Couldn't load this lesson."); return; }
-    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
+    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, isReview: !!opts.review };
     const completed = !!(ui.manifest && ui.manifest.mastery && ui.manifest.mastery[lessonId]);
     ui.lessonState.stage = ui.lesson.preQuiz && !completed ? "prequiz" : "main";
     log("lesson_view", { courseId: ui.courseId, topicId: lessonId });
@@ -762,6 +762,7 @@ export async function init({ window, fetch }) {
     view.querySelectorAll('[data-quality]').forEach((btn) => {
       btn.addEventListener("click", async () => {
         if (ui.lessonState.rated) return;
+        if (ratingLocked(ui.lesson, ui.lessonState)) return;
         ui.lessonState.rated = true;
         const quality = btn.getAttribute("data-quality");
         log("lesson_reviewed", { courseId: ui.courseId, topicId: ui.lesson.id, payload: { quality } });
@@ -872,7 +873,7 @@ export async function init({ window, fetch }) {
       if (ui.screen !== "lesson") return; // navigated away while loading the next review
       ui.lesson = lesson;
       if (lessonFailed(ui.lesson)) { await refreshSummary(); if (ui.screen !== "lesson") return; showCourse(); return; }
-      ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main" };
+      ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main", isReview: true };
       log("lesson_view", { courseId: ui.courseId, topicId: nextId });
       showLesson();
       return;
@@ -895,7 +896,7 @@ export async function init({ window, fetch }) {
     if (ui.screen !== "review-loading" || ui.loadSeq !== seq) return; // navigated away
     ui.lesson = lesson;
     if (lessonFailed(ui.lesson)) { showCourse(); return; }
-    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main" };
+    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main", isReview: true };
     log("lesson_view", { courseId: ui.courseId, topicId: due[0] });
     if (!ui.timer.running) startTimer();
     showLesson();

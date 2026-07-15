@@ -121,6 +121,25 @@ function workspaceHTML(ws) {
   return `<section class="card workspace">${head}${tabs}${body}</section>`;
 }
 
+// Review mode gates the recall rating behind an actual retrieval attempt: the
+// lesson's checks must be re-answered first (testing effect — re-reading alone
+// systematically inflates self-rated recall).
+export function ratingLocked(lesson, state) {
+  if (!state.isReview) return false;
+  const checks = (lesson.checks || []).length;
+  if (!checks) return false;
+  const answered = Object.keys(state.checkResults || {}).length;
+  return answered < checks;
+}
+
+export function suggestedQuality(lesson, state) {
+  if (!state.isReview) return null;
+  const results = state.checkResults || {};
+  const keys = Object.keys(results);
+  if (!keys.length) return null;
+  return keys.some((k) => results[k] && !results[k].correct) ? "again" : "good";
+}
+
 export function lessonHTML(lesson, state, nav = {}) {
   const segs = Array.from({ length: lesson.totalSteps }, (_, i) => {
     if (i + 1 < lesson.step) return '<i class="done"></i>';
@@ -156,6 +175,12 @@ export function lessonHTML(lesson, state, nav = {}) {
   const solutionPanel = state.solutionRevealed
     ? `<div class="solution"><div class="lbl">SOLUTION</div><div class="ans">${lesson.solutionAns}</div><div class="note">${lesson.solutionNote}</div></div>`
     : "";
+
+  const locked = state.solutionRevealed && ratingLocked(lesson, state);
+  const suggested = state.solutionRevealed && !locked ? suggestedQuality(lesson, state) : null;
+  const rateQ = locked ? "Answer the checks above to rate your recall" : "How well did you recall this?";
+  const rateBtn = (quality, label) =>
+    `<button class="rate-btn${suggested === quality ? " suggested" : ""}" data-quality="${quality}"${locked ? " disabled" : ""}>${label}</button>`;
 
   return `
     <div class="lesson-col">
@@ -195,11 +220,11 @@ export function lessonHTML(lesson, state, nav = {}) {
       ${
         state.solutionRevealed
           ? `<div class="rate" role="group" aria-label="Rate recall">
-               <span class="rate-q">How well did you recall this?</span>
-               <button class="rate-btn" data-quality="again">Again</button>
-               <button class="rate-btn" data-quality="hard">Hard</button>
-               <button class="rate-btn" data-quality="good">Good</button>
-               <button class="rate-btn" data-quality="easy">Easy</button>
+               <span class="rate-q">${rateQ}</span>
+               ${rateBtn("again", "Again")}
+               ${rateBtn("hard", "Hard")}
+               ${rateBtn("good", "Good")}
+               ${rateBtn("easy", "Easy")}
              </div>`
           : `<span class="nav-hint">Reveal the solution to finish</span>`
       }
