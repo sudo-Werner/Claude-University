@@ -4,7 +4,7 @@ import re as _re
 import threading
 from pathlib import Path
 
-from backend import claude_client, courses, fsutil
+from backend import claude_client, courses, fsutil, spine
 
 # Single-flight: expensive generations (a lesson is ~110s of Max-plan web search) must
 # never run twice concurrently for the same artifact. The second caller blocks on the
@@ -216,11 +216,60 @@ def valid_lesson(obj):
         return False
     if not valid_check(obj.get("preQuiz")):
         return False
+    if not spine.valid_spine_entry(obj.get("spine")):
+        return False
     return all(valid_check(c) for c in checks)
 
 
+SPINE_RECENT = 8
+
+
+def spine_block(earlier, spine_lessons):
+    """Render the 'already covered' prompt block for a lesson at position N.
+
+    earlier: flatten_lessons entries for syllabus positions 1..N-1, in order.
+    spine_lessons: the course spine's "lessons" map. The most recent SPINE_RECENT
+    lessons get full term definitions; older ones contribute summary + term names
+    (bounds prompt growth on long courses). A lesson with no spine entry yet (never
+    generated) falls back to its syllabus objectives, marked as planned-only.
+    """
+    if not earlier:
+        return ""
+    cutoff = max(0, len(earlier) - SPINE_RECENT)
+    lines = []
+    for i, meta in enumerate(earlier):
+        title = meta.get("title", "")
+        entry = spine_lessons.get(meta["id"])
+        if isinstance(entry, dict):
+            concepts = [c for c in entry.get("concepts", []) if isinstance(c, dict)]
+            if i >= cutoff:
+                taught = "; ".join(
+                    f"{c.get('term', '')} = {c.get('definition', '')}" for c in concepts)
+            else:
+                terms = ", ".join(c.get("term", "") for c in concepts)
+                taught = f"{entry.get('summary', '')} (terms: {terms})"
+            lines.append(f'- "{title}" taught: {taught}')
+        else:
+            objs = "; ".join(
+                o.get("text", "") for o in meta.get("objectives", [])
+                if isinstance(o, dict) and o.get("text"))
+            lines.append(
+                f'- "{title}" (planned, not yet studied — assume familiarity at '
+                f"objective level only): {objs or 'no stated objectives'}")
+    return (
+        "\n\nThe learner has ALREADY covered these earlier lessons of this course, "
+        "in order:\n" + "\n".join(lines) + "\n"
+        "Build directly on that material and do NOT re-teach it — a one-clause "
+        "reminder is fine, a re-explanation is not. Reuse the EXACT terms listed "
+        "above; never switch to a synonym for a concept an earlier lesson already "
+        "named. Where it genuinely helps (at most twice), reference an earlier "
+        'lesson by its quoted title, e.g. As you saw in "<lesson title>", ... '
+        "Never refer to lessons by number.\n"
+    )
+
+
 def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, position, total,
-                  performance="", directive="", objectives=None):
+                  performance="", directive="", objectives=None, spine_context=""):
     perf_line = f"Learner performance so far: {performance}\n" if performance else ""
     directive_line = f"\n{directive}\n" if directive else ""
     obj_block = ""
@@ -263,6 +312,11 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "require a term, label, or fact that only this lesson introduces. Make mcq "
         "distractors plausible. Its explanation is shown immediately after the attempt as a "
         "one-sentence preview of the key insight.\n"
+        '  spine: {"summary":"<one plain-text sentence stating what this lesson taught>",'
+        '"concepts":[{"term":"<term name>","definition":"<one plain-text sentence>"}]} '
+        "with 1-4 concepts. This indexes the lesson so FUTURE lessons can build on it: "
+        "name only the concepts THIS lesson introduces, use the EXACT term spelling from "
+        "your lesson body, and use NO HTML in any spine field.\n"
         "Shape every learner-facing field to the learner preferences above.\n\n"
         # Slice A: evidence-backed readability/engagement guidance (conversational tone,
         # chunking/scannability, worked examples, warm feedback) applied to every lesson.
@@ -310,7 +364,7 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "established textbooks), and base your explanation on what you find. In the `sources` field, "
         "list ONLY the specific sources you actually drew on, each with its exact real URL from your "
         "search — never invent or guess a URL. If a claim is contested, prefer the primary source."
-        + obj_block + directive_line
+        + spine_context + obj_block + directive_line
     )
 
 
@@ -862,6 +916,7 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
             break
     if meta is None:
         return None
+    spine_data = spine.load_spine(content_dir, course_id)
     prompt = lesson_prompt(
         brief=manifest.get("brief", ""),
         profile=profile,
@@ -873,6 +928,7 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
         performance=performance,
         directive=directive,
         objectives=meta.get("objectives"),
+        spine_context=spine_block(flat[:position - 1], spine_data["lessons"]),
     )
     result = generate(prompt)
     # Phase 2: a sourced generator returns (lesson, captured_web_sources); a plain one
@@ -914,8 +970,15 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
             pq["choices"] = [sanitize_html(c) if isinstance(c, str) else c for c in pq["choices"]]
     if not valid_lesson(lesson):
         raise claude_client.ClaudeError("generated lesson failed validation")
+    # The spine entry is generation-side state, not lesson content: pop it before
+    # caching so lesson files keep their existing shape, then record it for future
+    # lessons. The per-course lock serializes concurrent read-modify-writes of
+    # spine.json (the per-lesson lock alone does not).
+    spine_entry = lesson.pop("spine")
     path = Path(content_dir) / course_id / "lessons" / f"{lesson_id}.json"
     fsutil.write_text_atomic(path, json.dumps(lesson, indent=2, ensure_ascii=False))
+    with _gen_lock(("spine", course_id)):
+        spine.upsert_entry(content_dir, course_id, lesson_id, spine_entry)
     return lesson
 
 
