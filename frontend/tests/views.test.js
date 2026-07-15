@@ -561,3 +561,17 @@ test("dashboard streak uses singular day and a nudge at zero", () => {
   const zero = dashboardHTML({ ...DASHBOARD_SEED, streakDays: 0 }, idleTimer);
   assert.match(zero, /Study today to start one/);
 });
+
+test("lessonHTML renders the pre-quiz stage instead of the exercise", () => {
+  const lesson = { ...SAMPLE_LESSON, preQuiz: { type: "mcq", prompt: "Guess?", choices: ["A", "B"], answer: 0, explanation: "A." } };
+  const html = lessonHTML(lesson, { stage: "prequiz", answer: "", hintVisible: false, solutionRevealed: false }, {});
+  assert.match(html, /BEFORE YOU START/);
+  assert.doesNotMatch(html, /data-field="answer"/);
+  assert.doesNotMatch(html, /reveal-solution/);
+});
+
+test("lessonHTML renders the exercise when stage is main or unset", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false }, {});
+  assert.match(html, /data-field="answer"/);
+  assert.doesNotMatch(html, /BEFORE YOU START/);
+});

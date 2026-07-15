@@ -380,6 +380,8 @@ export async function init({ window, fetch }) {
     ui.lesson = lesson;
     if (lessonFailed(ui.lesson)) { showLessonError(ui.lesson && ui.lesson.error || "Couldn't load this lesson."); return; }
     ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
+    const completed = !!(ui.manifest && ui.manifest.mastery && ui.manifest.mastery[lessonId]);
+    ui.lessonState.stage = ui.lesson.preQuiz && !completed ? "prequiz" : "main";
     log("lesson_view", { courseId: ui.courseId, topicId: lessonId });
     if (!ui.timer.running) startTimer();
     showLesson();
@@ -411,7 +413,7 @@ export async function init({ window, fetch }) {
       return;
     }
     ui.lesson = deeper;
-    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
+    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main" };
     log("lesson_view", { courseId: ui.courseId, topicId: lessonId });
     showLesson();
   }
@@ -507,6 +509,13 @@ export async function init({ window, fetch }) {
     const view = root.querySelector("#view");
     const nav = { hasPrev: !!adjacentLesson(-1), hasNext: !!adjacentLesson(1) };
     view.innerHTML = lessonHTML(ui.lesson, ui.lessonState, nav);
+    const curBtn = view.querySelector('[data-action="curriculum"]');
+    if (curBtn) curBtn.addEventListener("click", showCurriculum);
+    const prevBtn = view.querySelector('[data-action="prev-lesson"]');
+    if (prevBtn) prevBtn.addEventListener("click", () => { const a = adjacentLesson(-1); if (a) openLesson(a.id); });
+    const nextBtn = view.querySelector('[data-action="next-lesson"]');
+    if (nextBtn) nextBtn.addEventListener("click", () => { const a = adjacentLesson(1); if (a) openLesson(a.id); });
+    if (ui.lessonState.stage === "prequiz") { bindPreQuiz(view); return; }
     const ta = view.querySelector('[data-field="answer"]');
     ta.addEventListener("input", () => {
       ui.lessonState.answer = ta.value;
@@ -576,13 +585,33 @@ export async function init({ window, fetch }) {
     });
     const deepenBtn = view.querySelector('[data-action="deepen-lesson"]');
     if (deepenBtn) deepenBtn.addEventListener("click", deepenCurrentLesson);
-    const curBtn = view.querySelector('[data-action="curriculum"]');
-    if (curBtn) curBtn.addEventListener("click", showCurriculum);
-    const prevBtn = view.querySelector('[data-action="prev-lesson"]');
-    if (prevBtn) prevBtn.addEventListener("click", () => { const a = adjacentLesson(-1); if (a) openLesson(a.id); });
-    const nextBtn = view.querySelector('[data-action="next-lesson"]');
-    if (nextBtn) nextBtn.addEventListener("click", () => { const a = adjacentLesson(1); if (a) openLesson(a.id); });
     bindWorkspace(view);
+  }
+
+  function answerPreQuiz(answer) {
+    if (ui.lessonState.preQuiz && ui.lessonState.preQuiz.result) return; // already attempted
+    const result = gradeCheck(ui.lesson.preQuiz, answer);
+    ui.lessonState.preQuiz = { answer, result };
+    log("prequiz_attempt", {
+      courseId: ui.courseId, topicId: ui.lesson.id,
+      payload: { correct: result.correct, type: ui.lesson.preQuiz.type },
+    });
+    paintLesson();
+  }
+
+  function bindPreQuiz(view) {
+    view.querySelectorAll("[data-pq-choice]").forEach((btn) => {
+      btn.addEventListener("click", () => answerPreQuiz(Number(btn.getAttribute("data-pq-choice"))));
+    });
+    const submit = view.querySelector('[data-action="pq-submit"]');
+    if (submit) submit.addEventListener("click", () => {
+      const inp = view.querySelector("[data-pq-input]");
+      const val = inp ? inp.value.trim() : "";
+      if (!val) return;
+      answerPreQuiz(val);
+    });
+    const cont = view.querySelector('[data-action="pq-continue"]');
+    if (cont) cont.addEventListener("click", () => { ui.lessonState.stage = "main"; paintLesson(); });
   }
 
   // The chat thread is a fixed-height scroll area that rebuilds on every repaint, so it
@@ -639,7 +668,7 @@ export async function init({ window, fetch }) {
       if (ui.screen !== "lesson") return; // navigated away while loading the next review
       ui.lesson = lesson;
       if (lessonFailed(ui.lesson)) { await refreshSummary(); if (ui.screen !== "lesson") return; showCourse(); return; }
-      ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
+      ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main" };
       log("lesson_view", { courseId: ui.courseId, topicId: nextId });
       showLesson();
       return;
@@ -662,7 +691,7 @@ export async function init({ window, fetch }) {
     if (ui.screen !== "review-loading" || ui.loadSeq !== seq) return; // navigated away
     ui.lesson = lesson;
     if (lessonFailed(ui.lesson)) { showCourse(); return; }
-    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
+    ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main" };
     log("lesson_view", { courseId: ui.courseId, topicId: due[0] });
     if (!ui.timer.running) startTimer();
     showLesson();

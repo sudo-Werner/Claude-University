@@ -1,5 +1,6 @@
 import { solutionState } from "../reveal.js";
 import { checksHTML } from "./checks.js";
+import { preQuizHTML } from "./prequiz.js";
 import { esc } from "../escape.js";
 
 const BULB = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0012 3z" stroke="#e0892f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -95,6 +96,27 @@ export function lessonHTML(lesson, state, nav = {}) {
     if (i + 1 === lesson.step) return '<i class="now"></i>';
     return "<i></i>";
   }).join("");
+
+  if (state.stage === "prequiz" && lesson.preQuiz) {
+    return `
+    <div class="lesson-col">
+    <div class="lesson-head">
+    <div>
+      <div class="steps">${segs}</div>
+      <div class="steprow"><span>Step ${lesson.step} of ${lesson.totalSteps} · <b>Warm-up</b></span><span class="right">${lesson.topic}</span></div>
+    </div>
+      <div class="player-nav">
+        <button class="pn-btn pn-curric" data-action="curriculum">${LIST}<span>Curriculum</span></button>
+        <div class="pn-move">
+          <button class="pn-btn" data-action="prev-lesson" aria-label="Previous lesson"${nav.hasPrev ? "" : " disabled"}>‹</button>
+          <button class="pn-btn" data-action="next-lesson" aria-label="Next lesson"${nav.hasNext ? "" : " disabled"}>›</button>
+        </div>
+      </div>
+    </div>
+    ${preQuizHTML(lesson.preQuiz, state)}
+    </div>
+  `;
+  }
 
   const sol = solutionState({ answer: state.answer, revealed: state.solutionRevealed });
   const hint = state.hintVisible
