@@ -79,7 +79,12 @@ def recent_activity(conn, content_dir, limit=50):
                 content_dir, r["course_id"], cache)
             if course_title is None:
                 continue  # course was deleted — stale history is noise in the log
-        payload = json.loads(r["payload"]) if r["payload"] else {}
+        try:
+            payload = json.loads(r["payload"]) if r["payload"] else {}
+        except ValueError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
         entry = {
             "occurredAt": r["occurred_at"],
             "type": r["event_type"],

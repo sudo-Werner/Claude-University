@@ -445,9 +445,13 @@ def exam_status(conn, course_id, manifest):
             payload = json.loads(row["payload"]) if row["payload"] else {}
         except ValueError:
             continue
+        if not isinstance(payload, dict):
+            continue
         entry = status.setdefault(key, {"attempts": 0, "bestScore": 0.0, "passed": False})
         entry["attempts"] += 1
-        entry["bestScore"] = max(entry["bestScore"], float(payload.get("score") or 0.0))
+        score = payload.get("score")
+        if isinstance(score, (int, float)) and not isinstance(score, bool):
+            entry["bestScore"] = max(entry["bestScore"], float(score))
         entry["passed"] = entry["passed"] or bool(payload.get("passed"))
     return status
 

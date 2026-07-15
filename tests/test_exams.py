@@ -1,6 +1,6 @@
 import json
 
-from backend import exams
+from backend import events, exams
 
 
 def _manifest():
@@ -339,6 +339,26 @@ def test_status_ignores_dropped_module_keys(conn):
     exams.record_result(conn, "c1", "m99", {"score": 1.0, "passed": True, "perQuestion": [], "weakSpots": []})
     status = exams.exam_status(conn, "c1", manifest)
     assert "m99" not in status
+
+
+def test_status_tolerates_non_dict_payload_and_non_numeric_score(conn):
+    manifest = _manifest()
+    events.insert_events(conn, [
+        {  # forged non-dict payload — event skipped entirely
+            "client_event_id": "bad1", "session_id": "s1", "event_type": "exam_result",
+            "occurred_at": "2026-07-15T09:00:00+00:00", "course_id": "c1", "topic_id": "m1",
+            "payload": ["not", "a", "dict"],
+        },
+        {  # dict payload but non-numeric score — attempt counts, score ignored
+            "client_event_id": "bad2", "session_id": "s1", "event_type": "exam_result",
+            "occurred_at": "2026-07-15T09:05:00+00:00", "course_id": "c1", "topic_id": "m1",
+            "payload": {"score": "high", "passed": True},
+        },
+    ])
+    status = exams.exam_status(conn, "c1", manifest)  # must not raise
+    assert status["m1"]["attempts"] == 1  # only the dict-payload row counted
+    assert status["m1"]["bestScore"] == 0.0  # non-numeric score ignored
+    assert status["m1"]["passed"] is True
 
 
 def test_submit_exam_full_cycle(tmp_path, conn):

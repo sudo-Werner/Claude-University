@@ -121,3 +121,38 @@ def test_final_weak_spots_also_count(conn, tmp_path):
     root = _fixture(tmp_path)
     _exam_fail(conn, "final", ["demo-l2"], "2026-07-14T10:00:00+00:00")
     assert srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15)) == ["demo-l2"]
+
+
+def test_reviews_by_lesson_tolerates_forged_list_payload_and_bad_date(conn, tmp_path):
+    root = _fixture(tmp_path)
+    events.insert_events(conn, [{
+        "client_event_id": "forged1", "session_id": "s1", "event_type": "lesson_reviewed",
+        "occurred_at": "yesterday", "course_id": "demo", "topic_id": "demo-l1",
+        "payload": ["bad", "shape"],
+    }])
+    due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15))  # must not raise
+    assert due == []  # forged row skipped (unparseable occurred_at)
+
+
+def test_review_earlier_then_fail_later_same_day_is_due(conn, tmp_path):
+    root = _fixture(tmp_path)
+    events.insert_events(conn, [{
+        "client_event_id": "r1", "session_id": "s1", "event_type": "lesson_reviewed",
+        "occurred_at": "2026-07-15T08:00:00+00:00", "course_id": "demo",
+        "topic_id": "demo-l1", "payload": {"quality": "good"},
+    }])
+    _exam_fail(conn, "m1", ["demo-l1"], "2026-07-15T10:00:00+00:00")
+    due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15))
+    assert "demo-l1" in due
+
+
+def test_fail_then_review_same_day_not_due(conn, tmp_path):
+    root = _fixture(tmp_path)
+    _exam_fail(conn, "m1", ["demo-l1"], "2026-07-15T08:00:00+00:00")
+    events.insert_events(conn, [{
+        "client_event_id": "r2", "session_id": "s1", "event_type": "lesson_reviewed",
+        "occurred_at": "2026-07-15T10:00:00+00:00", "course_id": "demo",
+        "topic_id": "demo-l1", "payload": {"quality": "good"},
+    }])
+    due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15))
+    assert "demo-l1" not in due

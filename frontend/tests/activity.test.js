@@ -55,3 +55,14 @@ test("activity renders exam and gap-review entries", () => {
   assert.ok(html.includes("Sorting exam") && html.includes("85% — passed"));
   assert.ok(html.includes("Reviewed gaps") && html.includes("Final exam"));
 });
+
+test("activity escapes examLabel and courseTitle on exam entries", () => {
+  const html = activityHTML([
+    { occurredAt: "2026-07-15T09:00:00+00:00", type: "exam_result", courseTitle: "<b>x</b>",
+      examLabel: "<img src=x> exam", score: 0.5, passed: false },
+    { occurredAt: "2026-07-15T09:05:00+00:00", type: "remediation_started", courseTitle: "<b>x</b>",
+      examLabel: "<img src=x> exam" },
+  ], { now: new Date("2026-07-15T12:00:00+00:00") });
+  assert.doesNotMatch(html, /<img src=x>/);
+  assert.doesNotMatch(html, /<b>x<\/b>/);
+});

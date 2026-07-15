@@ -309,13 +309,16 @@ def create_app(db_path=None):
         manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
         if manifest is None:
             return jsonify({"error": "course not found"}), 404
+        if exam_key != "final" and not any(
+                m.get("id") == exam_key for m in manifest.get("modules", [])):
+            return jsonify({"error": "exam not found"}), 404
         conn = db.get_connection(path)
         try:
             failed = remediation.latest_failed_result(conn, course_id, exam_key)
         finally:
             conn.close()
         if failed is None:
-            return jsonify({"error": "nothing to review — the latest attempt passed"}), 404
+            return jsonify({"error": "nothing to review — no failed attempt on record for this exam"}), 404
         spine_lessons = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"]
         generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
         try:

@@ -104,9 +104,9 @@ def performance_summary(conn, content_dir, course_id):
         return ""
     counts = mastery_counts(mastery_map)
     pool = _accuracy_pool(conn, course_id)
-    correct = sum(p for p, _ in pool.values())
+    points = sum(p for p, _ in pool.values())
     total = sum(t for _, t in pool.values())
-    acc = (correct / total) if total else None
+    acc = (points / total) if total else None
     n = len(mastery_map)
     proficient_plus = counts["proficient"] + counts["mastered"]
     if (acc is not None and acc < 0.6) or counts["attempted"] >= 2:

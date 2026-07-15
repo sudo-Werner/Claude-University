@@ -161,6 +161,16 @@ def test_exam_and_prequiz_and_remediation_count_toward_streak(conn):
     assert stats.streak_days(conn, today=TODAY) == 3
 
 
+def test_activity_tolerates_forged_string_payload(conn, tmp_path):
+    content = _write_course(tmp_path)
+    ev = _ev(1, "lesson_view", "2026-07-15T09:00:00+00:00")
+    ev["payload"] = "not-a-dict"
+    events.insert_events(conn, [ev])
+    out = stats.recent_activity(conn, content, limit=10)  # must not raise
+    assert len(out) == 1
+    assert out[0]["quality"] is None
+
+
 def test_activity_labels_exam_results(conn, tmp_path):
     root = tmp_path / "courses"
     (root / "c1").mkdir(parents=True)
