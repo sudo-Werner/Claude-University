@@ -575,3 +575,23 @@ test("lessonHTML renders the exercise when stage is main or unset", () => {
   assert.match(html, /data-field="answer"/);
   assert.doesNotMatch(html, /BEFORE YOU START/);
 });
+
+test("lessonHTML shows the explain-it-back card only after the solution", () => {
+  const hidden = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false }, {});
+  assert.doesNotMatch(hidden, /Explain it back/);
+  const shown = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: true }, {});
+  assert.match(shown, /Explain it back/);
+  assert.match(shown, /data-field="explain"/);
+  assert.match(shown, /data-action="explain-grade"/);
+});
+
+test("explain card escapes the learner's text and shows the graded note raw", () => {
+  const html = lessonHTML(SAMPLE_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true,
+    explain: { text: "<b>me</b>", grade: { verdict: "close", note: "Good <em>start</em>" } },
+  }, {});
+  assert.doesNotMatch(html, /<b>me<\/b>/);
+  assert.match(html, /&lt;b&gt;me&lt;\/b&gt;/);
+  assert.match(html, /Good <em>start<\/em>/);
+  assert.match(html, /Almost there/);
+});

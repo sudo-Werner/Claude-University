@@ -222,6 +222,9 @@ textarea::placeholder{color:#b3a994}
 .grade-spin{width:14px; height:14px; border-radius:50%; border:2px solid rgba(124,106,255,.3); border-top-color:var(--purple); animation:grade-spin .7s linear infinite; flex:none}
 @keyframes grade-spin{to{transform:rotate(360deg)}}
 
+.explain{margin-top:14px}
+.explain textarea{width:100%; min-height:64px; margin:4px 0 10px}
+
 /* lesson nav */
 .nav{display:flex; gap:10px; align-items:center}
 .nav .btn-primary{flex:1; width:auto; padding:15px 20px}

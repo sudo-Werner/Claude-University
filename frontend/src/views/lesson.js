@@ -35,6 +35,30 @@ function gradeBlock(state) {
     </div>`;
 }
 
+// Explain-it-back (skippable): the learner restates the core idea in their own
+// words after the solution; Claude grades understanding via the /explain route.
+function explainHTML(state) {
+  const ex = state.explain || {};
+  const g = ex.grade;
+  let result = "";
+  if (ex.grading) {
+    result = `<div class="grade grade-loading" aria-live="polite"><span class="grade-spin"></span><span>Reading your explanation…</span></div>`;
+  } else if (g && g.error) {
+    result = `<div class="grade grade-soft">${esc(g.error)}</div>`;
+  } else if (g) {
+    const v = GRADE_LABEL[g.verdict] ? g.verdict : "close";
+    result = `<div class="grade grade-${v}" aria-live="polite"><div class="grade-verdict">${GRADE_LABEL[v]}</div><div class="grade-note">${g.note || ""}</div></div>`;
+  }
+  const canSend = (ex.text || "").trim() && !ex.grading;
+  return (
+    `<section class="card explain"><div class="checks-title">Explain it back</div>` +
+    `<div class="pq-lead">In your own words, what is the core idea of this lesson? Optional — but saying it yourself is the strongest test.</div>` +
+    `<textarea data-field="explain" placeholder="The core idea is…">${esc(ex.text || "")}</textarea>` +
+    `<button class="btn-secondary" data-action="explain-grade"${canSend ? "" : " disabled"}>${g && !g.error ? "Get feedback again" : "Get feedback"}</button>` +
+    `${result}</section>`
+  );
+}
+
 // Phase 2 — the accredited sources this lesson was grounded in (real, web-retrieved).
 const SRC_TYPE_LABEL = {
   university: "University", "peer-reviewed": "Peer-reviewed", textbook: "Textbook",
@@ -157,6 +181,7 @@ export function lessonHTML(lesson, state, nav = {}) {
       ${solutionPanel}
     </section>
     ${state.solutionRevealed ? checksHTML(lesson.checks || [], state) : ""}
+    ${state.solutionRevealed ? explainHTML(state) : ""}
     ${lessonSourcesHTML(lesson.sources)}
     <div class="nav">
       <button class="btn-back" data-action="back">Back</button>

@@ -35,6 +35,20 @@ export async function gradeAnswer({ fetch, courseId, lessonId, answer }) {
   return resp.json();
 }
 
+export async function explainAnswer({ fetch, courseId, lessonId, explanation }) {
+  const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/explain`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ explanation }),
+  });
+  if (!resp.ok) {
+    let message = "Couldn't read your explanation right now.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}
+
 export async function loadLibrary({ fetch, courseId }) {
   const resp = await fetch(`/api/courses/${courseId}/library`);
   if (!resp.ok) {

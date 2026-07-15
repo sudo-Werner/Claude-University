@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
@@ -552,6 +552,29 @@ export async function init({ window, fetch }) {
       if (ui.lessonState !== lessonState || ui.screen !== "lesson") return;
       lessonState.grading = false;
       lessonState.grade = grade;
+      paintLesson();
+    });
+    const exTa = view.querySelector('[data-field="explain"]');
+    if (exTa) exTa.addEventListener("input", () => {
+      ui.lessonState.explain = ui.lessonState.explain || {};
+      ui.lessonState.explain.text = exTa.value;
+      const b = view.querySelector('[data-action="explain-grade"]');
+      if (b) b.disabled = !exTa.value.trim() || !!ui.lessonState.explain.grading;
+    });
+    const exBtn = view.querySelector('[data-action="explain-grade"]');
+    if (exBtn) exBtn.addEventListener("click", async () => {
+      const ex = ui.lessonState.explain || {};
+      const text = (ex.text || "").trim();
+      if (!text || ex.grading) return;
+      ui.lessonState.explain = { ...ex, grading: true };
+      paintLesson();
+      const lessonState = ui.lessonState;
+      const grade = await explainAnswer({ fetch, courseId: ui.courseId, lessonId: ui.lesson.id, explanation: text });
+      if (ui.lessonState !== lessonState || ui.screen !== "lesson") return;
+      lessonState.explain = { ...lessonState.explain, grading: false, grade };
+      if (grade && !grade.error) {
+        log("lesson_explained", { courseId: ui.courseId, topicId: ui.lesson.id, payload: { verdict: grade.verdict } });
+      }
       paintLesson();
     });
     view.querySelector('[data-action="back"]').addEventListener("click", showCourse);

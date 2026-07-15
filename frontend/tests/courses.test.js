@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -182,4 +182,19 @@ test("applyRevision returns an error object on failure", async () => {
   const fetch = async () => ({ ok: false, json: async () => ({ error: "couldn't apply revision" }) });
   const r = await applyRevision({ fetch, courseId: "c", course: {} });
   assert.ok(r.error);
+});
+
+test("explainAnswer posts the explanation and returns the verdict", async () => {
+  let sent = null;
+  const fetch = async (url, opts) => { sent = { url, opts }; return { ok: true, json: async () => ({ verdict: "correct", note: "n" }) }; };
+  const out = await explainAnswer({ fetch, courseId: "c1", lessonId: "c1-l1", explanation: "words" });
+  assert.equal(out.verdict, "correct");
+  assert.equal(sent.url, "/api/courses/c1/lessons/c1-l1/explain");
+  assert.equal(JSON.parse(sent.opts.body).explanation, "words");
+});
+
+test("explainAnswer surfaces the server error message", async () => {
+  const fetch = async () => ({ ok: false, json: async () => ({ error: "boom" }) });
+  const out = await explainAnswer({ fetch, courseId: "c1", lessonId: "c1-l1", explanation: "w" });
+  assert.equal(out.error, "boom");
 });
