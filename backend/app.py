@@ -60,9 +60,10 @@ def create_app(db_path=None):
     @app.get("/api/activity")
     def get_activity():
         try:
-            limit = min(int(request.args.get("limit", 50)), 200)
+            limit = int(request.args.get("limit", 50))
         except ValueError:
             limit = 50
+        limit = max(1, min(limit, 200))
         conn = db.get_connection(path)
         try:
             activity = stats.recent_activity(conn, courses.CONTENT_DIR, limit=limit)

@@ -89,3 +89,14 @@ def test_activity_returns_resolved_entries(client, tmp_path, monkeypatch):
 def test_activity_limit_is_bounded_and_tolerant(client):
     assert client.get("/api/activity?limit=99999").status_code == 200
     assert client.get("/api/activity?limit=banana").status_code == 200
+
+
+def test_activity_negative_limit_is_clamped(client):
+    for i in range(3):
+        client.post("/api/events", json={"events": [{
+            "client_event_id": f"neg{i}", "session_id": "s1", "event_type": "lesson_view",
+            "occurred_at": f"2026-06-21T10:0{i}:00+00:00",
+        }]})
+    resp = client.get("/api/activity?limit=-1")
+    assert resp.status_code == 200
+    assert len(resp.get_json()["activity"]) == 1
