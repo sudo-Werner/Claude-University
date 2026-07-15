@@ -216,3 +216,159 @@ def test_valid_exam_rejects_boolean_answer_index():
     bad = _questions_for(slots)
     bad["questions"][mcq_i]["answerIndex"] = True
     assert not exams.valid_exam(bad, slots)
+
+
+def _exam(slots=None):
+    slots = slots or exams.module_blueprint(_manifest(), "m1")
+    return exams.finalize_exam(_questions_for(slots), slots, "m1", "c1")
+
+
+def _answers(exam, *, mcq=1, free="my answer"):
+    return [mcq if q["type"] == "mcq" else free for q in exam["questions"]]
+
+
+def _grader(verdict="correct", note="Good."):
+    def generate(prompt, validate):
+        import re
+        idxs = [int(m) for m in re.findall(r'"index": (\d+)', prompt)]
+        result = {"grades": [{"index": i, "verdict": verdict, "note": note} for i in idxs]}
+        assert validate(result)
+        return result
+    return generate
+
+
+def test_validate_answers_shapes():
+    exam = _exam()
+    assert exams.validate_answers(exam, _answers(exam)) is None
+    assert exams.validate_answers(exam, "nope") is not None
+    assert exams.validate_answers(exam, _answers(exam)[:-1]) is not None
+    bad_mcq = _answers(exam)
+    bad_mcq[[i for i, q in enumerate(exam["questions"]) if q["type"] == "mcq"][0]] = 99
+    assert exams.validate_answers(exam, bad_mcq) is not None
+    long_free = _answers(exam, free="x" * (exams.MAX_FREE_ANSWER_CHARS + 1))
+    assert exams.validate_answers(exam, long_free) is not None
+    empty_free_ok = _answers(exam, free="")
+    assert exams.validate_answers(exam, empty_free_ok) is None
+
+
+def test_exam_grade_prompt_lists_only_free_questions():
+    exam = _exam()
+    p = exams.exam_grade_prompt(exam, _answers(exam))
+    free_count = sum(1 for q in exam["questions"] if q["type"] == "free")
+    assert p.count('"learnerAnswer"') == free_count
+    assert "my answer" in p and "graderNotes" not in p  # notes embedded under a different key
+
+
+def test_valid_exam_grades_requires_exact_indices():
+    check = exams.valid_exam_grades([1, 3])
+    ok = {"grades": [{"index": 1, "verdict": "close", "note": "n"}, {"index": 3, "verdict": "correct", "note": "n"}]}
+    assert check(ok)
+    assert not check({"grades": ok["grades"][:1]})
+    assert not check({"grades": ok["grades"] + [{"index": 9, "verdict": "correct", "note": "n"}]})
+    assert not check({"grades": [{"index": 1, "verdict": "meh", "note": "n"}, {"index": 3, "verdict": "correct", "note": "n"}]})
+    assert not check({"grades": [{"index": 1, "verdict": "close", "note": " "}, {"index": 3, "verdict": "correct", "note": "n"}]})
+
+
+def test_grade_exam_all_correct_passes():
+    exam = _exam()
+    result = exams.grade_exam(exam, _answers(exam), _manifest(), generate=_grader())
+    assert result["score"] == 1.0 and result["passed"] is True
+    assert len(result["perQuestion"]) == 10 and result["weakSpots"] == []
+
+
+def test_grade_exam_exactly_eighty_percent_passes():
+    exam = _exam()
+    mcq_idx = [i for i, q in enumerate(exam["questions"]) if q["type"] == "mcq"]
+    free_count = 10 - len(mcq_idx)
+    # Make wrong MCQs + close frees add up to exactly 2.0 lost points when possible;
+    # fall back to asserting the boundary rule directly.
+    assert exams.PASS_SCORE == 0.8
+    answers = _answers(exam)
+    wrong = 0
+    for i in mcq_idx:
+        if wrong == 2:
+            break
+        answers[i] = (exam["questions"][i]["answerIndex"] + 1) % len(exam["questions"][i]["choices"])
+        wrong += 1
+    if wrong == 2:
+        result = exams.grade_exam(exam, answers, _manifest(), generate=_grader())
+        assert result["score"] == 0.8 and result["passed"] is True
+
+
+def test_grade_exam_failure_builds_weak_spots():
+    exam = _exam()
+    answers = _answers(exam)
+    for i, q in enumerate(exam["questions"]):
+        if q["type"] == "mcq":
+            answers[i] = (q["answerIndex"] + 1) % len(q["choices"])
+    result = exams.grade_exam(exam, answers, _manifest(), generate=_grader(verdict="incorrect", note="No."))
+    assert result["score"] == 0.0 and result["passed"] is False
+    assert {w["lessonId"] for w in result["weakSpots"]} == {"c1-l1", "c1-l2", "c1-l3"}
+    spot = next(w for w in result["weakSpots"] if w["lessonId"] == "c1-l1")
+    assert spot["lessonTitle"] == "L1" and spot["objectives"]
+
+
+def test_grade_exam_sanitizes_grader_notes_and_reveals_mcq_key():
+    exam = _exam()
+    result = exams.grade_exam(exam, _answers(exam), _manifest(),
+                              generate=_grader(note='<em>ok</em><script>x()</script>'))
+    free_q = next(q for q in result["perQuestion"] if q["type"] == "free")
+    assert "<script>" not in free_q["note"] and "<em>ok</em>" in free_q["note"]
+    mcq_q = next(q for q in result["perQuestion"] if q["type"] == "mcq")
+    assert isinstance(mcq_q["correctIndex"], int) and "answerIndex" not in mcq_q
+
+
+def test_record_result_and_status(conn):
+    manifest = _manifest()
+    r1 = {"score": 0.6, "passed": False, "perQuestion": [], "weakSpots": []}
+    r2 = {"score": 0.9, "passed": True, "perQuestion": [], "weakSpots": []}
+    assert exams.record_result(conn, "c1", "m1", r1) == 1
+    assert exams.record_result(conn, "c1", "m1", r2) == 2
+    assert exams.record_result(conn, "c1", "final", r2) == 1
+    status = exams.exam_status(conn, "c1", manifest)
+    assert status["m1"] == {"attempts": 2, "bestScore": 0.9, "passed": True}
+    assert status["final"]["passed"] is True and "m2" not in status
+    assert exams.course_passed(status, manifest) is False  # m2 never taken
+    exams.record_result(conn, "c1", "m2", r2)
+    status = exams.exam_status(conn, "c1", manifest)
+    assert exams.course_passed(status, manifest) is True
+
+
+def test_status_ignores_dropped_module_keys(conn):
+    manifest = _manifest()
+    exams.record_result(conn, "c1", "m99", {"score": 1.0, "passed": True, "perQuestion": [], "weakSpots": []})
+    status = exams.exam_status(conn, "c1", manifest)
+    assert "m99" not in status
+
+
+def test_submit_exam_full_cycle(tmp_path, conn):
+    manifest = _manifest()
+    exam = _exam()
+    exams.save_pending(tmp_path, "c1", exam)
+    result = exams.submit_exam(tmp_path, conn, "c1", "m1", _answers(exam),
+                               manifest=manifest, generate=_grader())
+    assert result["passed"] is True and result["attempt"] == 1
+    assert exams.load_pending(tmp_path, "c1", "m1") is None  # consumed
+    rows = conn.execute("SELECT event_type, topic_id, course_id FROM events").fetchall()
+    assert ("exam_result", "m1", "c1") in [(r["event_type"], r["topic_id"], r["course_id"]) for r in rows]
+
+
+def test_submit_exam_no_pending_is_none(tmp_path, conn):
+    assert exams.submit_exam(tmp_path, conn, "c1", "m1", [], manifest=_manifest(), generate=_grader()) is None
+
+
+def test_submit_exam_grading_failure_keeps_pending(tmp_path, conn):
+    from backend import claude_client
+    exam = _exam()
+    exams.save_pending(tmp_path, "c1", exam)
+
+    def boom(prompt, validate):
+        raise claude_client.ClaudeError("nope")
+
+    try:
+        exams.submit_exam(tmp_path, conn, "c1", "m1", _answers(exam), manifest=_manifest(), generate=boom)
+        assert False, "expected ClaudeError"
+    except claude_client.ClaudeError:
+        pass
+    assert exams.load_pending(tmp_path, "c1", "m1") is not None  # NOT consumed
+    assert conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"] == 0

@@ -8,11 +8,11 @@ until it is graded; the browser only ever sees the key-stripped client view.
 """
 
 import json
-import re
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from backend import courses, fsutil, generation
+from backend import courses, events, fsutil, generation
 
 MODULE_EXAM_QUESTIONS = 10
 FINAL_EXAM_QUESTIONS = 18
@@ -264,3 +264,197 @@ def prune_pending(content_dir, course_id, keep_keys):
     for f in exams_dir.glob("*.json"):
         if f.stem not in keep_keys:
             f.unlink(missing_ok=True)
+
+
+# ---- grading ----
+
+_POINTS = {"correct": 1.0, "close": 0.5, "incorrect": 0.0}
+
+
+def validate_answers(exam, answers):
+    questions = exam["questions"]
+    if not isinstance(answers, list) or len(answers) != len(questions):
+        return "answers must match the exam's questions"
+    for q, a in zip(questions, answers):
+        if q["type"] == "mcq":
+            if not (isinstance(a, int) and not isinstance(a, bool) and 0 <= a < len(q["choices"])):
+                return "each multiple-choice answer must be a valid choice index"
+        else:
+            if not isinstance(a, str):
+                return "each written answer must be text"
+            if len(a) > MAX_FREE_ANSWER_CHARS:
+                return f"written answers are limited to {MAX_FREE_ANSWER_CHARS} characters"
+    return None
+
+
+def exam_grade_prompt(exam, answers):
+    items = []
+    for i, (q, a) in enumerate(zip(exam["questions"], answers)):
+        if q["type"] != "free":
+            continue
+        items.append(json.dumps({
+            "index": i,
+            "question": q["prompt"],
+            "referenceAnswer": q["modelAnswer"],
+            "gradingNotes": q["graderNotes"],
+            "learnerAnswer": a,
+        }, ensure_ascii=False))
+    return (
+        "You are a fair, rigorous examiner grading written exam answers on a personal "
+        "learning platform. Judge understanding against the reference answer and grading "
+        "notes — not wording. An empty answer is incorrect.\n\n"
+        "Answers to grade, one JSON object per line:\n"
+        + "\n".join(items) + "\n\n"
+        "Grade EVERY item. Reply with ONLY a JSON object, no prose, no fence:\n"
+        '{"grades":[{"index":<same index>,"verdict":"correct"|"close"|"incorrect",'
+        '"note":"<one or two sentences addressed to \'you\': what you got right and what '
+        'was missing or wrong>"}]}'
+    )
+
+
+def valid_exam_grades(expected_indices):
+    expected = set(expected_indices)
+
+    def check(obj):
+        grades = obj.get("grades") if isinstance(obj, dict) else None
+        if not isinstance(grades, list):
+            return False
+        seen = set()
+        for g in grades:
+            if not isinstance(g, dict) or g.get("verdict") not in generation._GRADE_VERDICTS:
+                return False
+            if not _nonempty_str(g.get("note")):
+                return False
+            seen.add(g.get("index"))
+        return seen == expected
+
+    return check
+
+
+def grade_exam(exam, answers, manifest, *, generate):
+    questions = exam["questions"]
+    free_indices = [i for i, q in enumerate(questions) if q["type"] == "free"]
+    grades = {}
+    if free_indices:
+        result = generate(exam_grade_prompt(exam, answers), valid_exam_grades(free_indices))
+        grades = {g["index"]: g for g in result["grades"]}
+    per_question = []
+    for i, (q, a) in enumerate(zip(questions, answers)):
+        base = {
+            "type": q["type"],
+            "prompt": q["prompt"],
+            "objectiveText": q["objectiveText"],
+            "bloom": q["bloom"],
+            "lessonId": q["lessonId"],
+            "answer": a,
+        }
+        if q["type"] == "mcq":
+            correct = a == q["answerIndex"]
+            per_question.append({**base, "points": 1.0 if correct else 0.0,
+                                 "correct": correct, "correctIndex": q["answerIndex"],
+                                 "choices": q["choices"]})
+        else:
+            g = grades[i]
+            per_question.append({**base, "points": _POINTS[g["verdict"]],
+                                 "verdict": g["verdict"],
+                                 "note": generation.sanitize_html(g["note"])})
+    points = sum(q["points"] for q in per_question)
+    score = round(points / len(per_question), 4)
+    return {
+        "score": score,
+        "passed": score >= PASS_SCORE,
+        "perQuestion": per_question,
+        "weakSpots": _weak_spots(per_question, manifest),
+    }
+
+
+def _weak_spots(per_question, manifest):
+    titles = {l["id"]: l["title"] for l in courses.flatten_lessons(manifest)}
+    by_lesson = {}
+    for q in per_question:
+        got, possible, missed = by_lesson.setdefault(q["lessonId"], [0.0, 0.0, []])
+        by_lesson[q["lessonId"]][0] = got + q["points"]
+        by_lesson[q["lessonId"]][1] = possible + 1.0
+        if q["points"] < 1.0 and q["objectiveText"] not in missed:
+            missed.append(q["objectiveText"])
+    spots = []
+    for lesson_id in titles:  # manifest order
+        if lesson_id not in by_lesson:
+            continue
+        got, possible, missed = by_lesson[lesson_id]
+        if possible and got / possible < PASS_SCORE:
+            spots.append({"lessonId": lesson_id, "lessonTitle": titles[lesson_id],
+                          "objectives": missed})
+    return spots
+
+
+# ---- results as events (server-recorded; learner state lives in the events DB) ----
+
+def record_result(conn, course_id, exam_key, result):
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM events "
+        "WHERE event_type = 'exam_result' AND course_id = ? AND topic_id = ?",
+        (course_id, exam_key),
+    ).fetchone()
+    attempt = row["n"] + 1
+    events.insert_events(conn, [{
+        "client_event_id": f"server-{uuid.uuid4()}",
+        "session_id": "server",
+        "device": "server",
+        "topic_id": exam_key,
+        "course_id": course_id,
+        "event_type": "exam_result",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "payload": {**result, "attempt": attempt},
+    }])
+    return attempt
+
+
+def submit_exam(content_dir, conn, course_id, exam_key, answers, *, manifest, generate):
+    """Grade the pending exam and consume it. Returns the result dict, or None when
+    no exam is pending. Raises ValueError on malformed answers and lets ClaudeError
+    propagate — in both cases the pending exam file survives, so the learner can
+    resubmit without re-sitting."""
+    exam = load_pending(content_dir, course_id, exam_key)
+    if exam is None:
+        return None
+    error = validate_answers(exam, answers)
+    if error:
+        raise ValueError(error)
+    result = grade_exam(exam, answers, manifest, generate=generate)
+    result["attempt"] = record_result(conn, course_id, exam_key, result)
+    delete_pending(content_dir, course_id, exam_key)
+    return result
+
+
+# ---- live status from events ----
+
+def exam_status(conn, course_id, manifest):
+    valid_keys = {m.get("id") for m in manifest.get("modules", [])} | {"final"}
+    rows = conn.execute(
+        "SELECT topic_id, payload FROM events "
+        "WHERE event_type = 'exam_result' AND course_id = ?",
+        (course_id,),
+    ).fetchall()
+    status = {}
+    for row in rows:
+        key = row["topic_id"]
+        if key not in valid_keys:
+            continue  # exam for a module dropped by a later revision
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except ValueError:
+            continue
+        entry = status.setdefault(key, {"attempts": 0, "bestScore": 0.0, "passed": False})
+        entry["attempts"] += 1
+        entry["bestScore"] = max(entry["bestScore"], float(payload.get("score") or 0.0))
+        entry["passed"] = entry["passed"] or bool(payload.get("passed"))
+    return status
+
+
+def course_passed(status, manifest):
+    modules = manifest.get("modules", [])
+    if not modules:
+        return False
+    keys = [m.get("id") for m in modules] + ["final"]
+    return all(status.get(k, {}).get("passed") for k in keys)
