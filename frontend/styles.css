@@ -514,3 +514,28 @@ textarea::placeholder{color:#b3a994}
 .act-time{color:var(--text-mut); font-variant-numeric:tabular-nums; flex:0 0 52px}
 .act-course{color:var(--text-dim); margin-left:6px}
 .act-quality{color:var(--blue-text); margin-left:6px}
+
+/* ---- summative exams ---- */
+.c-exam { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border-field); border-radius: 10px; background: none; cursor: pointer; text-align: left; }
+.c-exam .c-etitle { font-weight: 600; }
+.c-exam .c-ecta { margin-left: auto; white-space: nowrap; }
+.exam-status { font-size: 12px; opacity: 0.8; }
+.exam-status.passed { color: var(--ok, #2e7d32); }
+.exam-status.failed { color: var(--warn, #b26a00); }
+.course-passed { font-size: 12px; font-weight: 600; color: var(--ok, #2e7d32); }
+.exam-q { margin: 18px 0; padding-top: 14px; border-top: 1px solid var(--border-field); }
+.exam-qhead { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 6px; }
+.exam-pts { margin-left: auto; font-size: 12px; opacity: 0.7; }
+.exam-choice { display: block; width: 100%; margin-top: 6px; padding: 8px 12px; border: 1px solid var(--border-field); border-radius: 8px; background: none; cursor: pointer; text-align: left; }
+.exam-choice.selected { border-color: currentColor; font-weight: 600; }
+.exam-free { width: 100%; margin-top: 6px; }
+.exam-note { font-size: 13px; opacity: 0.75; margin-bottom: 4px; }
+.exam-error { margin-top: 10px; color: var(--warn, #b26a00); }
+.exam-banner { padding: 12px 16px; border-radius: 10px; font-weight: 700; margin-bottom: 14px; }
+.exam-banner.pass { background: rgba(46, 125, 50, 0.12); }
+.exam-banner.fail { background: rgba(178, 106, 0, 0.12); }
+.weak-spot { margin: 10px 0; }
+.weak-lesson { background: none; border: none; padding: 0; cursor: pointer; font-weight: 600; text-decoration: underline; }
+.exam-fb { margin-top: 8px; font-size: 14px; }
+.exam-fb.good { color: var(--ok, #2e7d32); }
+.exam-fb.mid { color: var(--warn, #b26a00); }
