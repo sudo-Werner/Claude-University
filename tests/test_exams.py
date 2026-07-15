@@ -92,6 +92,18 @@ def test_exam_prompt_mentions_slots_and_spine():
     assert "answerIndex" in p and "modelAnswer" in p
 
 
+def test_exam_prompt_self_verification_and_novel_scenario_clauses():
+    m = _manifest()
+    slots = exams.module_blueprint(m, "m1")
+    p = exams.exam_prompt(manifest=m, exam_key="m1", slots=slots, spine_lessons={})
+    assert "re-answer each multiple-choice question independently" in p
+    assert "Confirm the choice at answerIndex is the answer you get" in p
+    assert "no distractor is also defensibly correct" in p
+    assert "modelAnswer must be verifiably correct" in p
+    assert "NOVEL scenario, case, or problem that does not appear in the lessons" in p
+    assert "reward correct application to the scenario over recitation of definitions" in p
+
+
 def test_valid_exam_accepts_aligned_and_rejects_misaligned():
     slots = exams.module_blueprint(_manifest(), "m1")
     good = _questions_for(slots)
@@ -227,11 +239,12 @@ def _answers(exam, *, mcq=1, free="my answer"):
     return [mcq if q["type"] == "mcq" else free for q in exam["questions"]]
 
 
-def _grader(verdict="correct", note="Good."):
+def _grader(verdict="correct", note="Good.", evidence="my answer"):
     def generate(prompt, validate):
         import re
         idxs = [int(m) for m in re.findall(r'"index": (\d+)', prompt)]
-        result = {"grades": [{"index": i, "verdict": verdict, "note": note} for i in idxs]}
+        result = {"grades": [{"index": i, "verdict": verdict, "note": note, "evidence": evidence}
+                             for i in idxs]}
         assert validate(result)
         return result
     return generate
@@ -259,14 +272,61 @@ def test_exam_grade_prompt_lists_only_free_questions():
     assert "my answer" in p and "graderNotes" not in p  # notes embedded under a different key
 
 
+def test_exam_grade_prompt_demands_evidence():
+    exam = _exam()
+    p = exams.exam_grade_prompt(exam, _answers(exam))
+    assert "include evidence" in p
+    assert "short verbatim" in p and "quote from the learner's answer" in p
+    assert "empty string only if the answer is empty" in p
+    assert '"evidence"' in p
+
+
 def test_valid_exam_grades_requires_exact_indices():
     check = exams.valid_exam_grades([1, 3])
-    ok = {"grades": [{"index": 1, "verdict": "close", "note": "n"}, {"index": 3, "verdict": "correct", "note": "n"}]}
+    ok = {"grades": [{"index": 1, "verdict": "close", "note": "n", "evidence": "q"},
+                     {"index": 3, "verdict": "correct", "note": "n", "evidence": ""}]}
     assert check(ok)
     assert not check({"grades": ok["grades"][:1]})
-    assert not check({"grades": ok["grades"] + [{"index": 9, "verdict": "correct", "note": "n"}]})
-    assert not check({"grades": [{"index": 1, "verdict": "meh", "note": "n"}, {"index": 3, "verdict": "correct", "note": "n"}]})
-    assert not check({"grades": [{"index": 1, "verdict": "close", "note": " "}, {"index": 3, "verdict": "correct", "note": "n"}]})
+    assert not check({"grades": ok["grades"] + [{"index": 9, "verdict": "correct", "note": "n", "evidence": "q"}]})
+    assert not check({"grades": [{"index": 1, "verdict": "meh", "note": "n", "evidence": "q"},
+                                 {"index": 3, "verdict": "correct", "note": "n", "evidence": "q"}]})
+    assert not check({"grades": [{"index": 1, "verdict": "close", "note": " ", "evidence": "q"},
+                                 {"index": 3, "verdict": "correct", "note": "n", "evidence": "q"}]})
+
+
+def test_valid_exam_grades_rejects_missing_or_non_string_evidence():
+    check = exams.valid_exam_grades([1, 3])
+    missing = {"grades": [{"index": 1, "verdict": "close", "note": "n"},
+                          {"index": 3, "verdict": "correct", "note": "n", "evidence": "q"}]}
+    assert not check(missing)
+    non_string = {"grades": [{"index": 1, "verdict": "close", "note": "n", "evidence": 5},
+                             {"index": 3, "verdict": "correct", "note": "n", "evidence": "q"}]}
+    assert not check(non_string)
+
+
+def test_valid_exam_grades_accepts_empty_evidence_string():
+    check = exams.valid_exam_grades([1])
+    ok = {"grades": [{"index": 1, "verdict": "incorrect", "note": "n", "evidence": ""}]}
+    assert check(ok)
+
+
+def test_valid_exam_grades_rejects_duplicate_index():
+    check = exams.valid_exam_grades([1, 3])
+    dup = {"grades": [
+        {"index": 1, "verdict": "close", "note": "n", "evidence": "q"},
+        {"index": 1, "verdict": "correct", "note": "n2", "evidence": "q2"},
+    ]}
+    assert not check(dup)
+
+
+def test_valid_exam_grades_rejects_wrong_count():
+    check = exams.valid_exam_grades([1, 3])
+    too_many = {"grades": [
+        {"index": 1, "verdict": "close", "note": "n", "evidence": "q"},
+        {"index": 3, "verdict": "correct", "note": "n", "evidence": "q"},
+        {"index": 5, "verdict": "correct", "note": "n", "evidence": "q"},
+    ]}
+    assert not check(too_many)
 
 
 def test_grade_exam_all_correct_passes():
@@ -316,6 +376,13 @@ def test_grade_exam_sanitizes_grader_notes_and_reveals_mcq_key():
     assert "<script>" not in free_q["note"] and "<em>ok</em>" in free_q["note"]
     mcq_q = next(q for q in result["perQuestion"] if q["type"] == "mcq")
     assert isinstance(mcq_q["correctIndex"], int) and "answerIndex" not in mcq_q
+
+
+def test_grade_exam_does_not_leak_evidence_into_result_payload():
+    exam = _exam()
+    result = exams.grade_exam(exam, _answers(exam), _manifest(), generate=_grader(evidence="a telling quote"))
+    blob = json.dumps(result)
+    assert "evidence" not in blob and "a telling quote" not in blob
 
 
 def test_record_result_and_status(conn):

@@ -557,6 +557,13 @@ def test_capstone_prompt_includes_scope_and_concepts():
     assert "JSON" in p
 
 
+def test_capstone_prompt_demands_certainty():
+    p = gen.capstone_prompt(scope_label="the module", scope_title="Neural Nets",
+                            concept_titles=["Backprop"], brief="ML course", profile={})
+    assert "widely documented you are certain they exist" in p
+    assert "choose a more famous one instead" in p
+
+
 def test_ensure_capstone_module_scope_generates_caches_sanitizes(tmp_path):
     root = tmp_path / "courses"; root.mkdir()
     from backend import courses
@@ -831,6 +838,14 @@ def test_lesson_prompt_requires_self_containment_and_consistency():
     assert "visual aid must match the prose" in low  # diagram cannot contradict text
 
 
+def test_lesson_prompt_checks_have_mcq_self_verification():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="x-l1", lesson_title="T",
+                          module_title="M", position=1, total=2)
+    assert "re-answer each mcq check" in p
+    assert "Confirm the choice at answer is the answer you get" in p
+    assert "no distractor is also defensibly correct" in p
+
+
 def test_lesson_chat_system_mirrors_lesson_vocabulary():
     low = gen.LESSON_CHAT_SYSTEM.lower()
     assert "mirror the lesson's own vocabulary" in low
@@ -863,6 +878,20 @@ def test_lesson_audit_prompt_asks_for_ok_verdict():
     assert "consistent terminology" in p.lower()
 
 
+def test_lesson_audit_prompt_checks_objective_coverage():
+    p = gen.lesson_audit_prompt(_full_lesson())
+    assert "OBJECTIVE COVERAGE" in p
+    assert "perform each stated objective's action verb" in p
+
+
+def test_lesson_audit_prompt_lists_objectives_when_provided():
+    objectives = [{"text": "Calculate the multiplier effect", "bloom": "apply"}]
+    p = gen.lesson_audit_prompt(_full_lesson(), objectives=objectives)
+    assert "Calculate the multiplier effect" in p
+    p_none = gen.lesson_audit_prompt(_full_lesson())
+    assert "Calculate the multiplier effect" not in p_none
+
+
 def test_lesson_review_prompt_states_the_three_rules():
     p = gen.lesson_review_prompt(_full_lesson(topic="business cycles"))
     low = p.lower()
@@ -878,6 +907,14 @@ def test_lesson_review_prompt_includes_flagged_issues_when_given():
     assert "graphic says Slowdown, answer says contraction" in p
     p2 = gen.lesson_review_prompt(_full_lesson())
     assert "already flagged" not in p2
+
+
+def test_lesson_review_prompt_checks_objective_coverage_and_lists_objectives():
+    p = gen.lesson_review_prompt(_full_lesson())
+    assert "OBJECTIVE COVERAGE" in p
+    objectives = [{"text": "Calculate the multiplier effect", "bloom": "apply"}]
+    p_with = gen.lesson_review_prompt(_full_lesson(), objectives=objectives)
+    assert "Calculate the multiplier effect" in p_with
 
 
 def test_verification_rewrites_only_when_audit_flags_a_defect(tmp_path):
@@ -920,6 +957,33 @@ def test_verification_falls_back_when_audit_errors(tmp_path):
     out = gen.ensure_lesson(root, "demo", "demo-l1", {},
                             generate=lambda p: dict(raw), verify_generate=boom)
     assert out["solutionAns"] == "original answer"
+
+
+def test_verification_threads_objectives_into_audit_prompt(tmp_path):
+    """_generate_and_store_lesson has meta.get("objectives") in scope; it must reach
+    the audit prompt via _reviewed_lesson so the objective-coverage rule can be checked
+    against the lesson's actual objectives."""
+    root = tmp_path / "courses"
+    (root / "demo" / "lessons").mkdir(parents=True)
+    (root / "demo" / "course.json").write_text(_json.dumps({
+        "id": "demo", "title": "Demo", "subtitle": "", "brief": "beginner friendly",
+        "modules": [{"id": "m1", "title": "Basics",
+                     "lessons": [{"id": "demo-l1", "title": "First",
+                                 "objectives": [{"text": "Calculate the multiplier effect",
+                                                 "bloom": "apply"}]}]}],
+    }))
+    raw = _full_lesson(solutionAns="as generated")
+    captured = {}
+
+    def spy_verify(prompt, validate=None):
+        if "CORRECTED" not in prompt:
+            captured["audit_prompt"] = prompt
+        return {"ok": True}
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(raw),
+                            verify_generate=spy_verify)
+    assert out["solutionAns"] == "as generated"
+    assert "Calculate the multiplier effect" in captured["audit_prompt"]
 
 
 def test_verification_preserves_original_sources(tmp_path):
