@@ -74,7 +74,13 @@ def remediation_prompt(*, manifest, exam_key, weak_spots, spine_lessons):
         '{"type":"mcq","prompt":"...","choices":["..."],"answer":0,"explanation":"..."} '
         "with 3-4 plausible choices and the 0-based correct answer, or "
         '{"type":"fill","prompt":"...","answer":"<the exact word or short phrase>",'
-        '"explanation":"..."}. The explanation says why the answer is right.\n'
+        '"explanation":"..."}. The explanation says why the answer is right. Where a missed '
+        "objective's Bloom level is apply or higher, make its practice question require the "
+        "learner to APPLY the objective — a scenario-based stem — not recall a definition, "
+        "within the mcq/fill format above.\n"
+        "Before emitting, re-answer each mcq question independently from the question text "
+        "alone. Confirm the choice at answer is the answer you get, and that no distractor is "
+        "also defensibly correct — if one is, rewrite it.\n"
         "Echo each gap's lessonId verbatim.\n"
         "Reply with ONLY a JSON object, no prose, no fence:\n"
         '{"gaps":[{"lessonId":"<from gap>","explanationHtml":"<html>","practice":[...]}]}'

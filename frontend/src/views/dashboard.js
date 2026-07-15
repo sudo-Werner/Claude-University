@@ -61,7 +61,7 @@ export function dashboardHTML(data, timerView) {
       <button class="btn-primary" data-action="start-session"${data.complete ? " disabled" : ""}>${PLAY_ICON} Start session</button>
       <button class="btn-secondary" data-action="curriculum" style="margin-top:8px">View all lessons</button>
       <button class="btn-secondary" data-action="refine" style="margin-top:8px">Refine this course</button>
-      <button class="btn-secondary" data-action="library" style="margin-top:8px">Library · accredited sources</button>
+      <button class="btn-secondary" data-action="library" style="margin-top:8px">Library · grounded sources</button>
     </section>
     <div class="stat-row">
       <section class="stat">

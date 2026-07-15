@@ -59,6 +59,46 @@ def test_course_record_passed_on_is_latest_first_pass(tmp_path):
     assert rec["coursePassed"] and rec["passedOn"] == "2026-07-12"
 
 
+def test_course_record_carries_level_and_target_hours(tmp_path):
+    conn = _conn()
+    root = tmp_path / "courses"
+    (root / "demo" / "lessons").mkdir(parents=True)
+    (root / "demo" / "course.json").write_text(json.dumps({
+        "id": "demo", "title": "Demo", "subtitle": "", "brief": "b",
+        "level": {"label": "Master-equivalent", "code": "M"}, "targetHours": 130,
+        "modules": [{"id": "m1", "title": "M1", "lessons": [{"id": "demo-l1", "title": "L1"}]}],
+    }))
+    manifest = json.loads((root / "demo" / "course.json").read_text())
+    rec = transcript.course_record(conn, root, "demo", manifest)
+    assert rec["level"] == "Master-equivalent"
+    assert rec["targetHours"] == 130
+
+
+def test_course_record_falls_back_to_level_code_when_no_label(tmp_path):
+    conn = _conn()
+    root = tmp_path / "courses"
+    (root / "demo" / "lessons").mkdir(parents=True)
+    (root / "demo" / "course.json").write_text(json.dumps({
+        "id": "demo", "title": "Demo", "subtitle": "", "brief": "b",
+        "level": {"code": "M"},
+        "modules": [{"id": "m1", "title": "M1", "lessons": [{"id": "demo-l1", "title": "L1"}]}],
+    }))
+    manifest = json.loads((root / "demo" / "course.json").read_text())
+    rec = transcript.course_record(conn, root, "demo", manifest)
+    assert rec["level"] == "M"
+
+
+def test_course_record_level_and_target_hours_none_for_legacy_manifest(tmp_path):
+    # A legacy course.json predates the level/targetHours fields entirely.
+    conn = _conn()
+    root = _course(tmp_path)
+    manifest = json.loads((root / "demo" / "course.json").read_text())
+    assert "level" not in manifest and "targetHours" not in manifest
+    rec = transcript.course_record(conn, root, "demo", manifest)
+    assert rec["level"] is None
+    assert rec["targetHours"] is None
+
+
 def test_transcript_lists_courses_and_skips_malformed(tmp_path):
     conn = _conn()
     root = _course(tmp_path)

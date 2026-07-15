@@ -188,3 +188,45 @@ def test_malformed_exam_payload_rows_are_skipped(tmp_path):
                                                     "junk", {"points": 1.0}]},
         "2026-07-11T10:00:00+00:00")
     assert mastery._accuracy_pool(conn, "demo") == {}
+
+
+# --- Bloom's mastery-learning rule: latest exam attempt replaces the old one ---
+
+def test_fail_then_pass_same_exam_key_counts_only_the_pass(tmp_path):
+    conn = _conn()
+    _exam_ev(conn, "m1", [{"lessonId": "demo-l1", "points": 0.0}],
+             occurred="2026-07-11T10:00:00+00:00")
+    _exam_ev(conn, "m1", [{"lessonId": "demo-l1", "points": 1.0}],
+             occurred="2026-07-12T10:00:00+00:00")
+    pool = mastery._accuracy_pool(conn, "demo")
+    assert pool["demo-l1"] == (2.0, 2.0)
+
+
+def test_two_different_exam_keys_both_contribute_their_latest(tmp_path):
+    conn = _conn()
+    # module exam m1: fail then pass -> only the pass counts
+    _exam_ev(conn, "m1", [{"lessonId": "demo-l1", "points": 0.0}],
+             occurred="2026-07-11T10:00:00+00:00")
+    _exam_ev(conn, "m1", [{"lessonId": "demo-l1", "points": 1.0}],
+             occurred="2026-07-12T10:00:00+00:00")
+    # final exam: single attempt, also touches demo-l1
+    _exam_ev(conn, "final", [{"lessonId": "demo-l1", "points": 0.5}],
+             occurred="2026-07-13T10:00:00+00:00")
+    pool = mastery._accuracy_pool(conn, "demo")
+    # m1 pass contributes (2.0, 2.0); final contributes (1.0, 2.0) -> combined (3.0, 4.0)
+    assert pool["demo-l1"] == (3.0, 4.0)
+
+
+def test_performance_summary_recovers_after_fail_then_pass(tmp_path):
+    conn = _conn()
+    root = _course(tmp_path)
+    _completed(conn, "demo-l1")
+    # three good reviews would be "mastered"; a stale failed exam must not cap it anymore
+    # once a later attempt on the same exam key passed cleanly.
+    for d in ("2026-07-01", "2026-07-02", "2026-07-08"):
+        _ev(conn, "lesson_reviewed", "demo-l1", {"quality": "good"}, f"{d}T10:00:00+00:00")
+    _exam_ev(conn, "m1", [{"lessonId": "demo-l1", "points": 0.0}],
+             occurred="2026-07-09T10:00:00+00:00")
+    _exam_ev(conn, "m1", [{"lessonId": "demo-l1", "points": 1.0}],
+             occurred="2026-07-10T10:00:00+00:00")
+    assert mastery.lesson_mastery(conn, root, "demo")["demo-l1"] == "mastered"

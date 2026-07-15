@@ -67,6 +67,15 @@ def test_prompt_names_gaps_and_demands_new_angle():
     assert p.count("lessonId=") == 2
 
 
+def test_prompt_has_mcq_self_verification_and_apply_clause():
+    p = remediation.remediation_prompt(manifest=_manifest(), exam_key="m1",
+                                       weak_spots=WEAK, spine_lessons={})
+    assert "re-answer each mcq question independently" in p
+    assert "Confirm the choice at answer is the answer you get" in p
+    assert "no distractor is also defensibly correct" in p
+    assert "APPLY the objective" in p and "apply or higher" in p
+
+
 def test_valid_remediation_accepts_good_and_rejects_misaligned():
     good = _gaps(WEAK)
     assert remediation.valid_remediation(good, WEAK)

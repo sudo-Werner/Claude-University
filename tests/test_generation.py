@@ -557,6 +557,13 @@ def test_capstone_prompt_includes_scope_and_concepts():
     assert "JSON" in p
 
 
+def test_capstone_prompt_demands_certainty():
+    p = gen.capstone_prompt(scope_label="the module", scope_title="Neural Nets",
+                            concept_titles=["Backprop"], brief="ML course", profile={})
+    assert "widely documented you are certain they exist" in p
+    assert "choose a more famous one instead" in p
+
+
 def test_ensure_capstone_module_scope_generates_caches_sanitizes(tmp_path):
     root = tmp_path / "courses"; root.mkdir()
     from backend import courses
@@ -631,11 +638,26 @@ def test_lesson_prompt_has_visual_aid_guidance():
 def test_source_type_from_domain():
     assert gen.source_type("https://cs231n.stanford.edu/slides/lecture_4.pdf") == "university"
     assert gen.source_type("https://www.cl.cam.ac.uk/teaching/x") == "university"
-    assert gen.source_type("https://arxiv.org/abs/1404.7828") == "peer-reviewed"
-    assert gen.source_type("https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4863083/") == "peer-reviewed"
+    assert gen.source_type("https://arxiv.org/abs/1404.7828") == "preprint"           # not peer-reviewed
+    assert gen.source_type("https://www.biorxiv.org/content/x") == "preprint"
+    assert gen.source_type("https://doi.org/10.1000/xyz123") == "preprint"            # resolves anything
+    assert gen.source_type("https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4863083/") == "preprint"
+    assert gen.source_type("https://nature.com/articles/x") == "peer-reviewed"        # genuine journal venue
+    assert gen.source_type("https://www.sciencedirect.com/science/article/x") == "peer-reviewed"
     assert gen.source_type("https://link.springer.com/content/pdf/x.pdf") == "textbook"
     assert gen.source_type("https://pytorch.org/docs/stable/notes/autograd.html") == "official-docs"
+    assert gen.source_type("https://docs.python.org/3/library/x.html") == "official-docs"
+    assert gen.source_type("https://docs.foo.com/getting-started") == "official-docs"  # first-label rule
     assert gen.source_type("https://someblog.example.com/post") == "reference"
+
+
+def test_source_type_matches_host_labels_not_raw_substrings():
+    # The must-fix bug: substring matching let "summit.org" pass as a university because
+    # it contains "mit." — label-boundary matching must reject it.
+    assert gen.source_type("https://summit.org/conference") != "university"
+    assert gen.source_type("https://summit.org/conference") == "reference"
+    assert gen.source_type("https://mit.edu/about") == "university"
+    assert gen.source_type("https://web.mit.edu/some/path") == "university"
 
 
 def test_valid_bibliography_shape():
@@ -681,11 +703,31 @@ def test_ensure_bibliography_filters_to_really_retrieved_urls(tmp_path):
     assert "https://cs231n.stanford.edu/" in urls and "https://arxiv.org/abs/1404.7828" in urls
     types = {s["url"]: s["type"] for s in lib["sources"]}
     assert types["https://cs231n.stanford.edu/"] == "university"
-    assert types["https://arxiv.org/abs/1404.7828"] == "peer-reviewed"
+    assert types["https://arxiv.org/abs/1404.7828"] == "preprint"
     assert "<script" not in lib["sources"][0]["title"]          # title sanitized
     # cached: second call returns without regenerating
     lib2 = gen.ensure_bibliography(root, cid, generate_sourced=lambda p: (_ for _ in ()).throw(AssertionError("regen")))
     assert lib2["courseId"] == cid
+
+
+def test_ensure_bibliography_normalizes_legacy_cached_source_types(tmp_path):
+    # A library.json written before the source_type() honesty fix has arxiv mislabeled
+    # "peer-reviewed" on disk. Reading it back must relabel it live (not just fresh writes),
+    # without needing to touch/rewrite the cache file itself.
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "T", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]
+    path = root / cid / "library.json"
+    legacy = {"courseId": cid, "title": "T", "sources": [
+        {"title": "arXiv survey", "url": "https://arxiv.org/abs/1404.7828",
+         "type": "peer-reviewed", "note": "n"}]}
+    path.write_text(_json.dumps(legacy))
+    on_disk_before = path.read_text()
+    lib = gen.ensure_bibliography(root, cid, generate_sourced=lambda p: (_ for _ in ()).throw(AssertionError("regen")))
+    assert lib["sources"][0]["type"] == "preprint"     # relabeled honestly on read
+    assert path.read_text() == on_disk_before          # cache file itself untouched
 
 
 # ---- Phase 2: per-lesson grounding + roll-up ----
@@ -739,6 +781,8 @@ def test_course_lesson_sources_rolls_up_and_dedupes(tmp_path):
         "modules": [{"title": "M", "lessons": [{"title": "L1"}, {"title": "L2"}]}]})
     cid = manifest["id"]
     ldir = root / cid / "lessons"
+    # "peer-reviewed" here simulates a legacy on-disk type predating the source_type()
+    # honesty fix — course_lesson_sources() must recompute from the URL, not trust it.
     l1 = {"id": "a", "sources": [
         {"title": "arXiv", "url": "https://arxiv.org/abs/1", "type": "peer-reviewed"},
         {"title": "MIT", "url": "https://mit.edu/x", "type": "university"}]}
@@ -752,6 +796,8 @@ def test_course_lesson_sources_rolls_up_and_dedupes(tmp_path):
     assert urls.count("https://arxiv.org/abs/1") == 1   # deduped across lessons
     assert "https://mit.edu/x" in urls and "https://pytorch.org/docs" in urls
     assert rolled[0]["type"] == "university"            # sorted: university first
+    types = {s["url"]: s["type"] for s in rolled}
+    assert types["https://arxiv.org/abs/1"] == "preprint"  # legacy "peer-reviewed" relabeled
 
 
 def test_course_system_prompt_decouples_depth_from_daily_time():
@@ -831,6 +877,14 @@ def test_lesson_prompt_requires_self_containment_and_consistency():
     assert "visual aid must match the prose" in low  # diagram cannot contradict text
 
 
+def test_lesson_prompt_checks_have_mcq_self_verification():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="x-l1", lesson_title="T",
+                          module_title="M", position=1, total=2)
+    assert "re-answer each mcq check" in p
+    assert "Confirm the choice at answer is the answer you get" in p
+    assert "no distractor is also defensibly correct" in p
+
+
 def test_lesson_chat_system_mirrors_lesson_vocabulary():
     low = gen.LESSON_CHAT_SYSTEM.lower()
     assert "mirror the lesson's own vocabulary" in low
@@ -863,6 +917,20 @@ def test_lesson_audit_prompt_asks_for_ok_verdict():
     assert "consistent terminology" in p.lower()
 
 
+def test_lesson_audit_prompt_checks_objective_coverage():
+    p = gen.lesson_audit_prompt(_full_lesson())
+    assert "OBJECTIVE COVERAGE" in p
+    assert "perform each stated objective's action verb" in p
+
+
+def test_lesson_audit_prompt_lists_objectives_when_provided():
+    objectives = [{"text": "Calculate the multiplier effect", "bloom": "apply"}]
+    p = gen.lesson_audit_prompt(_full_lesson(), objectives=objectives)
+    assert "Calculate the multiplier effect" in p
+    p_none = gen.lesson_audit_prompt(_full_lesson())
+    assert "Calculate the multiplier effect" not in p_none
+
+
 def test_lesson_review_prompt_states_the_three_rules():
     p = gen.lesson_review_prompt(_full_lesson(topic="business cycles"))
     low = p.lower()
@@ -878,6 +946,14 @@ def test_lesson_review_prompt_includes_flagged_issues_when_given():
     assert "graphic says Slowdown, answer says contraction" in p
     p2 = gen.lesson_review_prompt(_full_lesson())
     assert "already flagged" not in p2
+
+
+def test_lesson_review_prompt_checks_objective_coverage_and_lists_objectives():
+    p = gen.lesson_review_prompt(_full_lesson())
+    assert "OBJECTIVE COVERAGE" in p
+    objectives = [{"text": "Calculate the multiplier effect", "bloom": "apply"}]
+    p_with = gen.lesson_review_prompt(_full_lesson(), objectives=objectives)
+    assert "Calculate the multiplier effect" in p_with
 
 
 def test_verification_rewrites_only_when_audit_flags_a_defect(tmp_path):
@@ -920,6 +996,33 @@ def test_verification_falls_back_when_audit_errors(tmp_path):
     out = gen.ensure_lesson(root, "demo", "demo-l1", {},
                             generate=lambda p: dict(raw), verify_generate=boom)
     assert out["solutionAns"] == "original answer"
+
+
+def test_verification_threads_objectives_into_audit_prompt(tmp_path):
+    """_generate_and_store_lesson has meta.get("objectives") in scope; it must reach
+    the audit prompt via _reviewed_lesson so the objective-coverage rule can be checked
+    against the lesson's actual objectives."""
+    root = tmp_path / "courses"
+    (root / "demo" / "lessons").mkdir(parents=True)
+    (root / "demo" / "course.json").write_text(_json.dumps({
+        "id": "demo", "title": "Demo", "subtitle": "", "brief": "beginner friendly",
+        "modules": [{"id": "m1", "title": "Basics",
+                     "lessons": [{"id": "demo-l1", "title": "First",
+                                 "objectives": [{"text": "Calculate the multiplier effect",
+                                                 "bloom": "apply"}]}]}],
+    }))
+    raw = _full_lesson(solutionAns="as generated")
+    captured = {}
+
+    def spy_verify(prompt, validate=None):
+        if "CORRECTED" not in prompt:
+            captured["audit_prompt"] = prompt
+        return {"ok": True}
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(raw),
+                            verify_generate=spy_verify)
+    assert out["solutionAns"] == "as generated"
+    assert "Calculate the multiplier effect" in captured["audit_prompt"]
 
 
 def test_verification_preserves_original_sources(tmp_path):

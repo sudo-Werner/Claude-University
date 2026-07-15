@@ -25,6 +25,26 @@ test("transcriptHTML renders rows, escapes titles, includes the non-credential n
   assert.ok(html.includes("not an accredited credential"));
 });
 
+test("transcriptHTML declares the mastery standard", () => {
+  const html = transcriptHTML(DATA);
+  assert.ok(html.includes("Mastery standard: a course is passed when every module exam and the final are passed at 80% or above."));
+});
+
+test("transcriptHTML shows level and targetHours, esc()'d, when present", () => {
+  const withLevel = { courses: [{ ...DATA.courses[0], level: "Master-equivalent <x>", targetHours: 130 }] };
+  const html = transcriptHTML(withLevel);
+  assert.ok(html.includes("Master-equivalent &lt;x&gt;"));
+  assert.ok(html.includes("~130 h"));
+  assert.ok(html.includes("Master-equivalent &lt;x&gt; · ~130 h · 4 of 10 lessons studied · 3 at proficient or above"));
+});
+
+test("transcriptHTML omits level and targetHours cleanly when absent (legacy course)", () => {
+  const html = transcriptHTML(DATA);  // DATA has no level/targetHours field
+  assert.ok(!html.includes("null"));
+  assert.ok(!html.includes("undefined"));
+  assert.ok(html.includes("4 of 10 lessons studied · 3 at proficient or above"));
+});
+
 test("transcriptHTML empty state", () => {
   const html = transcriptHTML({ courses: [] });
   assert.ok(html.includes("No courses yet"));

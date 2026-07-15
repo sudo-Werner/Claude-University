@@ -379,7 +379,7 @@ def test_library_endpoint_returns_filtered_sources(client, tmp_path, monkeypatch
     urls = [s["url"] for s in body["sources"]]
     assert "https://arxiv.org/abs/1404.7828" in urls
     assert "https://nope.example.com/x" not in urls
-    assert body["sources"][0]["type"] == "peer-reviewed"
+    assert body["sources"][0]["type"] == "preprint"
 
 
 def test_library_endpoint_reauth(client, tmp_path, monkeypatch):
@@ -714,7 +714,8 @@ def test_submit_exam_roundtrip(client, tmp_path, monkeypatch):
     def fake_grade(prompt, *, validate=None, **kw):
         import re
         idxs = [int(m) for m in re.findall(r'"index": (\d+)', prompt)]
-        return {"grades": [{"index": i, "verdict": "correct", "note": "Good."} for i in idxs]}
+        return {"grades": [{"index": i, "verdict": "correct", "note": "Good.", "evidence": "ans"}
+                           for i in idxs]}
 
     monkeypatch.setattr(claude_client, "run_structured", fake_grade)
     exam = exams.load_pending(root, cid, "m1")
@@ -766,6 +767,21 @@ def test_remediation_404_without_failed_exam(tmp_path, monkeypatch):
     cid = manifest["id"]
     r = client.post(f"/api/courses/{cid}/exams/m1/remediation")
     assert r.status_code == 404
+
+
+def test_remediation_404_for_module_dropped_by_a_later_revision(tmp_path, monkeypatch):
+    """A failed exam_result can outlive a manifest revision that drops its module (e.g. a
+    course rewrite). The remediation gate must 404 rather than try to remediate a module
+    that no longer exists, and must not create a remediation file for it."""
+    client = _client(tmp_path, monkeypatch)
+    manifest, _ = _fixture_course(courses, tmp_path)  # module id "m1"
+    cid = manifest["id"]
+    _post_exam_result(client, cid, "m9",
+                      {"score": 0.0, "passed": False, "attempt": 1,
+                       "weakSpots": [{"lessonId": "x", "lessonTitle": "X", "objectives": []}]})
+    r = client.post(f"/api/courses/{cid}/exams/m9/remediation")
+    assert r.status_code == 404
+    assert not (tmp_path / cid / "remediation" / "m9.json").exists()
 
 
 def test_remediation_generates_serves_and_reuses(tmp_path, monkeypatch):

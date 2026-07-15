@@ -30,7 +30,7 @@ export function syllabusHTML(course, { actions = true } = {}) {
   const modules = (course.modules || []).map(moduleBlock).join("");
   return (
     `<div class="syllabus">` +
-    `<div class="eyebrow">PROPOSED PROGRAM</div>` +
+    `<div class="eyebrow">PROPOSED COURSE</div>` +
     `<h1 class="session-topic">${esc(course.title || "")}</h1>` +
     `<div class="session-sub">${esc(course.subtitle || "")}</div>` +
     `<div class="syl-badges">` +

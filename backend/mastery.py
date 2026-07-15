@@ -30,8 +30,12 @@ def level_for(reps, acc):
 
 def _accuracy_pool(conn, course_id):
     """Per-lesson weighted (points, total) evidence: lesson checks (incl. remediation
-    practice, which logs as lesson_check), explain-it-back verdicts, and exam questions
-    at EXAM_WEIGHT. prequiz_attempt is deliberately absent — it precedes instruction."""
+    practice, which logs as lesson_check), explain-it-back verdicts (both cumulative —
+    low-stakes and plentiful), and exam questions at EXAM_WEIGHT. Exam evidence is the
+    LATEST attempt per exam key only (Bloom's mastery-learning rule: the newest
+    demonstration replaces the old one, not averages with it) — mastery reflects final
+    status, not the average of the diagnostic journey. prequiz_attempt is deliberately
+    absent — it precedes instruction."""
     pool = {}
 
     def add(lesson_id, points, weight):
@@ -42,7 +46,7 @@ def _accuracy_pool(conn, course_id):
 
     rows = conn.execute(
         "SELECT topic_id, event_type, payload FROM events "
-        "WHERE event_type IN ('lesson_check', 'lesson_explained', 'exam_result') "
+        "WHERE event_type IN ('lesson_check', 'lesson_explained') "
         "AND course_id = ?",
         (course_id,),
     ).fetchall()
@@ -55,19 +59,37 @@ def _accuracy_pool(conn, course_id):
             continue
         if row["event_type"] == "lesson_check":
             add(row["topic_id"], 1.0 if payload.get("correct") else 0.0, 1.0)
-        elif row["event_type"] == "lesson_explained":
+        else:  # lesson_explained
             points = _EXPLAIN_POINTS.get(payload.get("verdict"))
             if points is not None:
                 add(row["topic_id"], points, 1.0)
-        else:  # exam_result: topic_id is the exam key — evidence lives per question
-            for q in payload.get("perQuestion") or []:
-                if not isinstance(q, dict):
-                    continue
-                try:
-                    points = float(q.get("points"))
-                except (TypeError, ValueError):
-                    continue
-                add(q.get("lessonId"), points * EXAM_WEIGHT, EXAM_WEIGHT)
+
+    exam_rows = conn.execute(
+        "SELECT topic_id, payload FROM events "
+        "WHERE event_type = 'exam_result' AND course_id = ? "
+        "ORDER BY occurred_at ASC, id ASC",
+        (course_id,),
+    ).fetchall()
+    latest_exam_payload = {}
+    for row in exam_rows:
+        if not row["topic_id"]:
+            continue
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except ValueError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        latest_exam_payload[row["topic_id"]] = payload  # last wins (ORDER BY above)
+    for payload in latest_exam_payload.values():
+        for q in payload.get("perQuestion") or []:
+            if not isinstance(q, dict):
+                continue
+            try:
+                points = float(q.get("points"))
+            except (TypeError, ValueError):
+                continue
+            add(q.get("lessonId"), points * EXAM_WEIGHT, EXAM_WEIGHT)
     return pool
 
 
@@ -104,9 +126,9 @@ def performance_summary(conn, content_dir, course_id):
         return ""
     counts = mastery_counts(mastery_map)
     pool = _accuracy_pool(conn, course_id)
-    correct = sum(p for p, _ in pool.values())
+    points = sum(p for p, _ in pool.values())
     total = sum(t for _, t in pool.values())
-    acc = (correct / total) if total else None
+    acc = (points / total) if total else None
     n = len(mastery_map)
     proficient_plus = counts["proficient"] + counts["mastered"]
     if (acc is not None and acc < 0.6) or counts["attempted"] >= 2:

@@ -150,7 +150,16 @@ def exam_prompt(*, manifest, exam_key, slots, spine_lessons):
         "believable distractors drawn from real misconceptions) and the 0-based answerIndex.\n"
         "For type=free: a short-answer question a learner answers in 2-6 sentences, plus "
         "modelAnswer (the reference answer) and graderNotes (what a correct answer must "
-        "include, what earns partial credit).\n"
+        "include, what earns partial credit). Free questions test apply-or-higher objectives: "
+        "pose a NOVEL scenario, case, or problem that does not appear in the lessons — the "
+        "learner must USE the concept to resolve it, not describe the concept. Write "
+        "graderNotes to reward correct application to the scenario over recitation of "
+        "definitions.\n"
+        "Before emitting, re-answer each multiple-choice question independently from the "
+        "question text alone. Confirm the choice at answerIndex is the answer you get, and "
+        "that no distractor is also defensibly correct — if one is, rewrite it. For free "
+        "questions, modelAnswer must be verifiably correct; state nothing you are not certain "
+        "of.\n"
         "Question prompts and choices may use simple HTML (p, em, strong, code) and no other "
         "tags. Echo each slot's type and lessonId verbatim.\n"
         "Reply with ONLY a JSON object, no prose, no fence:\n"
@@ -305,10 +314,13 @@ def exam_grade_prompt(exam, answers):
         "notes — not wording. An empty answer is incorrect.\n\n"
         "Answers to grade, one JSON object per line:\n"
         + "\n".join(items) + "\n\n"
+        "Grade each item independently. For each grade include evidence: a short verbatim "
+        "quote from the learner's answer that your verdict rests on (empty string only if "
+        "the answer is empty). Base the verdict only on what the evidence shows.\n"
         "Grade EVERY item. Reply with ONLY a JSON object, no prose, no fence:\n"
         '{"grades":[{"index":<same index>,"verdict":"correct"|"close"|"incorrect",'
         '"note":"<one or two sentences addressed to \'you\': what you got right and what '
-        'was missing or wrong>"}]}'
+        'was missing or wrong>","evidence":"<short quote from the learner\'s answer>"}]}'
     )
 
 
@@ -325,7 +337,12 @@ def valid_exam_grades(expected_indices):
                 return False
             if not _nonempty_str(g.get("note")):
                 return False
-            seen.add(g.get("index"))
+            if not isinstance(g.get("evidence"), str):
+                return False
+            idx = g.get("index")
+            if idx in seen:
+                return False  # duplicate grade for one question — ambiguous, reject
+            seen.add(idx)
         return seen == expected
 
     return check
@@ -355,6 +372,8 @@ def grade_exam(exam, answers, manifest, *, generate):
                                  "choices": q["choices"]})
         else:
             g = grades[i]
+            # g["evidence"] is a reliability lever for the grader (quote-then-judge), not
+            # learner-facing — intentionally not copied into per_question/the result payload.
             per_question.append({**base, "points": _POINTS[g["verdict"]],
                                  "verdict": g["verdict"],
                                  "note": generation.sanitize_html(g["note"])})
@@ -445,9 +464,13 @@ def exam_status(conn, course_id, manifest):
             payload = json.loads(row["payload"]) if row["payload"] else {}
         except ValueError:
             continue
+        if not isinstance(payload, dict):
+            continue
         entry = status.setdefault(key, {"attempts": 0, "bestScore": 0.0, "passed": False})
         entry["attempts"] += 1
-        entry["bestScore"] = max(entry["bestScore"], float(payload.get("score") or 0.0))
+        score = payload.get("score")
+        if isinstance(score, (int, float)) and not isinstance(score, bool):
+            entry["bestScore"] = max(entry["bestScore"], float(score))
         entry["passed"] = entry["passed"] or bool(payload.get("passed"))
     return status
 
