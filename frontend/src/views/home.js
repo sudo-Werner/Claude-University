@@ -1,5 +1,13 @@
 import { esc } from "../escape.js";
 
+function bannerHTML(courses) {
+  const withDue = courses.filter((c) => c.reviewsDue > 0);
+  const total = withDue.reduce((n, c) => n + c.reviewsDue, 0);
+  if (!total) return "";
+  const where = withDue.length === 1 ? esc(withDue[0].title) : `${withDue.length} courses`;
+  return `<div class="review-banner"><b>${total} review${total === 1 ? "" : "s"} due</b> in ${where} — a quick review now keeps it stuck.</div>`;
+}
+
 function courseCard(c) {
   return `
     <button class="course-card" data-course="${c.id}">
@@ -17,6 +25,7 @@ export function homeHTML(courses) {
   return `
     <div class="home">
     <div class="greeting"><h1>Your university</h1><span>${count} course${count === 1 ? "" : "s"}</span></div>
+    ${bannerHTML(courses)}
     <div class="course-grid">
       ${cards}
       <button class="course-card add-course" data-action="add-course">

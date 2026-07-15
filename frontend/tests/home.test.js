@@ -33,3 +33,28 @@ test("home escapes HTML in course title and subtitle", () => {
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /a &amp; b/);
 });
+
+test("home shows a banner summing reviews due across courses", () => {
+  const html = homeHTML([
+    { ...ML, reviewsDue: 3 },
+    { ...ML, id: "x2", title: "Statistics", reviewsDue: 2 },
+  ]);
+  assert.match(html, /review-banner/);
+  assert.match(html, /5 reviews due/);
+  assert.match(html, /2 courses/);
+});
+
+test("home banner names the course when only one has reviews due", () => {
+  const html = homeHTML([{ ...ML, reviewsDue: 1 }]);
+  assert.match(html, /1 review due/);
+  assert.match(html, /Machine Learning/);
+});
+
+test("home banner absent when nothing is due", () => {
+  assert.doesNotMatch(homeHTML([ML]), /review-banner/);
+});
+
+test("home banner escapes course titles", () => {
+  const html = homeHTML([{ ...ML, title: "<b>Evil</b>", reviewsDue: 1 }]);
+  assert.doesNotMatch(html, /<b>Evil<\/b>/);
+});
