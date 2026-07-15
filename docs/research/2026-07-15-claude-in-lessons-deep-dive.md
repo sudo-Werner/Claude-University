@@ -33,11 +33,12 @@ spent, and the charter names Socratic questioning explicitly.
 
 ### 2. Fresh retrieval items for reviews (fix the weakest pedagogy link)
 
-SRS reviews currently re-present the SAME exercise — after two or three reviews you are
-recalling the answer string, not the concept (answer memorization defeats the testing
-effect). Claude should generate 1–2 *fresh* retrieval questions per due lesson from its
-objectives + spine entry — same machinery as exam generation, tiny scope. Cache per review
-session; grade like checks.
+**Update (overnight):** the pedagogy audit flagged this independently, and the cheap half
+was built and deployed the same night — review sessions now require re-answering the
+lesson's checks before the recall rating unlocks. What remains of this idea is the full
+version: Claude generating 1–2 *fresh* retrieval questions per due lesson from its
+objectives + spine entry (varied items beat repeated identical ones — Butler 2010) — same
+machinery as exam generation, tiny scope. Cache per review session; grade like checks.
 **Science:** retrieval practice with varied items is the strongest single finding in learning
 science (Roediger & Karpicke); identical-item re-testing decays fast.
 **Cost:** one small generation call per review session (batchable across due lessons).
@@ -112,8 +113,8 @@ theming; multi-agent debates as a gimmick; always-on proactive interruptions whi
 
 ## Suggested order if you approve the direction
 
-1 (Socratic co-work) → 2 (fresh review items) → 5 (prior-knowledge activation) → 6 (analogy
-on tap) → 3 (teach-it-to-Claude) → then decide 4 and 7 after living with the first wave.
-Items 2 and 5 also answer gaps the overnight pedagogy audit flagged independently.
+1 (Socratic co-work) → 2 (fresh review items — the cheap half already shipped overnight) →
+5 (prior-knowledge activation) → 6 (analogy on tap) → 3 (teach-it-to-Claude) → then decide
+4 and 7 after living with the first wave.
 
 None of this is built. Pick any subset — each becomes a normal brainstorm→spec→plan cycle.
