@@ -49,7 +49,7 @@ def _course_titles(content_dir, course_id, cache):
     if course_id not in cache:
         manifest = courses.load_manifest(content_dir, course_id)
         if manifest is None:
-            cache[course_id] = (course_id, {})  # deleted/renamed course — show raw id
+            cache[course_id] = (None, {})  # deleted course — its entries are skipped by recent_activity
         else:
             cache[course_id] = (
                 manifest.get("title") or course_id,
@@ -72,6 +72,8 @@ def recent_activity(conn, content_dir, limit=50):
         course_title, lesson_titles = (None, {})
         if r["course_id"]:
             course_title, lesson_titles = _course_titles(content_dir, r["course_id"], cache)
+            if course_title is None:
+                continue  # course was deleted — stale history is noise in the log
         payload = json.loads(r["payload"]) if r["payload"] else {}
         out.append({
             "occurredAt": r["occurred_at"],

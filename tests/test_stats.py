@@ -131,14 +131,15 @@ def test_activity_respects_limit(conn, tmp_path):
     assert out[0]["occurredAt"].startswith("2026-07-15T05")
 
 
-def test_activity_falls_back_to_ids_for_missing_course(conn, tmp_path):
+def test_activity_skips_deleted_courses(conn, tmp_path):
+    content = _write_course(tmp_path)
     events.insert_events(conn, [
-        _ev(1, "lesson_view", "2026-07-15T10:00:00+00:00",
+        _ev(1, "lesson_view", "2026-07-15T10:00:00+00:00"),
+        _ev(2, "lesson_view", "2026-07-15T11:00:00+00:00",
             course_id="deleted-course", topic_id="deleted-course-l9"),
     ])
-    out = stats.recent_activity(conn, tmp_path, limit=10)
-    assert out[0]["courseTitle"] == "deleted-course"
-    assert out[0]["lessonTitle"] is None
+    out = stats.recent_activity(conn, content, limit=10)
+    assert [e["courseTitle"] for e in out] == ["Machine Learning"]
 
 
 def test_activity_course_created_has_no_lesson(conn, tmp_path):
