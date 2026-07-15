@@ -1,7 +1,10 @@
 import json
 import os
+import select
 import subprocess
 import tempfile
+import threading
+import time
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/home/werner/.local/bin/claude")
@@ -9,6 +12,11 @@ CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/home/werner/.local/bin/claude")
 # a worked example + a visual aid — legitimately takes ~110s via the Max CLI (measured
 # 114s on the Pi). 120s was too tight and timed out mid-generation. Give 2x headroom.
 _TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "240"))
+
+# The streaming path (lessons, compile, revise, chats) needs its own, longer ceiling:
+# a rich lesson takes ~110s and a compile outline longer. 540s sits just under the
+# waitress --channel-timeout=600, so the process dies before the HTTP channel does.
+_STREAM_TIMEOUT = int(os.environ.get("CLAUDE_STREAM_TIMEOUT", "540"))
 
 
 class ClaudeError(Exception):
@@ -72,16 +80,43 @@ def _spawn_cli(args):
             [CLAUDE_BIN, *args], stdout=subprocess.PIPE, stderr=tmpfile,
             text=True, env=_env(),
         )
-        for line in proc.stdout:
-            yield line
-        proc.wait()
-        if proc.returncode != 0:
-            tmpfile.seek(0)
-            err = tmpfile.read() or ""
-            reason = _auth_failure_reason("", err, scan_text=True)
-            if reason:
-                raise ClaudeAuthError(reason)
-            raise ClaudeError(f"claude stream exited {proc.returncode}: {err[:500]}")
+        timed_out = False
+        start_time = time.time()
+        try:
+            while True:
+                elapsed = time.time() - start_time
+                if elapsed > _STREAM_TIMEOUT:
+                    timed_out = True
+                    proc.kill()
+                    proc.wait()
+                    raise ClaudeError(f"claude stream timed out after {_STREAM_TIMEOUT}s")
+
+                timeout = max(0.1, _STREAM_TIMEOUT - elapsed)
+                ready, _, _ = select.select([proc.stdout], [], [], timeout)
+
+                if ready:
+                    line = proc.stdout.readline()
+                    if not line:
+                        break
+                    yield line
+
+                if proc.poll() is not None:
+                    break
+
+            if not timed_out:
+                if proc.returncode != 0:
+                    tmpfile.seek(0)
+                    err = tmpfile.read() or ""
+                    reason = _auth_failure_reason("", err, scan_text=True)
+                    if reason:
+                        raise ClaudeAuthError(reason)
+                    raise ClaudeError(f"claude stream exited {proc.returncode}: {err[:500]}")
+        finally:
+            # Runs on normal exit, on error, AND on GeneratorExit (consumer abandoned
+            # the stream, e.g. browser disconnect) — never leave an orphan claude -p.
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
 
 
 def extract_json(text):

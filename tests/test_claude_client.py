@@ -1,4 +1,6 @@
 import json
+import os
+import time
 import pytest
 from backend import claude_client as cc
 
@@ -189,3 +191,35 @@ def test_stream_without_tools_has_no_allowedtools():
         return iter([])
     list(cc.stream("p", spawn=spawn))
     assert "--allowedTools" not in seen["args"]
+
+
+def test_spawn_cli_times_out_and_kills(monkeypatch, tmp_path):
+    script = tmp_path / "fake-claude"
+    script.write_text("#!/bin/sh\nsleep 30\n")
+    script.chmod(0o755)
+    monkeypatch.setattr(cc, "CLAUDE_BIN", str(script))
+    monkeypatch.setattr(cc, "_STREAM_TIMEOUT", 1)
+    start = time.monotonic()
+    with pytest.raises(cc.ClaudeError, match="timed out"):
+        list(cc._spawn_cli(["-p", "x"]))
+    assert time.monotonic() - start < 10  # killed, not waited out
+
+
+def test_spawn_cli_kills_process_when_generator_abandoned(monkeypatch, tmp_path):
+    pidfile = tmp_path / "pid"
+    script = tmp_path / "fake-claude"
+    script.write_text(f"#!/bin/sh\necho $$ > {pidfile}\necho line1\nsleep 30\n")
+    script.chmod(0o755)
+    monkeypatch.setattr(cc, "CLAUDE_BIN", str(script))
+    gen = cc._spawn_cli(["-p", "x"])
+    assert next(gen) == "line1\n"
+    gen.close()  # simulates the SSE consumer disconnecting
+    pid = int(pidfile.read_text().strip())
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.1)
+    else:
+        pytest.fail("CLI process still alive after generator close")
