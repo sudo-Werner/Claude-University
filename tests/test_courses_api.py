@@ -479,6 +479,18 @@ def test_lesson_chat_route_404_unknown_lesson(client, tmp_path, monkeypatch):
     assert client.post(f"/api/courses/{cid}/lessons/nope/chat", json={"messages": []}).status_code == 404
 
 
+def test_lesson_chat_route_passes_solution_revealed(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "stream", lambda prompt, **kw: iter(["ok"]))
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/chat",
+                       json={"messages": [{"role": "user", "content": "help"}], "solutionRevealed": True})
+    assert resp.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # /revise and /apply-revision
 # ---------------------------------------------------------------------------
@@ -619,10 +631,11 @@ def test_explain_route_grades_explanation(tmp_path, monkeypatch):
         "id": "c1-l1", "promptHtml": "<p>Body</p>", "solutionAns": "42", "solutionNote": "why",
     }))
     monkeypatch.setattr(claude_client, "run_structured",
-                        lambda prompt, validate=None: {"verdict": "correct", "note": "well put"})
+                        lambda prompt, validate=None: {"verdict": "correct", "note": "well put",
+                                                        "followUp": "Why?"})
     resp = client.post("/api/courses/c1/lessons/c1-l1/explain", json={"explanation": "because 42"})
     assert resp.status_code == 200
-    assert resp.get_json() == {"verdict": "correct", "note": "well put"}
+    assert resp.get_json() == {"verdict": "correct", "note": "well put", "followUp": "Why?"}
 
 
 def test_explain_route_requires_explanation(tmp_path, monkeypatch):
