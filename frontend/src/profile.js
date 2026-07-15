@@ -73,6 +73,7 @@ export async function saveProfile({ fetch, endpoint, profile }) {
 
 export async function loadProfile({ fetch, endpoint }) {
   const resp = await fetch(endpoint);
+  if (!resp.ok) throw new Error(`profile fetch failed: ${resp.status}`);
   const body = await resp.json();
   return body && body.data ? body.data : null;
 }

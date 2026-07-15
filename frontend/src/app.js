@@ -350,9 +350,14 @@ export async function init({ window, fetch }) {
   async function openLesson(lessonId) {
     if (!lessonId) return;
     ui.reviewQueue = [];
+    ui.loadSeq = (ui.loadSeq || 0) + 1;
+    const seq = ui.loadSeq;
+    ui.screen = "lesson-loading";
     const view = root.querySelector("#view");
     if (view) startLoading(view, "lesson", LESSON_STAGES);
-    ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId });
+    const lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId });
+    if (ui.screen !== "lesson-loading" || ui.loadSeq !== seq) return; // navigated away mid-load
+    ui.lesson = lesson;
     if (lessonFailed(ui.lesson)) { showLessonError(ui.lesson && ui.lesson.error || "Couldn't load this lesson."); return; }
     ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
     log("lesson_view", { courseId: ui.courseId, topicId: lessonId });
@@ -608,23 +613,32 @@ export async function init({ window, fetch }) {
   async function advanceAfterLesson() {
     if (ui.reviewQueue.length) {
       const nextId = ui.reviewQueue.shift();
-      ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: nextId });
-      if (lessonFailed(ui.lesson)) { await refreshSummary(); showCourse(); return; }
+      const lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: nextId });
+      if (ui.screen !== "lesson") return; // navigated away while loading the next review
+      ui.lesson = lesson;
+      if (lessonFailed(ui.lesson)) { await refreshSummary(); if (ui.screen !== "lesson") return; showCourse(); return; }
       ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
       log("lesson_view", { courseId: ui.courseId, topicId: nextId });
       showLesson();
       return;
     }
     await refreshSummary();
+    if (ui.screen !== "lesson") return; // navigated away — don't yank them to the dashboard
     showCourse();
   }
 
   async function startReviewSession() {
+    ui.loadSeq = (ui.loadSeq || 0) + 1;
+    const seq = ui.loadSeq;
+    ui.screen = "review-loading";
     const due = await loadReviews({ fetch, courseId: ui.courseId });
+    if (ui.screen !== "review-loading" || ui.loadSeq !== seq) return; // navigated away
     log("review_opened", { courseId: ui.courseId });
     if (!due.length) { showCourse(); return; }
     ui.reviewQueue = due.slice(1);
-    ui.lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: due[0] });
+    const lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: due[0] });
+    if (ui.screen !== "review-loading" || ui.loadSeq !== seq) return; // navigated away
+    ui.lesson = lesson;
     if (lessonFailed(ui.lesson)) { showCourse(); return; }
     ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {} };
     log("lesson_view", { courseId: ui.courseId, topicId: due[0] });
@@ -664,21 +678,23 @@ export async function init({ window, fetch }) {
     const ta = root.querySelector('[data-field="chat"]');
     const text = ta.value.trim();
     if (!text || ui.chat.pending) return;
-    ui.chat.messages.push({ role: "user", content: text });       // raw
+    const chat = ui.chat;
+    const onScreen = () => ui.screen === "chat" && ui.chat === chat;
+    chat.messages.push({ role: "user", content: text });       // raw
     const reply = { role: "assistant", content: "" };
-    ui.chat.messages.push(reply);
-    ui.chat.pending = true;
+    chat.messages.push(reply);
+    chat.pending = true;
     paintChat();
-    const history = ui.chat.messages
+    const history = chat.messages
       .filter((m) => m !== reply)                                  // exclude the in-progress placeholder
       .map((m) => ({ role: m.role, content: m.content }));
     await streamChat({
       fetch,
       messages: history,
-      onDelta: (d) => { reply.content += d; paintChat(); },
-      onBrief: (b) => { ui.chat.brief = b; },
-      onDone: () => { ui.chat.pending = false; paintChat(); },
-      onError: (e) => { reply.content = "⚠️ " + (e.message || "Claude is unavailable right now."); ui.chat.pending = false; paintChat(); },
+      onDelta: (d) => { reply.content += d; if (onScreen()) paintChat(); },
+      onBrief: (b) => { chat.brief = b; },
+      onDone: () => { chat.pending = false; if (onScreen()) paintChat(); },
+      onError: (e) => { reply.content = "⚠️ " + (e.message || "Claude is unavailable right now."); chat.pending = false; if (onScreen()) paintChat(); },
     });
   }
 
@@ -714,8 +730,19 @@ export async function init({ window, fetch }) {
   }
 
   async function acceptSyllabus() {
-    const course = await createCourse({ fetch, proposal: ui.proposedCourse });
-    if (course) { log("course_created", { courseId: course.id }); openCourse(course.id); }
+    const proposed = ui.proposedCourse;
+    const course = await createCourse({ fetch, proposal: proposed });
+    if (ui.screen !== "syllabus") return; // navigated away mid-create
+    if (!course) {
+      const view = root.querySelector("#view");
+      view.innerHTML =
+        `<div class="card"><div class="prompt">Couldn't create the course right now. Your proposal is still here — try again.</div>` +
+        `<div class="nav"><button class="btn-back" data-action="back">Back to proposal</button></div></div>`;
+      view.querySelector('[data-action="back"]').addEventListener("click", () => showSyllabus(proposed));
+      return;
+    }
+    log("course_created", { courseId: course.id });
+    openCourse(course.id);
   }
 
   function lessonFailed(l) { return !l || l.error; }
@@ -752,7 +779,16 @@ export async function init({ window, fetch }) {
     ui.timer.running = false;
   }
 
-  const profile = await loadProfile({ fetch, endpoint: PROFILE_ENDPOINT });
+  let profile;
+  try {
+    profile = await loadProfile({ fetch, endpoint: PROFILE_ENDPOINT });
+  } catch (e) {
+    root.innerHTML =
+      `<div class="card"><div class="prompt">Couldn't reach the server. Check that the service is running, then retry.</div>` +
+      `<div class="nav"><button class="btn-primary" data-action="retry">Retry</button></div></div>`;
+    root.querySelector('[data-action="retry"]').addEventListener("click", () => window.location.reload());
+    return;
+  }
   if (profile) showHome();
   else showDiagnostic();
 }

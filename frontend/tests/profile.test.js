@@ -49,3 +49,8 @@ test("loadProfile returns the saved data or null", async () => {
   const empty = async () => ({ ok: true, json: async () => ({}) });
   assert.equal(await loadProfile({ fetch: empty, endpoint: "/api/profile" }), null);
 });
+
+test("loadProfile throws on a non-ok response instead of parsing it", async () => {
+  const fetch = async () => ({ ok: false, status: 500, json: async () => ({}) });
+  await assert.rejects(() => loadProfile({ fetch, endpoint: "/api/profile" }));
+});
