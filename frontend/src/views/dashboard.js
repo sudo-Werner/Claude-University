@@ -76,6 +76,13 @@ export function dashboardHTML(data, timerView) {
         <div class="stat-note" style="margin:10px 0 14px">Spaced repetition</div>
         <button class="btn-secondary" data-action="review"${data.reviewsDue ? "" : " disabled"}>Review</button>
       </section>
+      ${typeof data.streakDays !== "undefined" ? `
+      <section class="stat">
+        <span class="eyebrow mut">STREAK</span>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-top:12px"><span class="big" style="color:var(--purple)">${data.streakDays}</span><span class="unit">day${data.streakDays === 1 ? "" : "s"}</span></div>
+        <div class="stat-note">${data.streakDays === 1 ? "Consecutive study day" : data.streakDays ? "Consecutive study days" : "Study today to start one"}</div>
+      </section>
+      ` : ""}
     </div>
     ${masteryHTML(data.masteryCounts)}
     </div>

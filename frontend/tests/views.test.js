@@ -546,3 +546,18 @@ test("syllabusHTML drops non-http(s) source URLs", () => {
   assert.ok(!html.includes("javascript:alert"));
   assert.ok(html.includes("https://ok.example/x"));
 });
+
+test("dashboard shows the streak tile with day count", () => {
+  const html = dashboardHTML({ ...DASHBOARD_SEED, streakDays: 4 }, idleTimer);
+  assert.match(html, /STREAK/);
+  assert.match(html, />4</);
+  assert.match(html, /days/);
+});
+
+test("dashboard streak uses singular day and a nudge at zero", () => {
+  const one = dashboardHTML({ ...DASHBOARD_SEED, streakDays: 1 }, idleTimer);
+  assert.match(one, /day</);
+  assert.doesNotMatch(one, /days</);
+  const zero = dashboardHTML({ ...DASHBOARD_SEED, streakDays: 0 }, idleTimer);
+  assert.match(zero, /Study today to start one/);
+});

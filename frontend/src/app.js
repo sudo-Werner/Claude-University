@@ -5,6 +5,7 @@ import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
 import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision } from "./courses.js";
+import { loadStats } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
@@ -56,6 +57,7 @@ export async function init({ window, fetch }) {
     diagnostic: {},
     chat: null,
     reviewQueue: [],
+    stats: null,
   };
 
   // ---- diagnostic (unchanged flow, now lands on the home) ----
@@ -104,6 +106,7 @@ export async function init({ window, fetch }) {
     // Reload the manifest too: its mastery/masteryCounts change as lessons are
     // completed, so the dashboard breakdown stays current after a lesson.
     ui.manifest = (await loadCourse({ fetch, courseId: ui.courseId })) || ui.manifest;
+    ui.stats = (await loadStats({ fetch })) || ui.stats;
   }
 
   async function openCourse(courseId) {
@@ -152,6 +155,7 @@ export async function init({ window, fetch }) {
         hours: ui.manifest.targetHours || null,
         skills: ui.manifest.skills || [],
       } : null,
+      streakDays: (ui.stats && ui.stats.streakDays) || 0,
     };
   }
 
