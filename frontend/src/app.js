@@ -424,7 +424,9 @@ export async function init({ window, fetch }) {
       paintExam();
       return;
     }
-    await refreshSummary(); // exam status + coursePassed changed
+    // Paint the result even if the summary refresh fails — this screen is the
+    // only place the graded report exists; stale status self-heals on next load.
+    try { await refreshSummary(); } catch (e) {}
     if (ui.screen !== "exam" || ui.examState !== st) return; // navigated away during refresh
     ui.screen = "exam-result";
     const view = root.querySelector("#view");
