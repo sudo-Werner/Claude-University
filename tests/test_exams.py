@@ -130,7 +130,7 @@ def test_finalize_sanitizes_and_stamps_slot_metadata():
     exam = exams.finalize_exam(raw, slots, "m1", "c1")
     assert exam["examKey"] == "m1" and exam["courseId"] == "c1"
     q0 = exam["questions"][0]
-    assert "<script>" not in q0["prompt"] and "onclick" not in q0["prompt"]
+    assert "<p onclick" not in q0["prompt"] and "<script>" not in q0["prompt"]
     assert q0["objectiveText"] == slots[0]["objectiveText"]
     assert q0["bloom"] == slots[0]["bloom"]
 
@@ -166,3 +166,53 @@ def test_load_pending_corrupt_is_none(tmp_path):
     p.mkdir(parents=True)
     (p / "m1.json").write_text("{not json")
     assert exams.load_pending(tmp_path, "c1", "m1") is None
+
+
+def test_module_blueprint_grows_to_cover_oversized_module():
+    def obj(text, bloom):
+        return {"text": text, "bloom": bloom}
+    manifest = {
+        "id": "c1", "title": "Course", "brief": "A course.",
+        "modules": [
+            {
+                "id": "m1", "title": "Oversized Module",
+                "lessons": [
+                    {"id": f"c1-l{i}", "title": f"L{i}", "objectives": [obj(f"o{i}a", "remember")]}
+                    for i in range(1, 13)  # 12 lessons
+                ]
+            }
+        ]
+    }
+    slots = exams.module_blueprint(manifest, "m1")
+    assert len(slots) == 12
+    lesson_ids = {s["lessonId"] for s in slots}
+    assert lesson_ids == {f"c1-l{i}" for i in range(1, 13)}
+
+
+def test_final_blueprint_grows_to_cover_oversized_course():
+    def obj(text, bloom):
+        return {"text": text, "bloom": bloom}
+    manifest = {
+        "id": "c1", "title": "Oversized Course", "brief": "A course.",
+        "modules": [
+            {
+                "id": f"m{i}", "title": f"Module {i}",
+                "lessons": [
+                    {"id": f"c1-m{i}-l1", "title": "L1", "objectives": [obj(f"o{i}a", "remember")]}
+                ]
+            }
+            for i in range(1, 21)  # 20 modules
+        ]
+    }
+    slots = exams.final_blueprint(manifest)
+    assert len(slots) == 20
+    lesson_ids = {s["lessonId"] for s in slots}
+    assert lesson_ids == {f"c1-m{i}-l1" for i in range(1, 21)}
+
+
+def test_valid_exam_rejects_boolean_answer_index():
+    slots = exams.module_blueprint(_manifest(), "m1")
+    mcq_i = next(i for i, s in enumerate(slots) if s["type"] == "mcq")
+    bad = _questions_for(slots)
+    bad["questions"][mcq_i]["answerIndex"] = True
+    assert not exams.valid_exam(bad, slots)

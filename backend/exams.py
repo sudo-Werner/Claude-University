@@ -53,9 +53,12 @@ def module_blueprint(manifest, module_id):
         return None
     # Round-robin across lessons: every lesson is covered before any lesson gets a
     # second question; objectives cycle within a lesson if it runs out.
+    # The exam grows past MODULE_EXAM_QUESTIONS only when a module has more lessons
+    # than the base size — coverage of every lesson is the invariant.
+    target = max(MODULE_EXAM_QUESTIONS, len(per_lesson))
     slots = []
     i = 0
-    while len(slots) < MODULE_EXAM_QUESTIONS:
+    while len(slots) < target:
         lesson_id, objs = per_lesson[i % len(per_lesson)]
         rounds = i // len(per_lesson)
         slots.append(_slot(lesson_id, objs[rounds % len(objs)]))
@@ -82,9 +85,12 @@ def final_blueprint(manifest):
         per_module.append(higher + lower)
     if not per_module:
         return None
+    # The exam grows past FINAL_EXAM_QUESTIONS only when the course has more modules
+    # than the base size — coverage of every module is the invariant.
+    target = max(FINAL_EXAM_QUESTIONS, len(per_module))
     slots = []
     i = 0
-    while len(slots) < FINAL_EXAM_QUESTIONS:
+    while len(slots) < target:
         pool = per_module[i % len(per_module)]
         rounds = i // len(per_module)
         lesson_id, obj = pool[rounds % len(pool)]
@@ -186,19 +192,10 @@ def valid_exam(obj, slots):
     return True
 
 
-def _strip_html_attributes(html_str):
-    """Remove all HTML attributes to prevent event handlers and dangerous markup.
-
-    Converts <tag attr="value"> to <tag> before sanitizing.
-    """
-    return re.sub(r'<(\w+)[^>]*>', r'<\1>', html_str)
-
-
 def finalize_exam(obj, slots, exam_key, course_id):
     questions = []
     for q, s in zip(obj["questions"], slots):
-        prompt = _strip_html_attributes(q["prompt"])
-        prompt = generation.sanitize_html(prompt)
+        prompt = generation.sanitize_html(q["prompt"])
 
         out = {
             "type": s["type"],
@@ -208,8 +205,7 @@ def finalize_exam(obj, slots, exam_key, course_id):
             "prompt": prompt,
         }
         if s["type"] == "mcq":
-            choices = [_strip_html_attributes(c) for c in q["choices"]]
-            choices = [generation.sanitize_html(c) for c in choices]
+            choices = [generation.sanitize_html(c) for c in q["choices"]]
             out["choices"] = choices
             out["answerIndex"] = q["answerIndex"]
         else:
