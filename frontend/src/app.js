@@ -528,6 +528,8 @@ export async function init({ window, fetch }) {
     view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
     view.querySelectorAll('[data-quality]').forEach((btn) => {
       btn.addEventListener("click", async () => {
+        if (ui.lessonState.rated) return;
+        ui.lessonState.rated = true;
         const quality = btn.getAttribute("data-quality");
         log("lesson_reviewed", { courseId: ui.courseId, topicId: ui.lesson.id, payload: { quality } });
         await doFlush();
@@ -730,10 +732,13 @@ export async function init({ window, fetch }) {
   }
 
   async function acceptSyllabus() {
+    if (ui.creatingCourse) return;
+    ui.creatingCourse = true;
     const proposed = ui.proposedCourse;
     const course = await createCourse({ fetch, proposal: proposed });
-    if (ui.screen !== "syllabus") return; // navigated away mid-create
+    if (ui.screen !== "syllabus") { ui.creatingCourse = false; return; } // navigated away mid-create
     if (!course) {
+      ui.creatingCourse = false;
       const view = root.querySelector("#view");
       view.innerHTML =
         `<div class="card"><div class="prompt">Couldn't create the course right now. Your proposal is still here — try again.</div>` +
@@ -741,6 +746,7 @@ export async function init({ window, fetch }) {
       view.querySelector('[data-action="back"]').addEventListener("click", () => showSyllabus(proposed));
       return;
     }
+    ui.creatingCourse = false;
     log("course_created", { courseId: course.id });
     openCourse(course.id);
   }
