@@ -224,6 +224,8 @@ textarea::placeholder{color:#b3a994}
 
 .explain{margin-top:14px}
 .explain textarea{width:100%; min-height:64px; margin:4px 0 10px}
+.explain-followup{margin-top:10px; padding-top:10px; border-top:1px solid var(--border-field)}
+.explain-followup .grade-note{margin-bottom:8px; font-style:italic}
 
 /* lesson nav */
 .nav{display:flex; gap:10px; align-items:center}

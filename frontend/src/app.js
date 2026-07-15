@@ -478,6 +478,7 @@ export async function init({ window, fetch }) {
       fetch,
       endpoint: `/api/courses/${cid}/lessons/${lid}/chat`,
       messages: ws.chat.map((m) => ({ role: m.role, content: m.content })),
+      extra: { solutionRevealed: !!ui.lessonState.solutionRevealed },
       onDelta: (d) => {
         reply.content += d;
         if (!onScreen()) return;
@@ -575,6 +576,19 @@ export async function init({ window, fetch }) {
       if (grade && !grade.error) {
         log("lesson_explained", { courseId: ui.courseId, topicId: ui.lesson.id, payload: { verdict: grade.verdict } });
       }
+      paintLesson();
+    });
+    const exChat = view.querySelector('[data-action="explain-chat"]');
+    if (exChat) exChat.addEventListener("click", () => {
+      const ex = ui.lessonState.explain || {};
+      const g = ex.grade;
+      const ws = ui.lessonState.ws;
+      if (!g || g.error || !g.followUp || ex.seeded || !ws) return;
+      ex.seeded = true;
+      ws.open = true;
+      ws.tab = "chat";
+      ws.chat.push({ role: "assistant", content: g.followUp });
+      saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat });
       paintLesson();
     });
     view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
