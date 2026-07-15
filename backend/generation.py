@@ -67,13 +67,6 @@ def sanitize_html(value):
     return out
 
 
-def restore_entities(value):
-    """Un-double over-escaped character entities in already-sanitized cached text
-    (a migration helper for content saved before the entity-restore was broadened).
-    Idempotent; never re-escapes, so it is safe to run on correct content."""
-    return _DOUBLE_ENTITY.sub(r"&\1;", str(value))
-
-
 COURSE_SYSTEM_PROMPT = (
     "You are an academic advisor conducting an INTAKE INTERVIEW to design a rigorous, personalized "
     "university-level course for a single learner. Understand, in the learner's own words:\n"
@@ -189,10 +182,6 @@ def valid_compiled_course(obj):
             if not (isinstance(lesson.get("estMinutes"), (int, float)) and lesson["estMinutes"] > 0):
                 return False
     return valid_prereq_graph(modules)
-
-
-def detect_proposal(text):
-    return claude_client.extract_fenced_json(text, "course")
 
 
 def detect_brief(text):

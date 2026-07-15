@@ -114,14 +114,6 @@ def test_sanitize_html_keeps_literal_ampersand_escaped():
     assert "R&amp;D" in out and "AT&amp;T" in out
 
 
-def test_restore_entities_migration_helper_is_idempotent():
-    # Fixes already-cached double-escaped content without re-escaping correct content.
-    assert gen.restore_entities("&amp;ldquo;hi&amp;rdquo;") == "&ldquo;hi&rdquo;"
-    assert gen.restore_entities("<code>x</code> &lt;tag&gt;") == "<code>x</code> &lt;tag&gt;"
-    once = gen.restore_entities("&amp;mdash;")
-    assert gen.restore_entities(once) == once  # idempotent
-
-
 def test_sanitize_html_entity_restore_stays_inert():
     # Even if the model escapes a whole tag as entities, restoring the single
     # entity keeps it inert text (it renders as "<script>", not a live element).
@@ -129,13 +121,6 @@ def test_sanitize_html_entity_restore_stays_inert():
     assert "<script" not in out          # never a live tag
     assert "&lt;script&gt;" in out       # shown as text
     assert "&amp;lt;" not in out         # but not double-escaped
-
-
-def test_detect_proposal_parses_course_fence():
-    text = 'Sounds good!\n```course\n{"title": "Stats", "modules": []}\n```'
-    p = gen.detect_proposal(text)
-    assert p["title"] == "Stats"
-    assert gen.detect_proposal("just chatting, no proposal yet") is None
 
 
 def test_valid_lesson_requires_all_keys():
