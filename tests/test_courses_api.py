@@ -1443,3 +1443,176 @@ def test_review_items_route_maps_claude_errors(client, tmp_path, monkeypatch):
     monkeypatch.setattr(claude_client, "run_structured", auth_boom)
     r = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/review-items")
     assert r.status_code == 503 and r.get_json()["code"] == "reauth"
+
+
+def test_get_lesson_route_includes_prior_knowledge_in_prompt(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client, events, db
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest = courses.write_course(root, {
+        "title": "PK Demo", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]; lid = manifest["modules"][0]["lessons"][0]["id"]
+
+    app_db = client.application.config["DB_PATH"]
+    conn = db.get_connection(app_db)
+    try:
+        events.insert_events(conn, [{
+            "client_event_id": "pk-1", "session_id": "s1", "event_type": "prior_knowledge",
+            "occurred_at": "2026-06-21T10:00:00+00:00", "course_id": cid, "topic_id": lid,
+            "payload": {"text": "I think it is about gradient descent"},
+        }])
+    finally:
+        conn.close()
+
+    made = {"id": lid, "courseId": cid, "topic": "t", "step": 1, "totalSteps": 1,
+            "eyebrow": "EXERCISE", "promptHtml": "<p>p</p>", "hintHtml": "h",
+            "solutionAns": "a", "solutionNote": "n",
+            "checks": [{"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}],
+            "preQuiz": {"type": "mcq", "prompt": "Guess?", "choices": ["A", "B"],
+                        "answer": 0, "explanation": "Because."},
+            "spine": {"summary": "s", "concepts": [{"term": "t", "definition": "d"}]}}
+    captured = {}
+
+    def fake_sourced(prompt, **kw):
+        captured["prompt"] = prompt
+        return made, []
+    monkeypatch.setattr(claude_client, "run_sourced", fake_sourced)
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: dict(made))
+
+    resp = client.get(f"/api/courses/{cid}/lessons/{lid}")
+    assert resp.status_code == 200
+    assert "I think it is about gradient descent" in captured["prompt"]
+    assert "verbatim reply" in captured["prompt"]
+
+
+def test_get_lesson_route_omits_prior_knowledge_without_event(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest = courses.write_course(root, {
+        "title": "PK Demo 2", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]; lid = manifest["modules"][0]["lessons"][0]["id"]
+
+    made = {"id": lid, "courseId": cid, "topic": "t", "step": 1, "totalSteps": 1,
+            "eyebrow": "EXERCISE", "promptHtml": "<p>p</p>", "hintHtml": "h",
+            "solutionAns": "a", "solutionNote": "n",
+            "checks": [{"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}],
+            "preQuiz": {"type": "mcq", "prompt": "Guess?", "choices": ["A", "B"],
+                        "answer": 0, "explanation": "Because."},
+            "spine": {"summary": "s", "concepts": [{"term": "t", "definition": "d"}]}}
+    captured = {}
+
+    def fake_sourced(prompt, **kw):
+        captured["prompt"] = prompt
+        return made, []
+    monkeypatch.setattr(claude_client, "run_sourced", fake_sourced)
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: dict(made))
+
+    resp = client.get(f"/api/courses/{cid}/lessons/{lid}")
+    assert resp.status_code == 200
+    assert "verbatim reply" not in captured["prompt"]
+
+
+def test_deepen_endpoint_includes_prior_knowledge_in_prompt(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client, events, db
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+
+    app_db = client.application.config["DB_PATH"]
+    conn = db.get_connection(app_db)
+    try:
+        events.insert_events(conn, [{
+            "client_event_id": "pk-2", "session_id": "s1", "event_type": "prior_knowledge",
+            "occurred_at": "2026-06-21T10:00:00+00:00", "course_id": cid, "topic_id": lesson_id,
+            "payload": {"text": "I recall something about eigenvectors"},
+        }])
+    finally:
+        conn.close()
+
+    deeper = {"id": "x", "courseId": "x", "topic": "t", "step": 9, "totalSteps": 9,
+              "eyebrow": "EXERCISE", "promptHtml": "<p>deeper now</p>", "hintHtml": "h",
+              "solutionAns": "a", "solutionNote": "n",
+              "checks": [{"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}],
+              "preQuiz": {"type": "mcq", "prompt": "Guess?", "choices": ["A", "B"],
+                          "answer": 0, "explanation": "Because."},
+              "spine": {"summary": "s", "concepts": [{"term": "t", "definition": "d"}]}}
+    captured = {}
+
+    def fake_sourced(prompt, **kw):
+        captured["prompt"] = prompt
+        return deeper, []
+    monkeypatch.setattr(claude_client, "run_sourced", fake_sourced)
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: dict(deeper))
+
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/deepen")
+    assert resp.status_code == 200
+    assert "I recall something about eigenvectors" in captured["prompt"]
+    assert "verbatim reply" in captured["prompt"]
+
+
+def test_status_route_404_bad_id(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    resp = client.get("/api/courses/Bad_Id/lessons/l1/status")
+    assert resp.status_code == 404
+
+
+def test_status_route_404_unknown_course(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    resp = client.get("/api/courses/nope/lessons/l1/status")
+    assert resp.status_code == 404
+
+
+def test_status_route_404_unknown_lesson(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    resp = client.get(f"/api/courses/{cid}/lessons/nope/status")
+    assert resp.status_code == 404
+
+
+def test_status_route_reports_false_then_true(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest = courses.write_course(root, {
+        "title": "Status Demo", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]; lid = manifest["modules"][0]["lessons"][0]["id"]
+
+    resp = client.get(f"/api/courses/{cid}/lessons/{lid}/status")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"generated": False}
+
+    (root / cid / "lessons" / f"{lid}.json").write_text(json.dumps({
+        "id": lid, "courseId": cid, "topic": "t", "step": 1, "totalSteps": 1,
+        "eyebrow": "EXERCISE", "promptHtml": "p", "hintHtml": "h",
+        "solutionAns": "a", "solutionNote": "n",
+    }))
+    resp2 = client.get(f"/api/courses/{cid}/lessons/{lid}/status")
+    assert resp2.status_code == 200
+    assert resp2.get_json() == {"generated": True}
+
+
+def test_status_route_corrupt_file_reports_false(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest = courses.write_course(root, {
+        "title": "Corrupt Demo", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]; lid = manifest["modules"][0]["lessons"][0]["id"]
+    (root / cid / "lessons" / f"{lid}.json").write_text("{not valid json")
+
+    resp = client.get(f"/api/courses/{cid}/lessons/{lid}/status")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"generated": False}

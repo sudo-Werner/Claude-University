@@ -176,6 +176,7 @@ def create_app(db_path=None):
         try:
             prof = profile.latest_profile(conn)
             performance = mastery.performance_summary(conn, courses.CONTENT_DIR, course_id)
+            prior_knowledge = queries.latest_prior_knowledge(conn, course_id, lesson_id)
         finally:
             conn.close()
         prof_data = (prof or {}).get("data")
@@ -189,6 +190,7 @@ def create_app(db_path=None):
             lesson = generation.ensure_lesson(
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
                 generate=generate, performance=performance, verify_generate=verify,
+                prior_knowledge=prior_knowledge,
             )
         except claude_client.ClaudeAuthError:
             return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
@@ -197,6 +199,23 @@ def create_app(db_path=None):
         if lesson is None:
             return jsonify({"error": "lesson not found"}), 404
         return jsonify(lesson)
+
+    @app.get("/api/courses/<course_id>/lessons/<lesson_id>/status")
+    def lesson_status(course_id, lesson_id):
+        # Prior-knowledge activation (design doc decision #1): the client cannot know
+        # beforehand whether a lesson GET will be an instant cache hit or a ~110s
+        # generation. This route answers that so the question card only appears when
+        # generation is actually about to happen. No DB connection, no lock, no
+        # generation call — this route can never trigger one.
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "lesson not found"}), 404
+        if lesson_id not in {l["id"] for l in courses.flatten_lessons(manifest)}:
+            return jsonify({"error": "lesson not found"}), 404
+        generated = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id) is not None
+        return jsonify({"generated": generated})
 
     @app.post("/api/courses/<course_id>/lessons/<lesson_id>/grade")
     def grade_lesson(course_id, lesson_id):
@@ -393,6 +412,7 @@ def create_app(db_path=None):
         try:
             prof = profile.latest_profile(conn)
             performance = mastery.performance_summary(conn, courses.CONTENT_DIR, course_id)
+            prior_knowledge = queries.latest_prior_knowledge(conn, course_id, lesson_id)
         finally:
             conn.close()
         prof_data = (prof or {}).get("data")
@@ -403,6 +423,7 @@ def create_app(db_path=None):
             lesson = generation.deepen_lesson(
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
                 generate=generate, performance=performance, verify_generate=verify,
+                prior_knowledge=prior_knowledge,
             )
         except claude_client.ClaudeAuthError:
             return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
