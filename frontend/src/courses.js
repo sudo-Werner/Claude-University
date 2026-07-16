@@ -86,6 +86,24 @@ export async function loadReviews({ fetch, courseId }) {
   return body.due || [];
 }
 
+export async function loadReviewItems({ fetch, courseId, lessonId }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  try {
+    const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/review-items`, { signal: controller.signal });
+    if (!resp.ok) {
+      let message = "Couldn't prepare fresh review questions right now.";
+      try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+      return { error: message };
+    }
+    return resp.json();
+  } catch (e) {
+    return { error: "Couldn't prepare fresh review questions right now." };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function createCourse({ fetch, proposal }) {
   const resp = await fetch("/api/courses", {
     method: "POST",
