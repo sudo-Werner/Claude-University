@@ -406,13 +406,23 @@ export async function init({ window, fetch }) {
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showCurriculum);
     const view = root.querySelector("#view");
     startLoading(view, "lesson", EXAM_STAGES);
+    // A just-completed gap review's markers may still be sitting in the buffer —
+    // flush them before the retake gate re-checks the DB, or a freshly unlocked
+    // retake 409s in the common case (see doFlush interval above).
+    await doFlush();
+    if (ui.screen !== "exam-loading" || ui.loadSeq !== seq) return; // navigated away during flush
     const exam = await startExam({ fetch, courseId: ui.courseId, examKey });
     if (ui.screen !== "exam-loading" || ui.loadSeq !== seq) return; // navigated away mid-load
     if (!exam || exam.error) {
+      const fixGaps = exam && exam.code === "gap-review";
       view.innerHTML =
         `<div class="card"><div class="prompt">${esc((exam && exam.error) || "Couldn't prepare the exam right now.")}</div>` +
-        `<div class="nav"><button class="btn-back" data-action="back">Back</button></div></div>`;
+        `<div class="nav">${fixGaps ? '<button class="btn-primary" data-action="fix-gaps">Fix the gaps</button>' : ""}` +
+        `<button class="btn-back" data-action="back">Back</button></div></div>`;
       view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
+      if (fixGaps) {
+        view.querySelector('[data-action="fix-gaps"]').addEventListener("click", () => showRemediation(examKey));
+      }
       return;
     }
     ui.screen = "exam";

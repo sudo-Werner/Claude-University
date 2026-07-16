@@ -1104,6 +1104,7 @@ def test_retake_gate_matrix(tmp_path, monkeypatch):
     r = client.post(f"/api/courses/{cid}/exams/m1")
     assert r.status_code == 409
     assert "gap review" in r.get_json()["error"]
+    assert r.get_json()["code"] == "gap-review"  # frontend routes this to a "Fix the gaps" escape hatch
 
     # 3. session exists but is incomplete -> still 409
     _remediation_session_on_disk(tmp_path, cid, lesson_id, attempt=1)
@@ -1152,3 +1153,58 @@ def test_retake_gate_stale_session_blocks_after_new_fail(tmp_path, monkeypatch):
                  {"verdict": "correct", "source": "remediation", "examKey": "m1",
                   "attempt": 1, "index": 0}, 40, lesson_id)
     assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 409
+
+
+def test_retake_gate_full_corrective_loop_via_api(tmp_path, monkeypatch):
+    """The gap-review escape hatch end to end: fail -> retake 409 (with the code the
+    frontend keys "Fix the gaps" off of) -> POST remediation for real through the route
+    (not written straight to disk) -> mark every practice + apply item complete via real
+    event posts -> the retake reaches generation again. Proven by the stubbed-502
+    technique (reaching generation proves the gate is open), same as the gate matrix."""
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+
+    def boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeError("stub")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+
+    # 1. fail the exam
+    weak = [{"lessonId": lesson_id, "lessonTitle": "A", "objectives": ["o"]}]
+    _post_exam_result(client, cid, "m1",
+                      {"score": 0.5, "passed": False, "attempt": 1, "weakSpots": weak}, i=1)
+
+    # 2. retake 409s carrying the code the frontend routes to "Fix the gaps"
+    r = client.post(f"/api/courses/{cid}/exams/m1")
+    assert r.status_code == 409
+    assert r.get_json()["code"] == "gap-review"
+
+    # 3. POST remediation for real — through the route, not written to disk directly
+    gaps = {"gaps": [{"lessonId": lesson_id, "explanationHtml": "<p>angle</p>",
+                      "practice": [
+                          {"type": "mcq", "prompt": "q", "choices": ["a", "b"],
+                           "answer": 0, "explanation": "e"},
+                          {"type": "fill", "prompt": "q2", "answer": "w", "explanation": "e2"},
+                      ],
+                      "apply": {"prompt": "<p>scenario</p>", "modelAnswer": "covers x"}}]}
+    monkeypatch.setattr(claude_client, "run_structured",
+                        lambda prompt, validate=None, **kw: gaps)
+    r2 = client.post(f"/api/courses/{cid}/exams/m1/remediation")
+    assert r2.status_code == 200
+    assert (tmp_path / cid / "remediation" / "m1.json").exists()
+
+    # 4. generated but not yet worked -> still gated
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 409
+
+    # 5. insert completion marker events for the 2 practice items + the 1 apply item
+    for i in range(2):
+        _post_marker(client, cid, "lesson_check",
+                     {"index": i, "type": "mcq", "correct": True, "source": "remediation",
+                      "examKey": "m1", "attempt": 1}, i, lesson_id)
+    _post_marker(client, cid, "lesson_explained",
+                 {"verdict": "correct", "source": "remediation", "examKey": "m1",
+                  "attempt": 1, "index": 0}, 10, lesson_id)
+
+    # 6. retake now reaches generation -- the gate is open
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 502

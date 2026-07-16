@@ -145,8 +145,13 @@ export async function startExam({ fetch, courseId, examKey }) {
   const resp = await fetch(`/api/courses/${courseId}/exams/${examKey}`, { method: "POST" });
   if (!resp.ok) {
     let message = "Couldn't prepare the exam right now.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    let code;
+    try {
+      const body = await resp.json();
+      if (body && body.error) message = body.error;
+      if (body && body.code) code = body.code;
+    } catch (e) {}
+    return { error: message, code };
   }
   return resp.json();
 }

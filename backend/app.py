@@ -263,7 +263,8 @@ def create_app(db_path=None):
                 if latest is not None and not remediation.session_completed(
                         conn, courses.CONTENT_DIR, course_id, exam_key,
                         latest.get("attempt")):
-                    return jsonify({"error": "Complete the gap review before retaking — that's the corrective step."}), 409
+                    return jsonify({"error": "Complete the gap review before retaking — that's the corrective step.",
+                                    "code": "gap-review"}), 409
         finally:
             conn.close()
         spine_lessons = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"]

@@ -210,6 +210,14 @@ test("startExam posts and maps errors", async () => {
   assert.equal((await startExam({ fetch: failing, courseId: "c1", examKey: "m1" })).error, "boom");
 });
 
+test("startExam threads the error code through (e.g. gap-review retake gate)", async () => {
+  const gated = async () => ({ ok: false, json: async () => ({ error: "Complete the gap review before retaking — that's the corrective step.", code: "gap-review" }) });
+  const out = await startExam({ fetch: gated, courseId: "c1", examKey: "m1" });
+  assert.equal(out.code, "gap-review");
+  const noCode = async () => ({ ok: false, json: async () => ({ error: "boom" }) });
+  assert.equal((await startExam({ fetch: noCode, courseId: "c1", examKey: "m1" })).code, undefined);
+});
+
 test("submitExam posts answers and maps errors", async () => {
   const calls = [];
   const fetch = async (url, opts) => { calls.push([url, opts]); return { ok: true, json: async () => ({ passed: true }) }; };
