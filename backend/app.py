@@ -348,7 +348,8 @@ def create_app(db_path=None):
         session = remediation.load_session(courses.CONTENT_DIR, course_id, exam_key)
         if session is None:
             return jsonify({"error": "no gap review on record for this exam"}), 404
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        body = body if isinstance(body, dict) else {}
         gap_index = body.get("gapIndex")
         gaps = session.get("gaps", [])
         if not (isinstance(gap_index, int) and not isinstance(gap_index, bool)
@@ -444,7 +445,8 @@ def create_app(db_path=None):
         manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
         if manifest is None:
             return jsonify({"error": "course not found"}), 404
-        body = request.get_json(silent=True) or {}
+        body = request.get_json(silent=True)
+        body = body if isinstance(body, dict) else {}
         work = body.get("work")
         work = work.strip() if isinstance(work, str) else ""
         if not work:

@@ -882,12 +882,35 @@ def test_remediation_grade_statuses(tmp_path, monkeypatch):
     # 400: empty answer
     assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
                        json={"gapIndex": 0, "answer": "  "}).status_code == 400
+    # 400: non-string answer
+    assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                       json={"gapIndex": 0, "answer": 5}).status_code == 400
     # 502 on Claude failure
     def boom(prompt, **kw):
         raise claude_client.ClaudeError("nope")
     monkeypatch.setattr(claude_client, "run_structured", boom)
     assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
                        json={"gapIndex": 0, "answer": "a"}).status_code == 502
+    # 503 when Claude needs reauth
+    def auth_boom(prompt, **kw):
+        raise claude_client.ClaudeAuthError("login")
+    monkeypatch.setattr(claude_client, "run_structured", auth_boom)
+    r = client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                    json={"gapIndex": 0, "answer": "a"})
+    assert r.status_code == 503 and r.get_json()["code"] == "reauth"
+
+
+def test_remediation_grade_rejects_non_dict_body(tmp_path, monkeypatch):
+    """A forged, truthy non-dict JSON body (list, string, ...) must not survive past
+    `request.get_json()` into `.get()` calls — that would raise AttributeError -> 500."""
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    _remediation_session_on_disk(tmp_path, cid, lesson_id)
+    assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                       json=[1, 2]).status_code == 400
+    assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                       json="oops").status_code == 400
 
 
 def test_remediation_grade_400_for_legacy_gap_without_apply(tmp_path, monkeypatch):
@@ -1012,6 +1035,16 @@ def test_capstone_submit_rejects_non_string_work(tmp_path, monkeypatch):
                        json={"work": 123}).status_code == 400
     assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit",
                        json={"work": ["x"]}).status_code == 400
+
+
+def test_capstone_submit_rejects_non_dict_body(tmp_path, monkeypatch):
+    """A forged, truthy non-dict JSON body (list, string, ...) must not survive past
+    `request.get_json()` into `.get()` calls — that would raise AttributeError -> 500."""
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json=[1, 2]).status_code == 400
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json="oops").status_code == 400
 
 
 def test_capstone_submit_404_without_generated_capstone(tmp_path, monkeypatch):
