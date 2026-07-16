@@ -27,7 +27,7 @@ def insert_feedback(conn, *, text, screen=None, course_id=None, lesson_id=None):
     it over metadata."""
     if not isinstance(text, str) or not text.strip():
         raise ValueError("feedback text is required")
-    clean_screen = screen if isinstance(screen, str) and 0 < len(screen.strip()) <= _MAX_SCREEN else None
+    clean_screen = screen.strip() if isinstance(screen, str) and 0 < len(screen.strip()) <= _MAX_SCREEN else None
     conn.execute(
         "INSERT INTO feedback (created_at, screen, course_id, lesson_id, text) VALUES (?, ?, ?, ?, ?)",
         (

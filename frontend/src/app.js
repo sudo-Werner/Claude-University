@@ -90,6 +90,8 @@ export async function init({ window, fetch }) {
     if (result && result.error) {
       fb.notice = "error";
       paintFeedbackBar();
+      const inp = root.querySelector('[data-field="fb-text"]');
+      if (inp) inp.focus();
       return;
     }
     fb.text = "";
@@ -108,7 +110,14 @@ export async function init({ window, fetch }) {
 
   root.addEventListener("click", (e) => {
     if (e.target.closest('[data-action="feedback-toggle"]')) {
-      ui.feedback.open = !ui.feedback.open;
+      // Navigation repaints the shell with an empty slot without touching
+      // ui.feedback.open, so the DOM — not the flag — is the truth for
+      // whether the bar is currently showing. Toggling off the flag alone
+      // would make the first tap after navigating do nothing.
+      const slot = root.querySelector("[data-fb-slot]");
+      const visiblyOpen = !!(slot && slot.firstElementChild);
+      if (visiblyOpen && ui.feedback.sending) return; // never hide an in-flight send
+      ui.feedback.open = !visiblyOpen;
       ui.feedback.notice = "";
       paintFeedbackBar();
       if (ui.feedback.open) {
