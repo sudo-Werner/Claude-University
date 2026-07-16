@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -274,4 +274,30 @@ test("loadReviewItems returns an error shape when the body parse rejects", async
   const fetch = async () => ({ ok: true, json: () => Promise.reject(new Error("boom")) });
   const res = await loadReviewItems({ fetch, courseId: "c", lessonId: "c-l1" });
   assert.ok(res.error);
+});
+
+test("getLessonStatus fetches by course and lesson id and returns the parsed body", async () => {
+  let url;
+  const fetch = async (u) => { url = u; return { ok: true, json: async () => ({ generated: true }) }; };
+  const status = await getLessonStatus({ fetch, courseId: "c", lessonId: "c-l1" });
+  assert.equal(url, "/api/courses/c/lessons/c-l1/status");
+  assert.deepEqual(status, { generated: true });
+});
+
+test("getLessonStatus returns an error shape on non-ok", async () => {
+  const fetch = async () => ({ ok: false, status: 500 });
+  const status = await getLessonStatus({ fetch, courseId: "c", lessonId: "c-l1" });
+  assert.ok(status.error);
+});
+
+test("getLessonStatus returns an error shape (never rejects) when fetch rejects", async () => {
+  const fetch = async () => { throw new Error("network down"); };
+  const status = await getLessonStatus({ fetch, courseId: "c", lessonId: "c-l1" });
+  assert.ok(status.error);
+});
+
+test("getLessonStatus returns an error shape when resp.json() rejects", async () => {
+  const fetch = async () => ({ ok: true, json: () => Promise.reject(new Error("boom")) });
+  const status = await getLessonStatus({ fetch, courseId: "c", lessonId: "c-l1" });
+  assert.ok(status.error);
 });

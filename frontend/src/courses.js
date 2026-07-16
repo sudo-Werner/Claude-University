@@ -21,6 +21,21 @@ export async function loadLesson({ fetch, courseId, lessonId }) {
   return resp.json();
 }
 
+// Prior-knowledge activation: a lightweight pre-check so the client can ask its
+// one question only before a lesson is generated for the first time. Never
+// rejects — a failed check just means "open the lesson exactly as before" (the
+// feature can only add, never block, per the design doc). No AbortController:
+// this is a local file-existence check, not a slow generation call.
+export async function getLessonStatus({ fetch, courseId, lessonId }) {
+  try {
+    const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/status`);
+    if (!resp.ok) return { error: "status unavailable" };
+    return await resp.json();
+  } catch (e) {
+    return { error: "status unavailable" };
+  }
+}
+
 export async function gradeAnswer({ fetch, courseId, lessonId, answer }) {
   const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/grade`, {
     method: "POST",
