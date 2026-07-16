@@ -728,7 +728,7 @@ export async function init({ window, fetch }) {
     if (lessonFailed(deeper)) {
       // Break the shared ws reference and clear any stuck pending, so a chat that was
       // mid-stream when deepen failed doesn't leave the input disabled.
-      const keptWs = ui.lessonState.ws ? { ...ui.lessonState.ws, pending: false } : undefined;
+      const keptWs = ui.lessonState.ws ? { ...ui.lessonState.ws, pending: false, grading: false } : undefined;
       ui.lessonState = { ...ui.lessonState, ws: keptWs, deepenError: (deeper && deeper.error) || "Couldn't rewrite this lesson right now." };
       showLesson();
       return;
