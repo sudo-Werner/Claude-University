@@ -994,15 +994,17 @@ export async function init({ window, fetch }) {
     if (teachBtn) teachBtn.addEventListener("click", () => {
       const ws = ui.lessonState.ws;
       if (!ws) return; // workspace still seeding; the button works once it has painted
-      // Re-teaching starts a fresh episode every time: new teachStart, cleared verdict.
+      const entering = !ws.teaching;
       ws.teaching = true;
-      ws.teachStart = ws.chat.length;
-      ws.teachGrade = null;
       ws.open = true;
       ws.tab = "chat";
-      ws.chat.push({ role: "assistant", content: TEACH_OPENER });
-      // Best-effort persist — same fire-and-forget idiom as the socratic entry above.
-      saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat });
+      if (entering) {
+        ws.teachStart = ws.chat.length;
+        ws.teachGrade = null;
+        ws.chat.push({ role: "assistant", content: TEACH_OPENER });
+        // Best-effort persist — same fire-and-forget idiom as the socratic entry above.
+        saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat });
+      }
       paintLesson();
     });
     view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
