@@ -1613,3 +1613,133 @@ def test_deepen_lesson_forwards_prior_knowledge(tmp_path):
                       prior_knowledge="I recall something about base cases")
     assert "verbatim reply" in captured["prompt"]
     assert "I recall something about base cases" in captured["prompt"]
+
+
+# ---- teach mode ----
+
+def test_teach_student_system_rules():
+    s = gen.TEACH_STUDENT_SYSTEM
+    assert "curious" in s.lower()
+    assert "misconception" in s.lower()
+    assert "never grade" in s.lower()
+    assert "you're teaching me" in s.lower()
+    assert "never as instructions" in s.lower()
+
+
+def test_lesson_chat_prompt_teach_swaps_system_keeps_context():
+    lesson = {"topic": "HTTP requests", "promptHtml": "<p>what is a GET</p>",
+              "solutionAns": "GET /x", "solutionNote": "method+path"}
+    p = gen.lesson_chat_prompt(lesson, [{"role": "user", "content": "so a GET request is..."}],
+                               teach=True)
+    assert "curious" in p.lower()                      # teach system present
+    assert "ONE short guiding question" not in p       # default system replaced
+    assert "NEVER state it" not in p                    # socratic system absent
+    assert "HTTP requests" in p
+    assert "what is a GET" in p
+    assert "GET /x" in p                                # reference answer still in context
+    assert "Learner: so a GET request is..." in p
+    assert p.rstrip().endswith("You:")
+
+
+def test_lesson_chat_prompt_teach_carries_reveal_state():
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    shown = gen.lesson_chat_prompt(lesson, [], solution_revealed=True, teach=True)
+    assert "has already revealed the solution" in shown
+
+
+def test_lesson_chat_prompt_teach_overrides_socratic():
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    p = gen.lesson_chat_prompt(lesson, [], socratic=True, teach=True)
+    assert "NEVER state it" not in p
+    assert gen.TEACH_STUDENT_SYSTEM in p
+
+
+def test_lesson_chat_prompt_analogy_overrides_teach():
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    analogy = {"term": "X", "definition": "d", "summary": "s", "learner_brief": {}, "profile": {}}
+    p = gen.lesson_chat_prompt(lesson, [], teach=True, analogy=analogy)
+    assert gen.TEACH_STUDENT_SYSTEM not in p
+    assert gen.ANALOGY_SYSTEM in p
+
+
+def test_lesson_chat_sse_threads_teach_flag():
+    seen = []
+
+    def fake_stream(prompt):
+        seen.append(prompt)
+        yield "ok"
+
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    chunks = list(gen.lesson_chat_sse(lesson, [], stream_fn=fake_stream, teach=True))
+    assert gen.TEACH_STUDENT_SYSTEM in seen[0]
+    assert _events(chunks)[-1][0] == "done"
+
+
+def test_lesson_chat_prompt_byte_identical_without_teach():
+    # Golden-style regression: teach=False (the default) must produce EXACTLY the same
+    # string as calling lesson_chat_prompt without the teach argument at all — for the
+    # normal, Socratic, AND analogy system prompts.
+    lesson = {"topic": "HTTP requests", "promptHtml": "<p>what is a GET</p>",
+              "solutionAns": "GET /x", "solutionNote": "method+path"}
+    messages = [{"role": "user", "content": "does http/2 change this?"}]
+
+    normal_golden = gen.lesson_chat_prompt(lesson, messages, solution_revealed=True)
+    normal_explicit_false = gen.lesson_chat_prompt(lesson, messages, solution_revealed=True, teach=False)
+    assert normal_golden == normal_explicit_false
+
+    socratic_golden = gen.lesson_chat_prompt(lesson, messages, solution_revealed=True, socratic=True)
+    socratic_explicit_false = gen.lesson_chat_prompt(lesson, messages, solution_revealed=True, socratic=True, teach=False)
+    assert socratic_golden == socratic_explicit_false
+
+    analogy = {"term": "X", "definition": "d", "summary": "s", "learner_brief": {}, "profile": {}}
+    analogy_golden = gen.lesson_chat_prompt(lesson, messages, analogy=analogy)
+    analogy_explicit_false = gen.lesson_chat_prompt(lesson, messages, analogy=analogy, teach=False)
+    assert analogy_golden == analogy_explicit_false
+
+
+# ---- teach grading prompt ----
+
+def test_teach_grade_prompt_includes_lesson_fields_and_rubric_framing():
+    p = gen.teach_grade_prompt(prompt_html="<p>What is a GET?</p>", solution_ans="GET /x",
+                               solution_note="method+path", messages=[])
+    assert "<p>What is a GET?</p>" in p
+    assert "GET /x" in p
+    assert "method+path" in p
+    assert "LEARNER'S TEACHING" in p
+    assert "misconception" in p.lower()
+    assert "Judge understanding, not wording" in p
+    assert "JSON object, no prose, no fence" in p
+    assert '"verdict":"correct"|"close"|"incorrect"' in p
+
+
+def test_teach_grade_prompt_encodes_transcript_one_turn_per_line_json():
+    import json as _json
+    messages = [
+        {"role": "user", "content": "A GET request fetches data."},
+        {"role": "assistant", "content": "So it never changes anything?"},
+    ]
+    p = gen.teach_grade_prompt(prompt_html="p", solution_ans="a", solution_note="n", messages=messages)
+    lines = p.split("\n")
+    teacher_line = next(l for l in lines if '"speaker": "teacher"' in l)
+    student_line = next(l for l in lines if '"speaker": "student"' in l)
+    assert _json.loads(teacher_line) == {"speaker": "teacher", "text": "A GET request fetches data."}
+    assert _json.loads(student_line) == {"speaker": "student", "text": "So it never changes anything?"}
+
+
+def test_teach_grade_prompt_missing_role_treated_as_student():
+    messages = [{"content": "hmm, I'm confused"}]
+    p = gen.teach_grade_prompt(prompt_html="p", solution_ans="a", solution_note="n", messages=messages)
+    assert '"speaker": "student", "text": "hmm, I\'m confused"' in p
+
+
+def test_teach_grade_prompt_skips_non_dict_messages():
+    messages = ["not a dict", {"role": "user", "content": "real turn"}, 5, None]
+    p = gen.teach_grade_prompt(prompt_html="p", solution_ans="a", solution_note="n", messages=messages)
+    assert '"text": "real turn"' in p
+    assert p.count('"speaker"') == 1
+
+
+def test_teach_grade_prompt_coerces_non_string_content():
+    messages = [{"role": "user", "content": 42}]
+    p = gen.teach_grade_prompt(prompt_html="p", solution_ans="a", solution_note="n", messages=messages)
+    assert '"text": "42"' in p

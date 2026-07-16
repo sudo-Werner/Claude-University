@@ -1816,3 +1816,180 @@ def test_status_route_corrupt_file_reports_false(client, tmp_path, monkeypatch):
     resp = client.get(f"/api/courses/{cid}/lessons/{lid}/status")
     assert resp.status_code == 200
     assert resp.get_json() == {"generated": False}
+
+
+# ---- teach mode ----
+
+def test_lesson_chat_teach_mode_swaps_prompt_and_drops_tools(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    calls = []
+
+    def fake_stream(prompt, **kw):
+        calls.append((prompt, kw))
+        return iter(["ok"])
+
+    monkeypatch.setattr(claude_client, "stream", fake_stream)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/chat",
+                       json={"messages": [{"role": "user", "content": "Let me explain GET requests."}],
+                             "mode": "teach"})
+    assert resp.status_code == 200
+    text = resp.get_data(as_text=True)  # drain the lazy SSE generator
+    assert "event: done" in text
+    prompt, kw = calls[0]
+    assert "curious" in prompt.lower()          # teach system prompt selected
+    assert not kw.get("tools")                  # WebSearch/WebFetch dropped
+
+
+def test_lesson_chat_teach_mode_typo_falls_back_to_normal(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    prompts = []
+
+    def fake_stream(prompt, **kw):
+        prompts.append(prompt)
+        return iter(["ok"])
+
+    monkeypatch.setattr(claude_client, "stream", fake_stream)
+    for mode in ("Teach", "teach ", "TEACH"):
+        resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/chat",
+                           json={"messages": [{"role": "user", "content": "hi"}], "mode": mode})
+        assert resp.status_code == 200
+        resp.get_data(as_text=True)
+    assert len(prompts) == 3
+    for p in prompts:
+        assert "give it plainly" in p          # default system prompt
+        assert "curious" not in p.lower()      # teach system prompt absent
+
+
+# ---- /teach grading route ----
+
+def test_teach_route_grades_teaching(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    captured = {}
+
+    def fake_run_structured(prompt, **kw):
+        captured["prompt"] = prompt
+        return {"verdict": "close", "note": "Good start; explain X more."}
+
+    monkeypatch.setattr(claude_client, "run_structured", fake_run_structured)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/teach", json={
+        "messages": [
+            {"role": "user", "content": "A GET request fetches data from a server."},
+            {"role": "assistant", "content": "So it can also change data?"},
+        ]})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["verdict"] == "close"
+    assert "explain X more" in body["note"]
+    prompt = captured["prompt"]
+    assert '"speaker": "teacher"' in prompt
+    assert '"speaker": "student"' in prompt
+    assert "JSON object, no prose, no fence" in prompt
+
+
+def test_teach_route_sanitizes_note(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "run_structured",
+                        lambda prompt, **kw: {"verdict": "correct", "note": "Nice <script>alert(1)</script> job"})
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/teach",
+                       json={"messages": [{"role": "user", "content": "teaching..."}]})
+    assert resp.status_code == 200
+    assert "<script" not in resp.get_json()["note"]
+
+
+def test_teach_route_requires_a_teacher_turn(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    for payload in (
+        {"messages": []},
+        {"messages": [{"role": "assistant", "content": "hi"}]},
+        {"messages": [{"role": "user", "content": "   "}]},
+        {},
+    ):
+        resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/teach", json=payload)
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "teach something first"
+
+
+def test_teach_route_skips_non_dict_messages(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "run_structured",
+                        lambda prompt, **kw: {"verdict": "correct", "note": "n"})
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/teach",
+                       json={"messages": ["nope", 5, {"role": "user", "content": "real turn"}]})
+    assert resp.status_code == 200
+
+
+def test_teach_route_missing_lesson_404(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _fixture_course(courses, root)
+    cid = manifest["id"]
+    resp = client.post(f"/api/courses/{cid}/lessons/nope/teach",
+                       json={"messages": [{"role": "user", "content": "x"}]})
+    assert resp.status_code == 404
+
+
+def test_teach_route_bad_ids_404(client):
+    resp = client.post("/api/courses/Bad_Id/lessons/l1/teach", json={"messages": []})
+    assert resp.status_code == 404
+
+
+def test_teach_route_reauth_on_auth_error(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+
+    def boom(prompt, **kw):
+        raise claude_client.ClaudeAuthError("Invalid API key")
+
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/teach",
+                       json={"messages": [{"role": "user", "content": "x"}]})
+    assert resp.status_code == 503
+    assert resp.get_json().get("code") == "reauth"
+
+
+def test_teach_route_maps_claude_error_to_502(client, tmp_path, monkeypatch):
+    # Simulates the exhausted-retry outcome when the model keeps returning a verdict
+    # outside the trio and valid_grade rejects it every time — run_structured's own
+    # retry-then-raise is already covered generically in test_claude_client.py.
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+
+    def boom(prompt, **kw):
+        raise claude_client.ClaudeError("structured generation failed after retry")
+
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/teach",
+                       json={"messages": [{"role": "user", "content": "x"}]})
+    assert resp.status_code == 502
+    assert resp.get_json()["error"] == "could not grade your teaching"
