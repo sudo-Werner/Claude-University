@@ -199,3 +199,50 @@ def ensure_session(content_dir, course_id, exam_key, failed_payload, *,
     session = finalize_session(obj, weak_spots, exam_key, course_id, attempt)
     save_session(content_dir, course_id, session)
     return session
+
+
+def _marked_indices(conn, course_id, exam_key, attempt, event_type):
+    """Distinct payload.index values from remediation-marked events of one type.
+    Payloads are client-forgeable: anything malformed, unmarked (legacy answers
+    logged before markers shipped), or for another exam/attempt is skipped."""
+    rows = conn.execute(
+        "SELECT payload FROM events WHERE event_type = ? AND course_id = ?",
+        (event_type, course_id),
+    ).fetchall()
+    out = set()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except ValueError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("source") != "remediation":
+            continue
+        if payload.get("examKey") != exam_key or payload.get("attempt") != attempt:
+            continue
+        idx = payload.get("index")
+        if isinstance(idx, int) and not isinstance(idx, bool):
+            out.add(idx)
+    return out
+
+
+def session_completed(conn, content_dir, course_id, exam_key, expected_attempt):
+    """True when the stored gap review for the given failed attempt has been fully
+    worked: every practice item answered (flat indices matching the frontend's
+    flatPractice ordering) and every apply task submitted — apply items are counted
+    only when the session has them (legacy sessions on the Pi don't). No session on
+    disk, or a session for an older attempt, means the corrective step for THIS
+    attempt hasn't happened -> False."""
+    session = load_session(content_dir, course_id, exam_key)
+    if session is None or session.get("attempt") != expected_attempt:
+        return False
+    attempt = session.get("attempt")
+    gaps = [g for g in session.get("gaps", []) if isinstance(g, dict)]
+    practice_total = sum(len(g.get("practice") or []) for g in gaps)
+    apply_expected = {i for i, g in enumerate(gaps) if isinstance(g.get("apply"), dict)}
+    checks = _marked_indices(conn, course_id, exam_key, attempt, "lesson_check")
+    if len({i for i in checks if 0 <= i < practice_total}) < practice_total:
+        return False
+    applies = _marked_indices(conn, course_id, exam_key, attempt, "lesson_explained")
+    return apply_expected <= applies

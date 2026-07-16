@@ -1041,3 +1041,81 @@ def test_capstone_submit_maps_claude_errors(tmp_path, monkeypatch):
     monkeypatch.setattr(claude_client, "run_structured", auth_boom)
     r = client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json={"work": "w"})
     assert r.status_code == 503 and r.get_json()["code"] == "reauth"
+
+
+def _post_marker(client, cid, event_type, payload, i, topic_id):
+    r = client.post("/api/events", json={"events": [{
+        "client_event_id": f"gm-{event_type}-{i}", "session_id": "s1",
+        "event_type": event_type, "occurred_at": f"2026-07-16T10:{i:02d}:00+00:00",
+        "course_id": cid, "topic_id": topic_id, "payload": payload,
+    }]})
+    assert r.status_code == 200
+
+
+def test_retake_gate_matrix(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    # Stub generation FIRST: reaching it (502) proves the gate is OPEN; 409 proves CLOSED.
+    def boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeError("stub")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+
+    # 1. no prior result -> first attempts always allowed (gate open, stub reached)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 502
+
+    # 2. latest failed, gap review never generated -> 409
+    weak = [{"lessonId": lesson_id, "lessonTitle": "A", "objectives": ["o"]}]
+    _post_exam_result(client, cid, "m1",
+                      {"score": 0.5, "passed": False, "attempt": 1, "weakSpots": weak}, i=1)
+    r = client.post(f"/api/courses/{cid}/exams/m1")
+    assert r.status_code == 409
+    assert "gap review" in r.get_json()["error"]
+
+    # 3. session exists but is incomplete -> still 409
+    _remediation_session_on_disk(tmp_path, cid, lesson_id, attempt=1)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 409
+
+    # 4. legacy events without examKey/attempt markers do not count -> still 409
+    for i in range(2):
+        _post_marker(client, cid, "lesson_check",
+                     {"index": i, "type": "mcq", "correct": True, "source": "remediation"},
+                     i, lesson_id)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 409
+
+    # 5. fully worked session (2 practice + 1 apply) -> gate opens (stub reached)
+    for i in range(2):
+        _post_marker(client, cid, "lesson_check",
+                     {"index": i, "type": "mcq", "correct": True, "source": "remediation",
+                      "examKey": "m1", "attempt": 1}, 10 + i, lesson_id)
+    _post_marker(client, cid, "lesson_explained",
+                 {"verdict": "correct", "source": "remediation", "examKey": "m1",
+                  "attempt": 1, "index": 0}, 20, lesson_id)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 502
+
+    # 6. passed exams retake freely even with an old fail on record
+    _post_exam_result(client, cid, "m1",
+                      {"score": 0.9, "passed": True, "attempt": 2, "weakSpots": []}, i=2)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 502
+
+
+def test_retake_gate_stale_session_blocks_after_new_fail(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    def boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeError("stub")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    weak = [{"lessonId": lesson_id, "lessonTitle": "A", "objectives": ["o"]}]
+    _post_exam_result(client, cid, "m1",
+                      {"score": 0.5, "passed": False, "attempt": 2, "weakSpots": weak}, i=3)
+    # session + events all belong to attempt 1: completed for 1, stale for 2
+    _remediation_session_on_disk(tmp_path, cid, lesson_id, attempt=1)
+    for i in range(2):
+        _post_marker(client, cid, "lesson_check",
+                     {"index": i, "type": "mcq", "correct": True, "source": "remediation",
+                      "examKey": "m1", "attempt": 1}, 30 + i, lesson_id)
+    _post_marker(client, cid, "lesson_explained",
+                 {"verdict": "correct", "source": "remediation", "examKey": "m1",
+                  "attempt": 1, "index": 0}, 40, lesson_id)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 409

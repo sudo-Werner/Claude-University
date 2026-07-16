@@ -250,14 +250,22 @@ def create_app(db_path=None):
         slots = exams.blueprint(manifest, exam_key)
         if slots is None:
             return jsonify({"error": "exam not found"}), 404
-        if exam_key == "final":
-            conn = db.get_connection(path)
-            try:
-                status = exams.exam_status(conn, course_id, manifest)
-            finally:
-                conn.close()
-            if not exams.final_unlocked(status, manifest):
+        conn = db.get_connection(path)
+        try:
+            status = exams.exam_status(conn, course_id, manifest)
+            if exam_key == "final" and not exams.final_unlocked(status, manifest):
                 return jsonify({"error": "The final is locked — pass every module exam first."}), 409
+            # Bloom's corrective-then-reassess: while an exam is not yet passed, a
+            # retake after a fail is blocked until that fail's gap review is completed.
+            # First attempts have no failed result and pass straight through.
+            if not status.get(exam_key, {}).get("passed"):
+                latest = remediation.latest_failed_result(conn, course_id, exam_key)
+                if latest is not None and not remediation.session_completed(
+                        conn, courses.CONTENT_DIR, course_id, exam_key,
+                        latest.get("attempt")):
+                    return jsonify({"error": "Complete the gap review before retaking — that's the corrective step."}), 409
+        finally:
+            conn.close()
         spine_lessons = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"]
         prompt = exams.exam_prompt(manifest=manifest, exam_key=exam_key,
                                    slots=slots, spine_lessons=spine_lessons)
