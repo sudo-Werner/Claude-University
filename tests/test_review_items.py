@@ -101,6 +101,7 @@ def test_finalize_items_sanitizes_keeps_fill_verbatim_and_drops_unknown_keys():
     assert out["lessonId"] == "c1-l1" and out["reviewCount"] == 2
     assert len(out["items"]) == 2
     assert "<script>" not in out["items"][0]["prompt"]
+    assert "<b>" not in out["items"][0]["choices"][0]
     assert "bogus" not in out["items"][0]
     assert set(out["items"][0].keys()) == {"type", "prompt", "answer", "explanation", "choices"}
     assert set(out["items"][1].keys()) == {"type", "prompt", "answer", "explanation"}

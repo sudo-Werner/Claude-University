@@ -999,6 +999,11 @@ export async function init({ window, fetch }) {
       }
       ls.freshPending = false;
       if (ui.lessonState === ls && ui.screen === "lesson") paintLesson();
+    }).catch(() => {
+      // No adoption here (nothing to adopt from a rejection) — original checks stand.
+      // Same tail as the .then above: always clear freshPending, repaint only if still here.
+      ls.freshPending = false;
+      if (ui.lessonState === ls && ui.screen === "lesson") paintLesson();
     });
   }
 

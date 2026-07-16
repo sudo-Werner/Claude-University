@@ -269,3 +269,9 @@ test("loadReviewItems returns an error shape when the fetch is aborted", async (
   const res = await loadReviewItems({ fetch, courseId: "c", lessonId: "c-l1" });
   assert.ok(res.error);
 });
+
+test("loadReviewItems returns an error shape when the body parse rejects", async () => {
+  const fetch = async () => ({ ok: true, json: () => Promise.reject(new Error("boom")) });
+  const res = await loadReviewItems({ fetch, courseId: "c", lessonId: "c-l1" });
+  assert.ok(res.error);
+});

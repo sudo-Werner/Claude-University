@@ -96,7 +96,7 @@ export async function loadReviewItems({ fetch, courseId, lessonId }) {
       try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
       return { error: message };
     }
-    return resp.json();
+    return await resp.json();
   } catch (e) {
     return { error: "Couldn't prepare fresh review questions right now." };
   } finally {
