@@ -635,6 +635,42 @@ def test_lesson_prompt_has_visual_aid_guidance():
 
 # ---- accredited sources / course Library (Phase 1) ----
 
+def test_source_type_video_hosts():
+    assert gen.source_type("https://www.youtube.com/watch?v=8kK2zwjRV0M") == "video"
+    assert gen.source_type("https://youtube.com/watch?v=x") == "video"
+    assert gen.source_type("https://m.youtube.com/watch?v=x") == "video"
+    assert gen.source_type("https://youtu.be/8kK2zwjRV0M") == "video"
+    assert gen.source_type("https://vimeo.com/12345") == "video"
+    # whole-label rule: lookalike hosts never match
+    assert gen.source_type("https://notyoutube.com/watch") == "reference"
+    assert gen.source_type("https://youtube.com.evil.net/x") == "reference"
+
+
+def test_source_type_rank_puts_video_last():
+    assert gen._SOURCE_TYPE_RANK[-1] == "video"
+    assert "video" in gen._SOURCE_TYPE_RANK
+
+
+def test_lesson_prompt_asks_for_video_explainer():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="c-l1", lesson_title="L",
+                          module_title="M", position=1, total=3)
+    low = p.lower()
+    assert "video explainer" in low
+    assert "amoeba sisters" in low          # the exemplar class of channel
+    assert "real url" in low                # only search-retrieved links survive
+    assert "no video" in low                # skip rather than force a loose match
+
+
+def test_lesson_prompt_has_creative_teaching_guidance():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="c-l1", lesson_title="L",
+                          module_title="M", position=1, total=3)
+    low = p.lower()
+    assert "hook" in low                    # open with a hook
+    assert "running concrete scenario" in low or "one running concrete" in low
+    assert "visual metaphor" in low
+    assert "crowd" in low                   # style never crowds out substance
+
+
 def test_source_type_from_domain():
     assert gen.source_type("https://cs231n.stanford.edu/slides/lecture_4.pdf") == "university"
     assert gen.source_type("https://www.cl.cam.ac.uk/teaching/x") == "university"

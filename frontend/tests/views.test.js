@@ -1085,3 +1085,19 @@ test("feedback bar renders the sent and error notices with exact copy", () => {
   assert.match(err, /Couldn't send — try again\./);
   assert.match(err, /value="my note"/);
 });
+
+test("video sources render the Video badge in lesson and library views", () => {
+  const lesson = { ...SAMPLE_LESSON, sources: [
+    { title: "Amoeba Sisters: Enzymes", url: "https://www.youtube.com/watch?v=abc", type: "video", note: "Visual walkthrough" },
+  ] };
+  const lessonView = lessonHTML(lesson, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.match(lessonView, /src-badge src-video/);
+  assert.match(lessonView, />Video</);
+
+  const lib = libraryHTML({ intro: "i", sources: [
+    { title: "Amoeba Sisters: Enzymes", url: "https://www.youtube.com/watch?v=abc", type: "video", note: "Visual walkthrough" },
+  ] });
+  assert.match(lib, /src-badge src-video/);
+  assert.match(lib, />Video</);
+  assert.match(lib, /rel="noopener noreferrer"/);
+});

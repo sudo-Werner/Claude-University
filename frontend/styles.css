@@ -490,6 +490,7 @@ textarea::placeholder{color:#b3a994}
 .src-badge.src-peer-reviewed{background:rgba(37,180,120,.14); color:#0f7a4f; border-color:rgba(37,180,120,.3)}
 .src-badge.src-textbook{background:rgba(224,137,47,.16); color:#a05c12; border-color:rgba(224,137,47,.3)}
 .src-badge.src-official-docs{background:rgba(47,143,208,.14); color:var(--blue-text); border-color:rgba(47,143,208,.3)}
+.src-badge.src-video{background:rgba(214,72,110,.12); color:#a63d5c; border-color:rgba(214,72,110,.28)}
 .src-empty{font-size:14px; color:var(--text-mut)}
 
 /* Phase 2 — compact lesson-sources list (lesson view + Library roll-up) */

@@ -69,7 +69,7 @@ function explainHTML(state) {
 // Phase 2 — the accredited sources this lesson was grounded in (real, web-retrieved).
 const SRC_TYPE_LABEL = {
   university: "University", preprint: "Preprint / scholarly", "peer-reviewed": "Peer-reviewed",
-  textbook: "Textbook", "official-docs": "Official docs", reference: "Reference",
+  textbook: "Textbook", "official-docs": "Official docs", reference: "Reference", video: "Video",
 };
 
 function lessonSourcesHTML(sources) {

@@ -345,6 +345,17 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "reasoning so the learner sees HOW, not just the final answer.\n"
         "- Keep every check explanation specific and encouraging: name what is right and the one "
         "thing to watch, never a bare 'wrong'.\n\n"
+        # Werner feedback 2026-07-16: teach like the best explainer channels (Amoeba Sisters
+        # class) — hook, one running scenario, vivid visual metaphors — style, never filler.
+        "Teach the way the best video explainers teach (in prose):\n"
+        "- Open promptHtml with a HOOK — a surprising fact, a question the learner can't yet "
+        "answer, or a tiny mystery this lesson resolves.\n"
+        "- Carry ONE running concrete scenario, character, or example through the explanation AND "
+        "the main exercise, instead of scattered unrelated examples.\n"
+        "- Give each abstract concept a vivid visual metaphor in words — something the learner can "
+        "picture happening.\n"
+        "- Style never crowds out substance: the objectives and the required terminology still "
+        "rule.\n\n"
         # Self-containment + consistency: the learner is assessed on THIS lesson, so everything the
         # end-questions need must be taught here, in one consistent vocabulary. This is the fix for
         # lessons whose diagram/prose/exercise/solution drifted apart (e.g. a phase called
@@ -379,7 +390,14 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "material (university course pages/.edu, official documentation, peer-reviewed papers, "
         "established textbooks), and base your explanation on what you find. In the `sources` field, "
         "list ONLY the specific sources you actually drew on, each with its exact real URL from your "
-        "search — never invent or guess a URL. If a claim is contested, prefer the primary source."
+        "search — never invent or guess a URL. If a claim is contested, prefer the primary source.\n\n"
+        # Werner feedback 2026-07-16: pre-emptively surface one great video explainer per lesson.
+        "Also search for ONE genuinely good VIDEO explainer of this exact topic from a reputable "
+        "education channel (the Amoeba Sisters / Crash Course / Khan Academy / 3Blue1Brown class "
+        "of channel). If you find one that truly matches this lesson's concept, add it to "
+        "`sources` with its REAL URL from your search results and a note saying what the video "
+        "shows — it is a recommended complement for visual learners, not a citation. If nothing "
+        "specific and high-quality turns up, include NO video rather than a loose match."
         + spine_context + obj_block + directive_line
     )
 
@@ -616,7 +634,7 @@ def ensure_capstone(content_dir, course_id, scope, profile, *, generate):
 # "preprint" — they are explicitly NOT peer review — while genuine peer-reviewed journal
 # venues keep "peer-reviewed".
 
-_SOURCE_TYPE_RANK = ["university", "preprint", "peer-reviewed", "textbook", "official-docs", "reference"]
+_SOURCE_TYPE_RANK = ["university", "preprint", "peer-reviewed", "textbook", "official-docs", "reference", "video"]
 
 # Named domains matched on registrable-suffix (host equals the domain, or is a subdomain of
 # it) — never on raw substring, so e.g. "summit.org" can never match "mit.edu".
@@ -638,6 +656,10 @@ _OFFICIAL_DOCS_DOMAINS = ("python.org", "pytorch.org", "tensorflow.org", "scikit
                           "developer.mozilla.org", "kubernetes.io", "readthedocs.io",
                           "numpy.org", "pandas.pydata.org")
 _OFFICIAL_DOCS_FIRST_LABELS = ("docs", "developer")  # only as the host's FIRST label
+
+# Video explainers (Werner feedback 2026-07-16): a video is a complement, never the
+# authority — "video" ranks last and gets its own honest badge.
+_VIDEO_DOMAINS = ("youtube.com", "youtu.be", "vimeo.com")
 
 
 def _url_host(url):
@@ -684,6 +706,8 @@ def source_type(url):
     if (_domain_suffix_match(labels, _OFFICIAL_DOCS_DOMAINS)
             or _first_label_match(labels, _OFFICIAL_DOCS_FIRST_LABELS)):
         return "official-docs"
+    if _domain_suffix_match(labels, _VIDEO_DOMAINS):
+        return "video"
     return "reference"
 
 
