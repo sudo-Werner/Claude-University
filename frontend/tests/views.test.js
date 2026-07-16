@@ -349,6 +349,68 @@ test("lessonHTML outside review mode is unaffected by the rating gate", () => {
   assert.match(nonReview, /How well did you recall this\?/);
 });
 
+test("lessonHTML shows a pending placeholder instead of checks while fresh review items load", () => {
+  const pending = lessonHTML(TWO_CHECKS_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true, isReview: true, freshPending: true,
+    checkAnswers: {}, checkResults: {},
+  });
+  assert.match(pending, /checks-pending/);
+  assert.match(pending, /Preparing fresh review questions…/);
+  assert.doesNotMatch(pending, /Check your understanding/);
+
+  // once pending resolves (freshPending false) the checks render normally again
+  const resolved = lessonHTML(TWO_CHECKS_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true, isReview: true, freshPending: false,
+    checkAnswers: {}, checkResults: {},
+  });
+  assert.doesNotMatch(resolved, /checks-pending/);
+  assert.match(resolved, /Check your understanding/);
+
+  // outside review mode, freshPending has no effect (placeholder never shows)
+  const nonReviewPending = lessonHTML(TWO_CHECKS_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true, freshPending: true,
+    checkAnswers: {}, checkResults: {},
+  });
+  assert.doesNotMatch(nonReviewPending, /checks-pending/);
+});
+
+test("lessonHTML shows the fresh-items heading once items have been swapped in (not pending)", () => {
+  const html = lessonHTML(TWO_CHECKS_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true, isReview: true,
+    freshPending: false, freshItems: true, checkAnswers: {}, checkResults: {},
+  });
+  assert.match(html, /Fresh review questions/);
+  assert.doesNotMatch(html, /Check your understanding/);
+});
+
+test("lessonHTML checks rendering is unaffected by fresh-item fields when absent (byte-identical)", () => {
+  const withoutFields = lessonHTML(TWO_CHECKS_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true,
+    checkAnswers: {}, checkResults: {},
+  });
+  const withFalsyFields = lessonHTML(TWO_CHECKS_LESSON, {
+    answer: "x", hintVisible: false, solutionRevealed: true,
+    checkAnswers: {}, checkResults: {}, isReview: false, freshPending: false, freshItems: false,
+  });
+  assert.equal(withoutFields, withFalsyFields);
+});
+
+const FRESH_ITEMS_LESSON = {
+  ...SAMPLE_LESSON,
+  checks: [
+    { type: "mcq", prompt: "Which is prime?", choices: ["4", "7"], answer: 1, explanation: "7 is prime" },
+    { type: "fill", prompt: "5+5?", answer: "10", explanation: "sum" },
+  ],
+};
+
+test("ratingLocked and suggestedQuality work unchanged against a swapped fresh-items set", () => {
+  const locked = { isReview: true, freshItems: true, checkResults: { 0: { correct: true } } };
+  assert.equal(ratingLocked(FRESH_ITEMS_LESSON, locked), true);
+  const unlocked = { isReview: true, freshItems: true, checkResults: { 0: { correct: true }, 1: { correct: true } } };
+  assert.equal(ratingLocked(FRESH_ITEMS_LESSON, unlocked), false);
+  assert.equal(suggestedQuality(FRESH_ITEMS_LESSON, unlocked), "good");
+});
+
 test("dashboard shows a mastery breakdown when there is mastery data", () => {
   const html = dashboardHTML(
     { topic: "T", sub: "S", durationMin: 90, progressPct: 50, lessonsDone: 2,

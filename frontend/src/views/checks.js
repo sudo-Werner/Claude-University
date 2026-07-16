@@ -40,5 +40,6 @@ function item(check, i, state) {
 export function checksHTML(checks, state) {
   if (!checks || !checks.length) return "";
   const items = checks.map((c, i) => item(c, i, state)).join("");
-  return `<section class="checks"><div class="checks-title">Check your understanding</div>${items}</section>`;
+  const title = state && state.freshItems ? "Fresh review questions" : "Check your understanding";
+  return `<section class="checks"><div class="checks-title">${title}</div>${items}</section>`;
 }

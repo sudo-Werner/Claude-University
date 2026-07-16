@@ -217,7 +217,11 @@ export function lessonHTML(lesson, state, nav = {}) {
       <button class="reveal ${sol}" data-action="reveal-solution">${LOCK}<span style="flex:1">${REVEAL_TEXT[sol]}</span></button>
       ${solutionPanel}
     </section>
-    ${state.solutionRevealed ? checksHTML(lesson.checks || [], state) : ""}
+    ${state.solutionRevealed
+      ? (state.isReview && state.freshPending
+          ? '<p class="checks-pending">Preparing fresh review questions…</p>'
+          : checksHTML(lesson.checks || [], state))
+      : ""}
     ${state.solutionRevealed ? explainHTML(state) : ""}
     ${lessonSourcesHTML(lesson.sources)}
     <div class="nav">

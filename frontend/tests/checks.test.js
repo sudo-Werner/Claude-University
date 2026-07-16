@@ -39,3 +39,25 @@ test("checksHTML renders nothing for no checks", () => {
   assert.equal(checksHTML([], {}), "");
   assert.equal(checksHTML(undefined, {}), "");
 });
+
+test("checksHTML shows the fresh-items heading when state.freshItems is set", () => {
+  const html = checksHTML(
+    [{ type: "fill", prompt: "2+2?", answer: "4", explanation: "because" }],
+    { checkAnswers: {}, checkResults: {}, freshItems: true },
+  );
+  assert.match(html, /Fresh review questions/);
+  assert.doesNotMatch(html, /Check your understanding/);
+});
+
+test("checksHTML keeps the default heading when freshItems is absent or false", () => {
+  const absent = checksHTML(
+    [{ type: "fill", prompt: "2+2?", answer: "4", explanation: "because" }],
+    { checkAnswers: {}, checkResults: {} },
+  );
+  assert.match(absent, /Check your understanding/);
+  const falsy = checksHTML(
+    [{ type: "fill", prompt: "2+2?", answer: "4", explanation: "because" }],
+    { checkAnswers: {}, checkResults: {}, freshItems: false },
+  );
+  assert.equal(absent, falsy);
+});

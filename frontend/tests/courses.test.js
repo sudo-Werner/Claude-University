@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -244,4 +244,34 @@ test("loadTranscript returns body or null", async () => {
   const body = { courses: [] };
   assert.deepEqual(await loadTranscript({ fetch: async () => ({ ok: true, json: async () => body }) }), body);
   assert.equal(await loadTranscript({ fetch: async () => ({ ok: false }) }), null);
+});
+
+test("loadReviewItems fetches by course and lesson id and returns items", async () => {
+  let url, opts;
+  const fetch = async (u, o) => {
+    url = u; opts = o;
+    return { ok: true, json: async () => ({ items: [{ type: "fill", prompt: "p", answer: "a", explanation: "e" }] }) };
+  };
+  const res = await loadReviewItems({ fetch, courseId: "c", lessonId: "c-l1" });
+  assert.equal(url, "/api/courses/c/lessons/c-l1/review-items");
+  assert.ok(opts.signal instanceof AbortSignal);
+  assert.equal(res.items.length, 1);
+});
+
+test("loadReviewItems returns an error shape on non-ok", async () => {
+  const fetch = async () => ({ ok: false, json: async () => ({ error: "could not prepare fresh review questions" }) });
+  const res = await loadReviewItems({ fetch, courseId: "c", lessonId: "c-l1" });
+  assert.equal(res.error, "could not prepare fresh review questions");
+});
+
+test("loadReviewItems returns an error shape when the fetch is aborted", async () => {
+  const fetch = async () => { throw new DOMException("The operation was aborted.", "AbortError"); };
+  const res = await loadReviewItems({ fetch, courseId: "c", lessonId: "c-l1" });
+  assert.ok(res.error);
+});
+
+test("loadReviewItems returns an error shape when the body parse rejects", async () => {
+  const fetch = async () => ({ ok: true, json: () => Promise.reject(new Error("boom")) });
+  const res = await loadReviewItems({ fetch, courseId: "c", lessonId: "c-l1" });
+  assert.ok(res.error);
 });

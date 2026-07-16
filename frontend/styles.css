@@ -391,6 +391,7 @@ textarea::placeholder{color:#b3a994}
 /* =================  CONCEPT CHECKS  ================= */
 .checks{display:flex; flex-direction:column; gap:14px; margin-top:4px}
 .checks-title{font-size:13px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--text-mut)}
+.checks-pending{font-size:13px; color:var(--text-dim); font-style:italic; margin-top:4px}
 .check{display:flex; flex-direction:column; gap:8px}
 .check-q{font-size:15px; color:var(--text); line-height:1.45}
 .choice{text-align:left; padding:11px 14px; border:1px solid var(--border-field); border-radius:var(--r-sm);
