@@ -206,6 +206,29 @@ test("open workspace chat tab escapes message content", () => {
   assert.match(html, /&lt;script&gt;x&lt;\/script&gt;/);
 });
 
+test("exercise shows the socratic start button only before the solution is revealed", () => {
+  const before = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.match(before, /data-action="socratic-start"/);
+  assert.match(before, /Work through it with Claude/);
+  const after = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: true });
+  assert.doesNotMatch(after, /data-action="socratic-start"/);
+});
+
+test("workspace chat shows the socratic banner and Exit only when the mode is on", () => {
+  const base = { answer: "", hintVisible: false, solutionRevealed: false };
+  const wsOn = { open: true, tab: "chat", notes: "", chat: [], pending: false, saveStatus: "", socratic: true };
+  const on = lessonHTML(SAMPLE_LESSON, { ...base, ws: wsOn });
+  assert.match(on, /Working through the exercise — Claude will guide with questions, not answers\./);
+  assert.match(on, /data-action="socratic-exit"/);
+  assert.ok(on.indexOf("ws-socratic") < on.indexOf("ws-thread")); // banner sits above the thread
+  const off = lessonHTML(SAMPLE_LESSON, { ...base, ws: { ...wsOn, socratic: false } });
+  assert.doesNotMatch(off, /ws-socratic/);
+  assert.doesNotMatch(off, /data-action="socratic-exit"/);
+  // A falsy flag renders byte-identically to a workspace that has never seen the mode.
+  const legacy = lessonHTML(SAMPLE_LESSON, { ...base, ws: { open: true, tab: "chat", notes: "", chat: [], pending: false, saveStatus: "" } });
+  assert.equal(off, legacy);
+});
+
 test("diagnostic renders all six questions and gates Continue", () => {
   const none = diagnosticHTML({});
   assert.equal((none.match(/data-q="/g) || []).length >= 6, true);

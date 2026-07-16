@@ -507,6 +507,12 @@ textarea::placeholder{color:#b3a994}
 .ws-compose textarea{flex:1; min-height:44px; resize:vertical}
 .ws-send{padding:10px 14px; border:none; border-radius:var(--r-sm); cursor:pointer; font:600 13px/1 inherit; color:#fff; background:var(--grad)}
 .ws-send:disabled{opacity:.5; cursor:default}
+.ws-socratic{display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:var(--r-sm);
+  border:1px solid rgba(124,106,255,.3); background:rgba(124,106,255,.14); color:var(--purple); font-size:12px; line-height:1.4}
+.ws-socratic span{flex:1}
+.ws-socratic-exit{padding:5px 10px; border:1px solid rgba(124,106,255,.3); border-radius:var(--r-sm);
+  background:none; color:var(--purple); font:600 12px/1 inherit; cursor:pointer}
+.ws-socratic-exit:hover{background:rgba(124,106,255,.1)}
 
 /* =================  ACTIVITY LOG  ================= */
 .activity-link{max-width:240px; display:block}
