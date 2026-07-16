@@ -589,9 +589,8 @@ def create_app(db_path=None):
         if not isinstance(messages, list):
             messages = []
         messages = [m for m in messages if isinstance(m, dict)]
-        # Any forged mode value falls back to the normal chat: the flag only selects
-        # between two system prompts (the reference answer is in context either way).
         socratic = body.get("mode") == "socratic"
+        teach = body.get("mode") == "teach"
         # Analogy on tap: a chip tap sends mode: "analogy" + a concept term. The term
         # is validated against this lesson's OWN spine entry (exact match); only then
         # do we build the analogy prompt, and only from the server's own copy of the
@@ -615,10 +614,11 @@ def create_app(db_path=None):
                     "learner_brief": (manifest or {}).get("learnerBrief"),
                     "profile": (prof or {}).get("data"),
                 }
-        if analogy is not None or socratic:
-            # No web tools: analogy re-represents material already in context, and the
-            # socratic exercise is self-contained with the solution in context — both
-            # are faster without a search round-trip.
+        if analogy is not None or socratic or teach:
+            # No web tools: analogy re-represents material already in context, the
+            # socratic exercise is self-contained with the solution in context, and the
+            # teach persona is an in-context conversation, not research — all three are
+            # faster without a search round-trip.
             stream_fn = lambda p: claude_client.stream(p)
         else:
             # The side-chat can web-search so it isn't limited to the model's training cutoff;
@@ -627,8 +627,41 @@ def create_app(db_path=None):
         sse = generation.lesson_chat_sse(
             lesson, messages, stream_fn=stream_fn,
             solution_revealed=bool(body.get("solutionRevealed")), socratic=socratic,
-            analogy=analogy)
+            analogy=analogy, teach=teach)
         return app.response_class(sse, mimetype="text/event-stream")
+
+    @app.post("/api/courses/<course_id>/lessons/<lesson_id>/teach")
+    def teach_lesson(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
+        lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
+        if lesson is None:
+            return jsonify({"error": "lesson not found"}), 404
+        body = request.get_json(silent=True)
+        body = body if isinstance(body, dict) else {}
+        messages = body.get("messages", [])
+        if not isinstance(messages, list):
+            messages = []
+        messages = [m for m in messages if isinstance(m, dict)]
+        has_teacher_turn = any(
+            m.get("role") == "user" and isinstance(m.get("content"), str) and m["content"].strip()
+            for m in messages
+        )
+        if not has_teacher_turn:
+            return jsonify({"error": "teach something first"}), 400
+        prompt = generation.teach_grade_prompt(
+            prompt_html=lesson.get("promptHtml", ""),
+            solution_ans=lesson.get("solutionAns", ""),
+            solution_note=lesson.get("solutionNote", ""),
+            messages=messages,
+        )
+        try:
+            result = claude_client.run_structured(prompt, validate=generation.valid_grade)
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not grade your teaching"}), 502
+        return jsonify({"verdict": result["verdict"], "note": generation.sanitize_html(result["note"])})
 
     @app.get("/api/courses/<course_id>/reviews")
     def get_reviews(course_id):

@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
@@ -728,7 +728,7 @@ export async function init({ window, fetch }) {
     if (lessonFailed(deeper)) {
       // Break the shared ws reference and clear any stuck pending, so a chat that was
       // mid-stream when deepen failed doesn't leave the input disabled.
-      const keptWs = ui.lessonState.ws ? { ...ui.lessonState.ws, pending: false } : undefined;
+      const keptWs = ui.lessonState.ws ? { ...ui.lessonState.ws, pending: false, grading: false } : undefined;
       ui.lessonState = { ...ui.lessonState, ws: keptWs, deepenError: (deeper && deeper.error) || "Couldn't rewrite this lesson right now." };
       showLesson();
       return;
@@ -751,6 +751,8 @@ export async function init({ window, fetch }) {
   const WS_PREFS = "ws-prefs"; // remembers open/closed + active tab across lessons
   // Client-side canned opener for socratic co-work: instant, zero cost.
   const SOCRATIC_OPENER = "Let's work through this together — I'll ask questions, you do the thinking. What do you think the first step is?";
+  // Client-side canned opener for Teach it to Claude: instant, zero cost.
+  const TEACH_OPENER = "Okay — teach me! Explain this lesson's idea like I've never seen it before, and I'll ask questions as we go.";
   function wsPrefs() {
     // Default: open on wide screens (the notes sit beside the lesson), collapsed on
     // phone. Once the learner toggles it, their saved choice is respected everywhere.
@@ -834,10 +836,11 @@ export async function init({ window, fetch }) {
     const cid = ui.courseId, lid = ui.lesson.id;
     const ta = root.querySelector('[data-field="ws-chat"]');
     const text = ta ? ta.value.trim() : "";
-    if (!text || ws.pending) return;
+    if (!text || ws.pending || ws.grading) return;
     ws.chat.push({ role: "user", content: text });
     await streamWsReply(ls, ws, cid, lid,
-      { solutionRevealed: !!ui.lessonState.solutionRevealed, ...(ws.socratic ? { mode: "socratic" } : {}) });
+      { solutionRevealed: !!ui.lessonState.solutionRevealed,
+        ...(ws.teaching ? { mode: "teach" } : ws.socratic ? { mode: "socratic" } : {}) });
   }
 
   // #6 analogy on tap: tapping a concept chip sends the canned learner message with
@@ -856,6 +859,33 @@ export async function init({ window, fetch }) {
     ws.chat.push({ role: "user", content: `Give me a different way to think about "${term}".` });
     streamWsReply(ls, ws, cid, lid,
       { solutionRevealed: !!ui.lessonState.solutionRevealed, mode: "analogy", concept: term });
+  }
+
+  // Teach it to Claude (protégé effect): one grading call per "Grade my teaching" click,
+  // scored with the same verdict machinery as explain-it-back. Capture-before-await +
+  // onScreen staleness mirrors the explain-grade handler — but per the design doc the
+  // mastery event is logged unconditionally (the learner earned it even if they have
+  // since navigated away); only the repaint is guarded.
+  async function submitTeachGrade() {
+    const ls = ui.lessonState, ws = ls.ws;
+    if (!ws || !ws.teaching || ws.pending || ws.grading) return;
+    const cid = ui.courseId, lid = ui.lesson.id;
+    const episode = ws.chat.slice(ws.teachStart || 0);
+    if (!episode.some((m) => m.role === "user" && (m.content || "").trim())) return;
+    ws.grading = true;
+    paintLesson();
+    const onScreen = () => ui.lessonState === ls && ui.screen === "lesson";
+    const messages = episode.map((m) => ({ role: m.role, content: m.content }));
+    const result = await gradeTeaching({ fetch, courseId: cid, lessonId: lid, messages });
+    ws.grading = false;
+    if (result && result.verdict) {
+      ws.teachGrade = { verdict: result.verdict, note: result.note };
+      ws.teaching = false;
+      log("lesson_explained", { courseId: cid, topicId: lid, payload: { verdict: result.verdict, source: "teaching" } });
+    } else {
+      ws.teachGrade = { error: (result && result.error) || "Couldn't grade your teaching right now." };
+    }
+    if (onScreen()) paintLesson();
   }
 
   function paintLesson() {
@@ -960,6 +990,23 @@ export async function init({ window, fetch }) {
       }
       paintLesson();
     });
+    const teachBtn = view.querySelector('[data-action="teach-start"]');
+    if (teachBtn) teachBtn.addEventListener("click", () => {
+      const ws = ui.lessonState.ws;
+      if (!ws) return; // workspace still seeding; the button works once it has painted
+      const entering = !ws.teaching;
+      ws.teaching = true;
+      ws.open = true;
+      ws.tab = "chat";
+      if (entering) {
+        ws.teachStart = ws.chat.length;
+        ws.teachGrade = null;
+        ws.chat.push({ role: "assistant", content: TEACH_OPENER });
+        // Best-effort persist — same fire-and-forget idiom as the socratic entry above.
+        saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat });
+      }
+      paintLesson();
+    });
     view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
     view.querySelectorAll('[data-quality]').forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -1059,6 +1106,13 @@ export async function init({ window, fetch }) {
       ui.lessonState.ws.socratic = false;
       paintLesson();
     });
+    const teachExit = view.querySelector('[data-action="teach-exit"]');
+    if (teachExit) teachExit.addEventListener("click", () => {
+      ui.lessonState.ws.teaching = false;
+      paintLesson();
+    });
+    const teachGradeBtn = view.querySelector('[data-action="teach-grade"]');
+    if (teachGradeBtn) teachGradeBtn.addEventListener("click", submitTeachGrade);
     scrollWsThread();  // open/repaint with the newest message in view
   }
 

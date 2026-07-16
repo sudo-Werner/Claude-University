@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -300,4 +300,20 @@ test("getLessonStatus returns an error shape when resp.json() rejects", async ()
   const fetch = async () => ({ ok: true, json: () => Promise.reject(new Error("boom")) });
   const status = await getLessonStatus({ fetch, courseId: "c", lessonId: "c-l1" });
   assert.ok(status.error);
+});
+
+test("gradeTeaching posts the teaching transcript and returns the verdict", async () => {
+  let sent = null;
+  const fetch = async (url, opts) => { sent = { url, opts }; return { ok: true, json: async () => ({ verdict: "close", note: "n" }) }; };
+  const messages = [{ role: "user", content: "A GET request fetches data." }];
+  const out = await gradeTeaching({ fetch, courseId: "c1", lessonId: "c1-l1", messages });
+  assert.equal(out.verdict, "close");
+  assert.equal(sent.url, "/api/courses/c1/lessons/c1-l1/teach");
+  assert.deepEqual(JSON.parse(sent.opts.body).messages, messages);
+});
+
+test("gradeTeaching surfaces the server error message", async () => {
+  const fetch = async () => ({ ok: false, json: async () => ({ error: "teach something first" }) });
+  const out = await gradeTeaching({ fetch, courseId: "c1", lessonId: "c1-l1", messages: [] });
+  assert.equal(out.error, "teach something first");
 });

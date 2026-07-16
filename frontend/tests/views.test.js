@@ -965,3 +965,83 @@ test("activateHTML escapes the title and shows the prior-knowledge question", ()
   assert.match(html, />Start lesson</);
   assert.match(html, />Skip</);
 });
+
+test("exercise shows the Teach it to Claude button only after the solution is revealed", () => {
+  const before = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.doesNotMatch(before, /data-action="teach-start"/);
+  const after = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: true });
+  assert.match(after, /data-action="teach-start"/);
+  assert.match(after, /Teach it to Claude/);
+});
+
+test("workspace chat shows the teaching banner and Grade button only when ws.teaching is on", () => {
+  const base = { answer: "x", hintVisible: false, solutionRevealed: true };
+  const wsOn = { open: true, tab: "chat", notes: "",
+    chat: [{ role: "assistant", content: "opener" }, { role: "user", content: "teaching turn" }],
+    pending: false, saveStatus: "", teaching: true, teachStart: 1 };
+  const on = lessonHTML(SAMPLE_LESSON, { ...base, ws: wsOn });
+  assert.match(on, /You're the teacher — Claude is your student\./);
+  assert.match(on, /data-action="teach-exit"/);
+  assert.match(on, /data-action="teach-grade"/);
+  assert.ok(on.indexOf("ws-socratic") < on.indexOf("ws-thread")); // banner sits above the thread
+  const off = lessonHTML(SAMPLE_LESSON, { ...base, ws: { ...wsOn, teaching: false } });
+  assert.doesNotMatch(off, /data-action="teach-exit"/);
+  assert.doesNotMatch(off, /data-action="teach-grade"/);
+});
+
+test("Grade my teaching button is disabled while pending, grading, or before any teacher turn", () => {
+  const base = { answer: "x", hintVisible: false, solutionRevealed: true };
+  const noTeacherTurn = { open: true, tab: "chat", notes: "",
+    chat: [{ role: "assistant", content: "opener" }], pending: false, saveStatus: "",
+    teaching: true, teachStart: 1 };
+  const htmlNoTurn = lessonHTML(SAMPLE_LESSON, { ...base, ws: noTeacherTurn });
+  assert.match(htmlNoTurn, /data-action="teach-grade"[^>]*disabled/);
+
+  const withTurn = { ...noTeacherTurn, chat: [...noTeacherTurn.chat, { role: "user", content: "here's my explanation" }] };
+  const htmlReady = lessonHTML(SAMPLE_LESSON, { ...base, ws: withTurn });
+  assert.doesNotMatch(htmlReady, /data-action="teach-grade"[^>]*disabled/);
+
+  const htmlPending = lessonHTML(SAMPLE_LESSON, { ...base, ws: { ...withTurn, pending: true } });
+  assert.match(htmlPending, /data-action="teach-grade"[^>]*disabled/);
+
+  const htmlGrading = lessonHTML(SAMPLE_LESSON, { ...base, ws: { ...withTurn, grading: true } });
+  assert.match(htmlGrading, /data-action="teach-grade"[^>]*disabled/);
+});
+
+test("workspace compose is disabled while grading a teaching episode", () => {
+  const ws = { open: true, tab: "chat", notes: "", chat: [{ role: "user", content: "x" }],
+              pending: false, saveStatus: "", teaching: true, teachStart: 0, grading: true };
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: true, ws });
+  assert.match(html, /data-field="ws-chat"[^>]*disabled/);
+  assert.match(html, /data-action="ws-send"[^>]*disabled/);
+  assert.match(html, /grade-loading/);
+  assert.match(html, /Checking your teaching…/);
+});
+
+test("teaching verdict block renders from ws.teachGrade after the session ends", () => {
+  const ws = { open: true, tab: "chat", notes: "", chat: [], pending: false, saveStatus: "",
+              teaching: false, teachGrade: { verdict: "close", note: "Good <em>attempt</em>, but explain X." } };
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: true, ws });
+  assert.match(html, /Almost there/);          // GRADE_LABEL.close
+  assert.match(html, /Good <em>attempt<\/em>, but explain X\./); // server-sanitized, rendered raw
+  assert.doesNotMatch(html, /data-action="teach-exit"/); // session already ended
+});
+
+test("teaching grade error paints via grade-soft and keeps the session alive", () => {
+  const ws = { open: true, tab: "chat", notes: "", chat: [{ role: "user", content: "x" }],
+              pending: false, saveStatus: "", teaching: true, teachStart: 0,
+              teachGrade: { error: "Couldn't grade your teaching right now." } };
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: true, ws });
+  assert.match(html, /grade-soft/);
+  assert.match(html, /Couldn't grade your teaching right now\./);
+  assert.match(html, /data-action="teach-exit"/); // still teaching
+});
+
+test("teaching chat messages are escaped like any other workspace message", () => {
+  const ws = { open: true, tab: "chat", notes: "",
+              chat: [{ role: "user", content: "<script>alert(1)</script>" }],
+              pending: false, saveStatus: "", teaching: true, teachStart: 0 };
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: true, ws });
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+});

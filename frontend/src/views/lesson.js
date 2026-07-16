@@ -108,19 +108,50 @@ function wsNotesHTML(w) {
   );
 }
 
+// Teach it to Claude (protégé effect): a session-mode banner mirroring Socratic's, plus
+// the graded verdict once the episode ends. teachGradeHTML mirrors gradeBlock's own
+// verdict-painting idiom (GRADE_LABEL + .grade-<verdict>, .grade-soft for an error) so a
+// fourth grading surface doesn't invent a fourth visual language.
+function teachGradeHTML(g) {
+  if (!g) return "";
+  if (g.error) return `<div class="grade grade-soft">${esc(g.error)}</div>`;
+  const v = GRADE_LABEL[g.verdict] ? g.verdict : "close";
+  return `<div class="grade grade-${v}" aria-live="polite">
+      <div class="grade-verdict">${GRADE_LABEL[v]}</div>
+      <div class="grade-note">${g.note || ""}</div>
+    </div>`;
+}
+
 function wsChatHTML(w) {
-  const banner = w.socratic
-    ? `<div class="ws-socratic"><span>Working through the exercise — Claude will guide with questions, not answers.</span>` +
-      `<button class="ws-socratic-exit" data-action="socratic-exit">Exit</button></div>`
-    : "";
+  let banner = "";
+  if (w.teaching) {
+    const hasTeacherTurn = (w.chat || []).slice(w.teachStart || 0)
+      .some((m) => m.role === "user" && (m.content || "").trim());
+    const gradeDisabled = !!w.pending || !!w.grading || !hasTeacherTurn;
+    const gradeSurface = w.grading
+      ? `<div class="grade grade-loading" aria-live="polite"><span class="grade-spin"></span><span>Checking your teaching…</span></div>`
+      : teachGradeHTML(w.teachGrade);
+    banner =
+      `<div class="ws-socratic"><span>You're the teacher — Claude is your student.</span>` +
+      `<button class="ws-socratic-exit" data-action="teach-exit">Exit</button>` +
+      `<button class="ws-socratic-exit" data-action="teach-grade"${gradeDisabled ? " disabled" : ""}>Grade my teaching</button></div>` +
+      gradeSurface;
+  } else if (w.socratic) {
+    banner =
+      `<div class="ws-socratic"><span>Working through the exercise — Claude will guide with questions, not answers.</span>` +
+      `<button class="ws-socratic-exit" data-action="socratic-exit">Exit</button></div>`;
+  } else if (w.teachGrade) {
+    banner = teachGradeHTML(w.teachGrade);
+  }
   const thread = (w.chat || [])
     .map((m) => `<div class="ws-msg ws-${m.role === "user" ? "you" : "ai"}">${esc(m.content)}</div>`)
     .join("");
+  const composeDisabled = w.pending || w.grading;
   const pending = w.pending ? `<div class="ws-msg ws-ai ws-typing">…</div>` : "";
   return (
     `<div class="ws-chat">${banner}<div class="ws-thread">${thread}${pending}</div>` +
-    `<div class="ws-compose"><textarea data-field="ws-chat" placeholder="Ask a side question…"${w.pending ? " disabled" : ""}></textarea>` +
-    `<button class="ws-send" data-action="ws-send"${w.pending ? " disabled" : ""}>Send</button></div></div>`
+    `<div class="ws-compose"><textarea data-field="ws-chat" placeholder="Ask a side question…"${composeDisabled ? " disabled" : ""}></textarea>` +
+    `<button class="ws-send" data-action="ws-send"${composeDisabled ? " disabled" : ""}>Send</button></div></div>`
   );
 }
 
@@ -237,6 +268,7 @@ export function lessonHTML(lesson, state, nav = {}) {
           : checksHTML(lesson.checks || [], state))
       : ""}
     ${state.solutionRevealed ? explainHTML(state) : ""}
+    ${state.solutionRevealed ? `<button class="btn-secondary" data-action="teach-start">Teach it to Claude</button>` : ""}
     ${lessonSourcesHTML(lesson.sources)}
     <div class="nav">
       <button class="btn-back" data-action="back">Back</button>
