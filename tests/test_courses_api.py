@@ -108,6 +108,68 @@ def test_get_lesson_and_404s(client, tmp_path, monkeypatch):
     assert client.get("/api/courses/nope").status_code == 404
 
 
+def test_get_lesson_attaches_concepts_from_spine(client, tmp_path, monkeypatch):
+    from backend import courses, spine
+    root = tmp_path / "courses"
+    root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    spine.save_spine(root, cid, {"lessons": {lesson_id: {
+        "summary": "s", "concepts": [{"term": "Gradient", "definition": "d"}]}}})
+
+    resp = client.get(f"/api/courses/{cid}/lessons/{lesson_id}")
+    assert resp.status_code == 200
+    assert resp.get_json()["concepts"] == ["Gradient"]
+    # never written into the cached lesson file
+    raw = json.loads((root / cid / "lessons" / f"{lesson_id}.json").read_text())
+    assert "concepts" not in raw
+
+
+def test_get_lesson_omits_concepts_without_spine_entry(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"
+    root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+
+    resp = client.get(f"/api/courses/{cid}/lessons/{lesson_id}")
+    assert resp.status_code == 200
+    assert "concepts" not in resp.get_json()
+
+
+def test_get_lesson_omits_concepts_when_spine_corrupt(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"
+    root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    (root / cid / "spine.json").write_text("{not json")
+
+    resp = client.get(f"/api/courses/{cid}/lessons/{lesson_id}")
+    assert resp.status_code == 200
+    assert "concepts" not in resp.get_json()
+
+
+def test_get_lesson_skips_malformed_concept_items(client, tmp_path, monkeypatch):
+    from backend import courses, spine
+    root = tmp_path / "courses"
+    root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    spine.save_spine(root, cid, {"lessons": {lesson_id: {
+        "summary": "s",
+        "concepts": [{"term": "Good", "definition": "d"}, {"term": ""},
+                     "not-a-dict", {"definition": "no term"}]}}})
+
+    resp = client.get(f"/api/courses/{cid}/lessons/{lesson_id}")
+    assert resp.status_code == 200
+    assert resp.get_json()["concepts"] == ["Good"]
+
+
 def test_post_course_creates_and_lists(client, tmp_path, monkeypatch):
     from backend import courses
     root = tmp_path / "courses"
@@ -272,6 +334,28 @@ def test_deepen_endpoint_regenerates_lesson(client, tmp_path, monkeypatch):
     assert body["promptHtml"] == "<p>deeper now</p>"
     assert body["id"] == lesson_id  # reconciled
     assert body["sources"] == []  # no captured sources -> empty list
+
+
+def test_deepen_endpoint_attaches_concepts_from_fresh_spine(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    deeper = {"id": lesson_id, "courseId": cid, "topic": "t", "step": 1, "totalSteps": 1,
+              "eyebrow": "EXERCISE", "promptHtml": "<p>deeper</p>", "hintHtml": "h",
+              "solutionAns": "a", "solutionNote": "n",
+              "checks": [{"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}],
+              "preQuiz": {"type": "mcq", "prompt": "Guess?", "choices": ["A", "B"],
+                          "answer": 0, "explanation": "Because."},
+              "spine": {"summary": "Teaches recursion.",
+                        "concepts": [{"term": "recursion",
+                                      "definition": "A function calling itself."}]}}
+    monkeypatch.setattr(claude_client, "run_sourced", lambda prompt, **kw: (deeper, []))
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: dict(deeper))
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/deepen")
+    assert resp.status_code == 200
+    assert resp.get_json()["concepts"] == ["recursion"]
 
 
 def test_deepen_endpoint_reauth_on_auth_error(client, tmp_path, monkeypatch):
@@ -573,6 +657,92 @@ def test_lesson_chat_forged_bodies_stream_without_500(client, tmp_path, monkeypa
         assert resp.status_code == 200
         text = resp.get_data(as_text=True)
         assert "event: done" in text
+
+
+def test_lesson_chat_analogy_mode_builds_personalized_prompt_without_tools(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client, spine, profile as profile_mod, db
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest = courses.write_course(root, {
+        "title": "Analogy Course", "subtitle": "s", "brief": "ctx",
+        "learnerBrief": {"goal": "become a chef", "background": "line cook"},
+        "modules": [{"title": "Module One", "lessons": [{"title": "Lesson One"}]}]})
+    lesson_id = manifest["modules"][0]["lessons"][0]["id"]
+    cid = manifest["id"]
+    lesson = {
+        "id": lesson_id, "courseId": cid, "topic": "Topic One",
+        "step": 1, "totalSteps": 1, "eyebrow": "EXERCISE",
+        "promptHtml": "p", "hintHtml": "h", "solutionAns": "a", "solutionNote": "n",
+    }
+    (root / cid / "lessons" / f"{lesson_id}.json").write_text(json.dumps(lesson))
+    spine.save_spine(root, cid, {"lessons": {lesson_id: {
+        "summary": "Teaches recursion basics.",
+        "concepts": [{"term": "Recursion", "definition": "A function calling itself."}]}}})
+
+    app_db = client.application.config["DB_PATH"]
+    conn = db.get_connection(app_db)
+    try:
+        profile_mod.save_profile(conn, {"analogies": True, "level": "beginner"})
+    finally:
+        conn.close()
+
+    calls = []
+
+    def fake_stream(prompt, **kw):
+        calls.append((prompt, kw))
+        return iter(["ok"])
+
+    monkeypatch.setattr(claude_client, "stream", fake_stream)
+    resp = client.post(
+        f"/api/courses/{cid}/lessons/{lesson_id}/chat",
+        json={"messages": [{"role": "user", "content": 'Give me a different way to think about "Recursion".'}],
+              "mode": "analogy", "concept": "Recursion"})
+    assert resp.status_code == 200
+    text = resp.get_data(as_text=True)
+    assert "event: delta" in text and "event: done" in text
+    prompt, kw = calls[0]
+    assert "Recursion" in prompt
+    assert "A function calling itself." in prompt
+    assert "Teaches recursion basics." in prompt
+    assert '"goal": "become a chef"' in prompt
+    assert '"analogies": true' in prompt
+    assert "not instructions" in prompt
+    assert not kw.get("tools")
+
+
+def test_lesson_chat_analogy_mode_falls_back_when_concept_unresolved(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client, spine
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    spine.save_spine(root, cid, {"lessons": {lesson_id: {
+        "summary": "s", "concepts": [{"term": "Recursion", "definition": "d"}]}}})
+    prompts = []
+    calls = []
+
+    def fake_stream(prompt, **kw):
+        prompts.append(prompt)
+        calls.append(kw)
+        return iter(["ok"])
+
+    monkeypatch.setattr(claude_client, "stream", fake_stream)
+    bad_payloads = [
+        {"messages": [{"role": "user", "content": "hi"}], "mode": "analogy", "concept": "Not A Real Term"},
+        {"messages": [{"role": "user", "content": "hi"}], "mode": "analogy", "concept": 5},
+        {"messages": [{"role": "user", "content": "hi"}], "mode": "analogy"},
+    ]
+    for payload in bad_payloads:
+        resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/chat", json=payload)
+        assert resp.status_code == 200
+        resp.get_data(as_text=True)
+    assert len(prompts) == 3
+    for p in prompts:
+        assert "give it plainly" in p            # default LESSON_CHAT_SYSTEM marker present
+        assert "NEVER state it" not in p
+        assert "already said" not in p.lower()   # ANALOGY_SYSTEM marker absent
+    for kw in calls:
+        assert kw.get("tools") == ["WebSearch", "WebFetch"]   # normal-chat tools restored
 
 
 # ---------------------------------------------------------------------------

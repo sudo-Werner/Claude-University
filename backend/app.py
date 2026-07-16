@@ -8,6 +8,48 @@ from backend import db, events, profile, queries, courses, claude_client, genera
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
 
+def _lesson_concepts(course_id, lesson_id):
+    """Response-only concept term list for the chip UI, read live from the spine at
+    request time — never written into the cached lesson file. Defensive: a missing
+    or corrupt spine.json, a missing entry for this lesson, or a malformed concepts
+    list/item all degrade to [] rather than ever failing the lesson response."""
+    entry = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"].get(lesson_id)
+    if not isinstance(entry, dict):
+        return []
+    concepts = entry.get("concepts")
+    if not isinstance(concepts, list):
+        return []
+    return [c["term"] for c in concepts
+            if isinstance(c, dict) and isinstance(c.get("term"), str) and c["term"].strip()]
+
+
+def _with_concepts(lesson, course_id, lesson_id):
+    """Attach `concepts` (list of term strings) to a lesson response dict, read live
+    from spine.json. Omitted entirely when there is no valid spine entry, so legacy
+    lessons stay invisible to the chip UI. Returns a NEW dict — the cached lesson
+    file on disk is never touched."""
+    concepts = _lesson_concepts(course_id, lesson_id)
+    return {**lesson, "concepts": concepts} if concepts else lesson
+
+
+def _resolve_analogy_concept(course_id, lesson_id, concept):
+    """Match a client-claimed concept term against this lesson's OWN spine entry
+    (exact string match). Returns the server's own {"term", "definition", "summary"}
+    dict, or None if `concept` is not a string, there is no spine entry for this
+    lesson, or no concept in it has that exact term — the caller then falls back to
+    the normal chat prompt, never a 4xx."""
+    if not isinstance(concept, str):
+        return None
+    entry = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"].get(lesson_id)
+    if not isinstance(entry, dict):
+        return None
+    for c in entry.get("concepts", []):
+        if isinstance(c, dict) and c.get("term") == concept:
+            return {"term": c.get("term", ""), "definition": c.get("definition", ""),
+                    "summary": entry.get("summary", "")}
+    return None
+
+
 def create_app(db_path=None):
     app = Flask(__name__)
     path = db_path or db.DEFAULT_DB_PATH
@@ -171,7 +213,7 @@ def create_app(db_path=None):
             return jsonify({"error": "lesson not found"}), 404
         lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
         if lesson is not None:
-            return jsonify(lesson)
+            return jsonify(_with_concepts(lesson, course_id, lesson_id))
         conn = db.get_connection(path)
         try:
             prof = profile.latest_profile(conn)
@@ -198,7 +240,7 @@ def create_app(db_path=None):
             return jsonify({"error": "could not prepare this lesson"}), 502
         if lesson is None:
             return jsonify({"error": "lesson not found"}), 404
-        return jsonify(lesson)
+        return jsonify(_with_concepts(lesson, course_id, lesson_id))
 
     @app.get("/api/courses/<course_id>/lessons/<lesson_id>/status")
     def lesson_status(course_id, lesson_id):
@@ -431,7 +473,7 @@ def create_app(db_path=None):
             return jsonify({"error": "could not deepen this lesson"}), 502
         if lesson is None:
             return jsonify({"error": "lesson not found"}), 404
-        return jsonify(lesson)
+        return jsonify(_with_concepts(lesson, course_id, lesson_id))
 
     @app.get("/api/courses/<course_id>/capstone/<scope>")
     def get_capstone(course_id, scope):
@@ -547,9 +589,33 @@ def create_app(db_path=None):
         # Any forged mode value falls back to the normal chat: the flag only selects
         # between two system prompts (the reference answer is in context either way).
         socratic = body.get("mode") == "socratic"
-        if socratic:
-            # No web tools: the exercise is self-contained with the solution in
-            # context, and toolless turns are faster.
+        # Analogy on tap: a chip tap sends mode: "analogy" + a concept term. The term
+        # is validated against this lesson's OWN spine entry (exact match); only then
+        # do we build the analogy prompt, and only from the server's own copy of the
+        # term/definition/summary. Any failure to resolve (no spine, unknown term,
+        # wrong type, missing concept) falls straight through to the normal chat
+        # path below — never a 4xx, same fail-open idiom as a forged socratic flag.
+        analogy = None
+        if body.get("mode") == "analogy":
+            match = _resolve_analogy_concept(course_id, lesson_id, body.get("concept"))
+            if match is not None:
+                # DB conn (profile) and manifest (learnerBrief) are read ONLY here —
+                # normal and socratic chat stay byte-identical to before this change.
+                conn = db.get_connection(path)
+                try:
+                    prof = profile.latest_profile(conn)
+                finally:
+                    conn.close()
+                manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+                analogy = {
+                    **match,
+                    "learner_brief": (manifest or {}).get("learnerBrief"),
+                    "profile": (prof or {}).get("data"),
+                }
+        if analogy is not None or socratic:
+            # No web tools: analogy re-represents material already in context, and the
+            # socratic exercise is self-contained with the solution in context — both
+            # are faster without a search round-trip.
             stream_fn = lambda p: claude_client.stream(p)
         else:
             # The side-chat can web-search so it isn't limited to the model's training cutoff;
@@ -557,7 +623,8 @@ def create_app(db_path=None):
             stream_fn = lambda p: claude_client.stream(p, tools=["WebSearch", "WebFetch"])
         sse = generation.lesson_chat_sse(
             lesson, messages, stream_fn=stream_fn,
-            solution_revealed=bool(body.get("solutionRevealed")), socratic=socratic)
+            solution_revealed=bool(body.get("solutionRevealed")), socratic=socratic,
+            analogy=analogy)
         return app.response_class(sse, mimetype="text/event-stream")
 
     @app.get("/api/courses/<course_id>/reviews")
