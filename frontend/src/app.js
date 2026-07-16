@@ -657,6 +657,7 @@ export async function init({ window, fetch }) {
     const title = found ? found.title : lessonId;
     view.innerHTML = activateHTML(title);
     let text = "";
+    let busy = false; // Busy flag to guard against double-click (card is single-use, never cleared).
     // The textarea updates local state without a repaint — a repaint would steal
     // focus on every keystroke (same idiom as the capstone workspace textarea).
     const ta = view.querySelector('[data-field="pk-text"]');
@@ -668,7 +669,12 @@ export async function init({ window, fetch }) {
       await finishOpenLesson(lessonId, opts, seq);
     };
     const startBtn = view.querySelector('[data-action="pk-start"]');
+    const skipBtn = view.querySelector('[data-action="pk-skip"]');
     if (startBtn) startBtn.addEventListener("click", async () => {
+      if (busy) return;
+      busy = true;
+      startBtn.disabled = true;
+      if (skipBtn) skipBtn.disabled = true;
       const trimmed = text.trim();
       if (trimmed) {
         log("prior_knowledge", { courseId: ui.courseId, topicId: lessonId, payload: { text: trimmed } });
@@ -677,8 +683,13 @@ export async function init({ window, fetch }) {
       if (ui.screen !== "activate" || ui.loadSeq !== seq) return; // navigated away mid-flush
       await continueToLesson();
     });
-    const skipBtn = view.querySelector('[data-action="pk-skip"]');
-    if (skipBtn) skipBtn.addEventListener("click", () => { continueToLesson(); });
+    if (skipBtn) skipBtn.addEventListener("click", () => {
+      if (busy) return;
+      busy = true;
+      startBtn.disabled = true;
+      if (skipBtn) skipBtn.disabled = true;
+      continueToLesson();
+    });
   }
 
   // Shared tail: load the (now-cached, or freshly generated) lesson and show it.
