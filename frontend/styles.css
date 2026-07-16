@@ -521,7 +521,8 @@ textarea::placeholder{color:#b3a994}
 .ws-socratic span{flex:1}
 .ws-socratic-exit{padding:5px 10px; border:1px solid rgba(124,106,255,.3); border-radius:var(--r-sm);
   background:none; color:var(--purple); font:600 12px/1 inherit; cursor:pointer}
-.ws-socratic-exit:hover{background:rgba(124,106,255,.1)}
+.ws-socratic-exit:hover:not(:disabled){background:rgba(124,106,255,.1)}
+.ws-socratic-exit:disabled{opacity:.5; cursor:default}
 
 /* =================  ACTIVITY LOG  ================= */
 .activity-link{max-width:240px; display:block}
