@@ -4,9 +4,9 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
-import { shellHTML } from "./views/shell.js";
+import { shellHTML, feedbackBarHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
 import { lessonHTML, ratingLocked } from "./views/lesson.js";
@@ -63,7 +63,76 @@ export async function init({ window, fetch }) {
     chat: null,
     reviewQueue: [],
     stats: null,
+    feedback: { open: false, sending: false, text: "", notice: "" },
   };
+
+  // ---- feedback bar (global; delegated on root so it survives every shell repaint) ----
+  function paintFeedbackBar() {
+    const slot = root.querySelector("[data-fb-slot]");
+    if (slot) slot.innerHTML = feedbackBarHTML(ui.feedback);
+  }
+
+  async function submitFeedback() {
+    const fb = ui.feedback;
+    const text = (fb.text || "").trim();
+    if (!text || fb.sending) return;
+    fb.sending = true;
+    fb.notice = "";
+    paintFeedbackBar();
+    const result = await sendFeedback({
+      fetch,
+      text,
+      screen: ui.screen,
+      courseId: ui.courseId,
+      lessonId: ui.lesson ? ui.lesson.id : null,
+    });
+    fb.sending = false;
+    if (result && result.error) {
+      fb.notice = "error";
+      paintFeedbackBar();
+      return;
+    }
+    fb.text = "";
+    fb.notice = "sent";
+    paintFeedbackBar();
+    window.setTimeout(() => {
+      // Collapse only if the thank-you is still showing — a toggle or a new
+      // note during the 2.5s clears the notice and cancels the auto-collapse.
+      if (ui.feedback.notice === "sent") {
+        ui.feedback.notice = "";
+        ui.feedback.open = false;
+        paintFeedbackBar();
+      }
+    }, 2500);
+  }
+
+  root.addEventListener("click", (e) => {
+    if (e.target.closest('[data-action="feedback-toggle"]')) {
+      ui.feedback.open = !ui.feedback.open;
+      ui.feedback.notice = "";
+      paintFeedbackBar();
+      if (ui.feedback.open) {
+        const inp = root.querySelector('[data-field="fb-text"]');
+        if (inp) inp.focus();
+      }
+      return;
+    }
+    if (e.target.closest('[data-action="feedback-send"]')) submitFeedback();
+  });
+  root.addEventListener("input", (e) => {
+    if (e.target.matches && e.target.matches('[data-field="fb-text"]')) {
+      // Update state without a repaint (focus-steal rule); flip only the
+      // Send button's disabled property directly.
+      ui.feedback.text = e.target.value;
+      const btn = root.querySelector('[data-action="feedback-send"]');
+      if (btn) btn.disabled = ui.feedback.sending || !e.target.value.trim();
+    }
+  });
+  root.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.matches && e.target.matches('[data-field="fb-text"]')) {
+      submitFeedback();
+    }
+  });
 
   // ---- diagnostic (unchanged flow, now lands on the home) ----
   function showDiagnostic() {

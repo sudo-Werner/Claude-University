@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items, feedback
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
@@ -92,6 +92,25 @@ def create_app(db_path=None):
         finally:
             conn.close()
         return jsonify({"events": result})
+
+    @app.post("/api/feedback")
+    def post_feedback():
+        body = request.get_json(silent=True)
+        body = body if isinstance(body, dict) else {}
+        conn = db.get_connection(path)
+        try:
+            feedback.insert_feedback(
+                conn,
+                text=body.get("text"),
+                screen=body.get("screen"),
+                course_id=body.get("courseId"),
+                lesson_id=body.get("lessonId"),
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        finally:
+            conn.close()
+        return jsonify({"ok": True})
 
     @app.get("/api/stats")
     def get_stats():
