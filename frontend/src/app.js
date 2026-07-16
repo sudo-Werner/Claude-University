@@ -784,15 +784,13 @@ export async function init({ window, fetch }) {
     const el = root.querySelector(".ws-status");
     if (el) el.textContent = { saving: "saving…", saved: "saved", offline: "offline" }[ws.saveStatus] || "";
   }
-  async function sendWsChat() {
-    const ls = ui.lessonState, ws = ls.ws;
-    // Capture the target lesson so the transcript is always persisted to the RIGHT
-    // file even if the learner navigates away before the reply finishes.
-    const cid = ui.courseId, lid = ui.lesson.id;
-    const ta = root.querySelector('[data-field="ws-chat"]');
-    const text = ta ? ta.value.trim() : "";
-    if (!text || ws.pending) return;
-    ws.chat.push({ role: "user", content: text });
+  // Shared transport tail for the workspace chat: sets pending, paints once, streams
+  // the reply, and persists — used by both the typed textarea path (sendWsChat) and
+  // the concept-chip path (startAnalogyChip) so pending/paint/persist/error handling
+  // has exactly one implementation. Callers push the learner-visible message onto
+  // ws.chat and capture ls/ws/cid/lid BEFORE calling this, so the onScreen staleness
+  // check and the eventual save always target the right lesson.
+  async function streamWsReply(ls, ws, cid, lid, extra) {
     ws.pending = true;
     const reply = { role: "assistant", content: "" };
     const onScreen = () => ui.lessonState === ls && ui.screen === "lesson";
@@ -801,7 +799,7 @@ export async function init({ window, fetch }) {
       fetch,
       endpoint: `/api/courses/${cid}/lessons/${lid}/chat`,
       messages: ws.chat.map((m) => ({ role: m.role, content: m.content })),
-      extra: { solutionRevealed: !!ui.lessonState.solutionRevealed, ...(ws.socratic ? { mode: "socratic" } : {}) },
+      extra,
       onDelta: (d) => {
         reply.content += d;
         if (!onScreen()) return;
@@ -827,6 +825,37 @@ export async function init({ window, fetch }) {
         if (onScreen()) paintLesson();
       },
     });
+  }
+
+  async function sendWsChat() {
+    const ls = ui.lessonState, ws = ls.ws;
+    // Capture the target lesson so the transcript is always persisted to the RIGHT
+    // file even if the learner navigates away before the reply finishes.
+    const cid = ui.courseId, lid = ui.lesson.id;
+    const ta = root.querySelector('[data-field="ws-chat"]');
+    const text = ta ? ta.value.trim() : "";
+    if (!text || ws.pending) return;
+    ws.chat.push({ role: "user", content: text });
+    await streamWsReply(ls, ws, cid, lid,
+      { solutionRevealed: !!ui.lessonState.solutionRevealed, ...(ws.socratic ? { mode: "socratic" } : {}) });
+  }
+
+  // #6 analogy on tap: tapping a concept chip sends the canned learner message with
+  // mode: "analogy" + the tapped term for a one-off alternative-angle explanation.
+  // ws.socratic is untouched — an active socratic session's banner and next typed
+  // message are unaffected by this one-off override.
+  function startAnalogyChip(index) {
+    const ls = ui.lessonState, ws = ls.ws;
+    const term = ui.lesson && ui.lesson.concepts && ui.lesson.concepts[index];
+    if (!ws || ws.pending || typeof term !== "string") return;
+    // Capture the target lesson so the transcript is always persisted to the RIGHT
+    // file even if the learner navigates away before the reply finishes.
+    const cid = ui.courseId, lid = ui.lesson.id;
+    ws.open = true;
+    ws.tab = "chat";
+    ws.chat.push({ role: "user", content: `Give me a different way to think about "${term}".` });
+    streamWsReply(ls, ws, cid, lid,
+      { solutionRevealed: !!ui.lessonState.solutionRevealed, mode: "analogy", concept: term });
   }
 
   function paintLesson() {
@@ -963,6 +992,9 @@ export async function init({ window, fetch }) {
     });
     const deepenBtn = view.querySelector('[data-action="deepen-lesson"]');
     if (deepenBtn) deepenBtn.addEventListener("click", deepenCurrentLesson);
+    view.querySelectorAll('[data-action="analogy-chip"]').forEach((btn) => {
+      btn.addEventListener("click", () => startAnalogyChip(Number(btn.getAttribute("data-index"))));
+    });
     bindWorkspace(view);
   }
 
