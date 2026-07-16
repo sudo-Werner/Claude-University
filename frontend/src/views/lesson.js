@@ -96,12 +96,16 @@ function wsNotesHTML(w) {
 }
 
 function wsChatHTML(w) {
+  const banner = w.socratic
+    ? `<div class="ws-socratic"><span>Working through the exercise — Claude will guide with questions, not answers.</span>` +
+      `<button class="ws-socratic-exit" data-action="socratic-exit">Exit</button></div>`
+    : "";
   const thread = (w.chat || [])
     .map((m) => `<div class="ws-msg ws-${m.role === "user" ? "you" : "ai"}">${esc(m.content)}</div>`)
     .join("");
   const pending = w.pending ? `<div class="ws-msg ws-ai ws-typing">…</div>` : "";
   return (
-    `<div class="ws-chat"><div class="ws-thread">${thread}${pending}</div>` +
+    `<div class="ws-chat">${banner}<div class="ws-thread">${thread}${pending}</div>` +
     `<div class="ws-compose"><textarea data-field="ws-chat" placeholder="Ask a side question…"${w.pending ? " disabled" : ""}></textarea>` +
     `<button class="ws-send" data-action="ws-send"${w.pending ? " disabled" : ""}>Send</button></div></div>`
   );
@@ -207,6 +211,7 @@ export function lessonHTML(lesson, state, nav = {}) {
       <textarea data-field="answer" placeholder="Write your update here…" style="min-height:64px; margin:12px 0">${state.answer}</textarea>
       <button class="check-answer" data-action="check-answer"${state.answer.trim() && !state.grading ? "" : " disabled"}>${state.grade && !state.grade.error ? "Check again" : "Check my answer"}</button>
       ${gradeBlock(state)}
+      ${state.solutionRevealed ? "" : `<button class="btn-secondary" data-action="socratic-start" style="margin:10px 0 0">Work through it with Claude</button>`}
       <button class="hint-toggle" data-action="toggle-hint" style="margin:10px 0">${BULB}<span style="flex:1">${HINT_TEXT[state.hintVisible]}</span></button>
       ${hint}
       <button class="reveal ${sol}" data-action="reveal-solution">${LOCK}<span style="flex:1">${REVEAL_TEXT[sol]}</span></button>

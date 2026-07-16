@@ -491,6 +491,90 @@ def test_lesson_chat_route_passes_solution_revealed(client, tmp_path, monkeypatc
     assert resp.status_code == 200
 
 
+def test_lesson_chat_socratic_mode_swaps_prompt_and_drops_tools(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    calls = []
+
+    def fake_stream(prompt, **kw):
+        calls.append((prompt, kw))
+        return iter(["ok"])
+
+    monkeypatch.setattr(claude_client, "stream", fake_stream)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/chat",
+                       json={"messages": [{"role": "user", "content": "step 1?"}],
+                             "mode": "socratic"})
+    assert resp.status_code == 200
+    text = resp.get_data(as_text=True)  # drain the lazy SSE generator
+    assert "event: done" in text
+    prompt, kw = calls[0]
+    assert "NEVER state it" in prompt          # socratic system prompt selected
+    assert not kw.get("tools")                 # WebSearch/WebFetch dropped
+
+
+def test_lesson_chat_normal_mode_keeps_web_tools(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    calls = []
+
+    def fake_stream(prompt, **kw):
+        calls.append((prompt, kw))
+        return iter(["ok"])
+
+    monkeypatch.setattr(claude_client, "stream", fake_stream)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/chat",
+                       json={"messages": [{"role": "user", "content": "hi"}]})
+    assert resp.status_code == 200
+    resp.get_data(as_text=True)
+    assert calls[0][1].get("tools") == ["WebSearch", "WebFetch"]
+
+
+def test_lesson_chat_mode_falls_back_to_normal_unless_socratic(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    prompts = []
+
+    def fake_stream(prompt, **kw):
+        prompts.append(prompt)
+        return iter(["ok"])
+
+    monkeypatch.setattr(claude_client, "stream", fake_stream)
+    for mode in (None, "chat", 5, True):
+        payload = {"messages": [{"role": "user", "content": "hi"}]}
+        if mode is not None:
+            payload["mode"] = mode
+        resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/chat", json=payload)
+        assert resp.status_code == 200
+        resp.get_data(as_text=True)
+    assert len(prompts) == 4
+    for p in prompts:
+        assert "give it plainly" in p          # default system prompt
+        assert "NEVER state it" not in p
+
+
+def test_lesson_chat_forged_bodies_stream_without_500(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "stream", lambda prompt, **kw: iter(["ok"]))
+    for payload in ([1, 2], "str", 5, {"messages": "x"}, {"messages": [1, {}]}):
+        resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/chat", json=payload)
+        assert resp.status_code == 200
+        text = resp.get_data(as_text=True)
+        assert "event: done" in text
+
+
 # ---------------------------------------------------------------------------
 # /revise and /apply-revision
 # ---------------------------------------------------------------------------

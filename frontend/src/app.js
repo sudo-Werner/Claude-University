@@ -684,6 +684,8 @@ export async function init({ window, fetch }) {
 
   // ---- lesson workspace (notes + side-chat) ----
   const WS_PREFS = "ws-prefs"; // remembers open/closed + active tab across lessons
+  // Client-side canned opener for socratic co-work: instant, zero cost.
+  const SOCRATIC_OPENER = "Let's work through this together — I'll ask questions, you do the thinking. What do you think the first step is?";
   function wsPrefs() {
     // Default: open on wide screens (the notes sit beside the lesson), collapsed on
     // phone. Once the learner toggles it, their saved choice is respected everywhere.
@@ -734,7 +736,7 @@ export async function init({ window, fetch }) {
       fetch,
       endpoint: `/api/courses/${cid}/lessons/${lid}/chat`,
       messages: ws.chat.map((m) => ({ role: m.role, content: m.content })),
-      extra: { solutionRevealed: !!ui.lessonState.solutionRevealed },
+      extra: { solutionRevealed: !!ui.lessonState.solutionRevealed, ...(ws.socratic ? { mode: "socratic" } : {}) },
       onDelta: (d) => {
         reply.content += d;
         if (!onScreen()) return;
@@ -792,6 +794,7 @@ export async function init({ window, fetch }) {
       if (!ui.lessonState.solutionRevealed)
         log("solution_revealed", { courseId: ui.courseId, topicId: ui.lesson.id });
       ui.lessonState.solutionRevealed = true;
+      if (ui.lessonState.ws) ui.lessonState.ws.socratic = false; // mode ends on reveal
       paintLesson();
     });
     // #4: Claude grades the typed answer on demand (decoupled from reveal, so the
@@ -846,6 +849,21 @@ export async function init({ window, fetch }) {
       ws.tab = "chat";
       ws.chat.push({ role: "assistant", content: g.followUp });
       saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat });
+      paintLesson();
+    });
+    const socBtn = view.querySelector('[data-action="socratic-start"]');
+    if (socBtn) socBtn.addEventListener("click", () => {
+      const ws = ui.lessonState.ws;
+      if (!ws) return; // workspace still seeding; the button works once it has painted
+      const entering = !ws.socratic;
+      ws.socratic = true;
+      ws.open = true;
+      ws.tab = "chat";
+      if (entering) {
+        ws.chat.push({ role: "assistant", content: SOCRATIC_OPENER });
+        // Best-effort persist — same fire-and-forget idiom as the explain-chat seeding.
+        saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat });
+      }
       paintLesson();
     });
     view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
@@ -939,6 +957,11 @@ export async function init({ window, fetch }) {
     });
     const wsSend = view.querySelector('[data-action="ws-send"]');
     if (wsSend) wsSend.addEventListener("click", sendWsChat);
+    const socExit = view.querySelector('[data-action="socratic-exit"]');
+    if (socExit) socExit.addEventListener("click", () => {
+      ui.lessonState.ws.socratic = false;
+      paintLesson();
+    });
     scrollWsThread();  // open/repaint with the newest message in view
   }
 
