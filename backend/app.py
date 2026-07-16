@@ -43,10 +43,13 @@ def _resolve_analogy_concept(course_id, lesson_id, concept):
     entry = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"].get(lesson_id)
     if not isinstance(entry, dict):
         return None
-    for c in entry.get("concepts", []):
+    concepts = entry.get("concepts")
+    if not isinstance(concepts, list):
+        return None
+    for c in concepts:
         if isinstance(c, dict) and c.get("term") == concept:
-            return {"term": c.get("term", ""), "definition": c.get("definition", ""),
-                    "summary": entry.get("summary", "")}
+            return {"term": c.get("term") or "", "definition": c.get("definition") or "",
+                    "summary": entry.get("summary") or ""}
     return None
 
 

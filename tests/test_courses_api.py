@@ -745,6 +745,36 @@ def test_lesson_chat_analogy_mode_falls_back_when_concept_unresolved(client, tmp
         assert kw.get("tools") == ["WebSearch", "WebFetch"]   # normal-chat tools restored
 
 
+def test_lesson_chat_analogy_mode_falls_back_when_concepts_null(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client, spine
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    spine.save_spine(root, cid, {"lessons": {lesson_id: {
+        "summary": "s", "concepts": None}}})
+    prompts = []
+    calls = []
+
+    def fake_stream(prompt, **kw):
+        prompts.append(prompt)
+        calls.append(kw)
+        return iter(["ok"])
+
+    monkeypatch.setattr(claude_client, "stream", fake_stream)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/chat",
+                       json={"messages": [{"role": "user", "content": "hi"}],
+                             "mode": "analogy", "concept": "SomeConceptTerm"})
+    assert resp.status_code == 200
+    resp.get_data(as_text=True)
+    assert len(prompts) == 1
+    p = prompts[0]
+    assert "give it plainly" in p            # default LESSON_CHAT_SYSTEM marker present
+    assert "NEVER state it" not in p
+    assert "already said" not in p.lower()   # ANALOGY_SYSTEM marker absent
+    assert calls[0].get("tools") == ["WebSearch", "WebFetch"]   # normal-chat tools restored
+
+
 # ---------------------------------------------------------------------------
 # /revise and /apply-revision
 # ---------------------------------------------------------------------------
