@@ -64,6 +64,26 @@ export async function explainAnswer({ fetch, courseId, lessonId, explanation }) 
   return resp.json();
 }
 
+export async function sendFeedback({ fetch, text, screen = null, courseId = null, lessonId = null }) {
+  // Unlike the older helpers, this also catches a rejected fetch (network drop):
+  // the caller must always get an object back so the typed note is never lost.
+  try {
+    const resp = await fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, screen, courseId, lessonId }),
+    });
+    if (!resp.ok) {
+      let message = "Couldn't send your feedback right now.";
+      try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+      return { error: message };
+    }
+    return await resp.json();
+  } catch (e) {
+    return { error: "Couldn't send your feedback right now." };
+  }
+}
+
 export async function gradeTeaching({ fetch, courseId, lessonId, messages }) {
   const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/teach`, {
     method: "POST",

@@ -50,6 +50,21 @@ body{margin:0; background:#f1e7d6}
   display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; color:#fff;
   box-shadow:0 4px 12px -4px rgba(124,106,255,.6)}
 
+/* ---- feedback bar ---- */
+.fb-toggle{padding:6px 12px; border-radius:999px; cursor:pointer; font:600 12px/1 inherit;
+  border:1px solid rgba(79,163,232,.4); background:rgba(79,163,232,.14); color:var(--blue-text); transition:background .15s}
+.fb-toggle:hover{background:rgba(79,163,232,.22)}
+.feedback-bar{display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:var(--r-sm);
+  border:1px solid var(--border-glass); background:var(--glass-card-2)}
+.fb-input{flex:1; min-width:0; padding:8px 10px; border-radius:var(--r-sm); font:inherit; font-size:13px;
+  border:1px solid rgba(79,163,232,.3); background:rgba(255,255,255,.5); color:inherit}
+.fb-send{padding:8px 14px; border-radius:var(--r-sm); cursor:pointer; font:600 13px/1 inherit;
+  border:1px solid rgba(79,163,232,.4); background:rgba(79,163,232,.14); color:var(--blue-text); transition:background .15s}
+.fb-send:hover:not(:disabled){background:rgba(79,163,232,.22)}
+.fb-send:disabled{opacity:.5; cursor:not-allowed}
+.fb-done{font-size:13px; font-weight:600; color:var(--purple)}
+.fb-err{font-size:12px; color:var(--warn, #b26a00)}
+
 /* ---- card / glass surfaces ---- */
 .card{background:var(--glass-card-2); backdrop-filter:blur(26px) saturate(1.6); -webkit-backdrop-filter:blur(26px) saturate(1.6);
   border:1px solid var(--border-glass); border-radius:var(--r-xl); padding:22px; box-shadow:var(--sh-card)}

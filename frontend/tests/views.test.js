@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { shellHTML } from "../src/views/shell.js";
+import { shellHTML, feedbackBarHTML } from "../src/views/shell.js";
 import { dashboardHTML } from "../src/views/dashboard.js";
 import { lessonHTML, ratingLocked, suggestedQuality } from "../src/views/lesson.js";
 import { diagnosticHTML } from "../src/views/diagnostic.js";
@@ -1044,4 +1044,44 @@ test("teaching chat messages are escaped like any other workspace message", () =
   const html = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: true, ws });
   assert.doesNotMatch(html, /<script>alert/);
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+});
+
+test("shell renders the global feedback toggle and slot", () => {
+  const html = shellHTML({});
+  assert.match(html, /data-action="feedback-toggle"/);
+  assert.match(html, /Feedback/);
+  assert.match(html, /data-fb-slot/);
+});
+
+test("feedback bar is empty when closed and shows the composer when open", () => {
+  assert.equal(feedbackBarHTML(null), "");
+  assert.equal(feedbackBarHTML({ open: false, text: "kept" }), "");
+  const open = feedbackBarHTML({ open: true, text: "", sending: false, notice: "" });
+  assert.match(open, /data-field="fb-text"/);
+  assert.match(open, /Ideas, annoyances, requests — straight to the build loop\./);
+  assert.match(open, /<button class="fb-send" data-action="feedback-send" disabled/);
+});
+
+test("feedback bar enables Send with text and disables while sending", () => {
+  const ready = feedbackBarHTML({ open: true, text: "add dark mode", sending: false, notice: "" });
+  assert.match(ready, /<button class="fb-send" data-action="feedback-send" >Send<\/button>/);
+  const sending = feedbackBarHTML({ open: true, text: "add dark mode", sending: true, notice: "" });
+  assert.match(sending, /Sending…/);
+  assert.match(sending, /data-field="fb-text"[^>]*disabled/s);
+  assert.match(sending, /<button class="fb-send" data-action="feedback-send" disabled/);
+});
+
+test("feedback bar escapes typed text on repaint", () => {
+  const html = feedbackBarHTML({ open: true, text: '<script>alert(1)</script>"', sending: false, notice: "" });
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;&quot;/);
+});
+
+test("feedback bar renders the sent and error notices with exact copy", () => {
+  const sent = feedbackBarHTML({ open: true, text: "", sending: false, notice: "sent" });
+  assert.match(sent, /Thanks — noted\./);
+  assert.doesNotMatch(sent, /data-field="fb-text"/);
+  const err = feedbackBarHTML({ open: true, text: "my note", sending: false, notice: "error" });
+  assert.match(err, /Couldn't send — try again\./);
+  assert.match(err, /value="my note"/);
 });
