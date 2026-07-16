@@ -65,3 +65,20 @@ test("failed result with weak spots offers Fix the gaps; passed result does not"
   const passed = { score: 0.9, passed: true, weakSpots: [], perQuestion: [] };
   assert.ok(!examResultHTML(passed).includes('data-action="fix-gaps"'));
 });
+
+test("failed result with weak spots replaces retake with the unlock note", () => {
+  const failed = { score: 0.5, passed: false, perQuestion: [],
+    weakSpots: [{ lessonId: "l1", lessonTitle: "L", objectives: [] }] };
+  const html = examResultHTML(failed);
+  assert.ok(html.includes('data-action="fix-gaps"'));
+  assert.ok(!html.includes('data-action="retake-exam"'));
+  assert.ok(html.includes("Retake unlocks after the gap review."));
+});
+
+test("passed results and fails without weak spots keep the retake button", () => {
+  const passed = examResultHTML({ score: 0.9, passed: true, perQuestion: [], weakSpots: [] });
+  assert.ok(passed.includes('data-action="retake-exam"'));
+  assert.ok(!passed.includes("Retake unlocks after the gap review."));
+  const noSpots = examResultHTML({ score: 0.5, passed: false, perQuestion: [], weakSpots: [] });
+  assert.ok(noSpots.includes('data-action="retake-exam"'));   // nothing to remediate: not gated
+});

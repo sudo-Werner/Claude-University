@@ -36,6 +36,7 @@ def _gaps(weak):
              "answer": 1, "explanation": "because"},
             {"type": "fill", "prompt": "Blank?", "answer": "word", "explanation": "why"},
         ],
+        "apply": {"prompt": "<p>A novel scenario.</p>", "modelAnswer": "Covers X and Y."},
     } for w in weak]}
 
 
@@ -135,3 +136,123 @@ def test_ensure_session_reuses_fresh_and_regenerates_stale(tmp_path):
                                     manifest=_manifest(), spine_lessons={},
                                     generate=lambda p, v: _gaps(WEAK[:1]))
     assert s3["attempt"] == 2 and len(s3["gaps"]) == 1            # regenerated
+
+
+def test_prompt_demands_apply_item_with_novel_scenario():
+    p = remediation.remediation_prompt(manifest=_manifest(), exam_key="m1",
+                                       weak_spots=WEAK, spine_lessons={})
+    assert '"apply"' in p and '"modelAnswer"' in p
+    assert "NOVEL scenario, case, or problem that does not appear in the lessons" in p
+
+
+def test_valid_remediation_requires_apply_on_new_generations():
+    good = _gaps(WEAK)
+    assert remediation.valid_remediation(good, WEAK)
+    missing = json.loads(json.dumps(good)); del missing["gaps"][0]["apply"]
+    assert not remediation.valid_remediation(missing, WEAK)
+    empty = json.loads(json.dumps(good)); empty["gaps"][0]["apply"]["prompt"] = " "
+    assert not remediation.valid_remediation(empty, WEAK)
+    no_model = json.loads(json.dumps(good)); no_model["gaps"][0]["apply"]["modelAnswer"] = ""
+    assert not remediation.valid_remediation(no_model, WEAK)
+
+
+def test_finalize_sanitizes_apply_fields():
+    raw = _gaps(WEAK)
+    raw["gaps"][0]["apply"] = {"prompt": "<p>Scenario <script>x()</script></p>",
+                               "modelAnswer": "Covers <script>y()</script> Z"}
+    s = remediation.finalize_session(raw, WEAK, "m1", "c1", 2)
+    assert "<script>" not in s["gaps"][0]["apply"]["prompt"]
+    assert "<script>" not in s["gaps"][0]["apply"]["modelAnswer"]
+    assert s["gaps"][1]["apply"]["modelAnswer"] == "Covers X and Y."
+
+
+def _mark(conn, i, event_type, payload, topic_id="c1-l1"):
+    events.insert_events(conn, [{
+        "client_event_id": f"mk-{event_type}-{i}", "session_id": "s1",
+        "event_type": event_type, "occurred_at": f"2026-07-16T10:{i:02d}:00+00:00",
+        "course_id": "c1", "topic_id": topic_id, "payload": payload,
+    }])
+
+
+def _check_payload(index, attempt=1, **overrides):
+    p = {"index": index, "type": "mcq", "correct": True, "source": "remediation",
+         "examKey": "m1", "attempt": attempt}
+    p.update(overrides)
+    return p
+
+
+def test_session_completed_requires_all_practice_and_apply(tmp_path):
+    conn = _conn()
+    s = remediation.finalize_session(_gaps(WEAK), WEAK, "m1", "c1", 1)
+    remediation.save_session(tmp_path, "c1", s)
+    # 2 gaps x 2 practice = flat indices 0..3, plus one apply per gap (indices 0 and 1)
+    assert not remediation.session_completed(conn, tmp_path, "c1", "m1", 1)
+    for i in range(4):
+        _mark(conn, i, "lesson_check", _check_payload(i))
+    assert not remediation.session_completed(conn, tmp_path, "c1", "m1", 1)  # applies missing
+    _mark(conn, 10, "lesson_explained", {"verdict": "correct", "source": "remediation",
+                                         "examKey": "m1", "attempt": 1, "index": 0})
+    assert not remediation.session_completed(conn, tmp_path, "c1", "m1", 1)
+    _mark(conn, 11, "lesson_explained", {"verdict": "close", "source": "remediation",
+                                         "examKey": "m1", "attempt": 1, "index": 1})
+    assert remediation.session_completed(conn, tmp_path, "c1", "m1", 1)
+
+
+def test_session_completed_false_without_session_or_on_stale_attempt(tmp_path):
+    conn = _conn()
+    assert not remediation.session_completed(conn, tmp_path, "c1", "m1", 1)  # nothing on disk
+    s = remediation.finalize_session(_gaps(WEAK), WEAK, "m1", "c1", 1)
+    remediation.save_session(tmp_path, "c1", s)
+    for i in range(4):
+        _mark(conn, i, "lesson_check", _check_payload(i))
+    for gi in range(2):
+        _mark(conn, 10 + gi, "lesson_explained",
+              {"verdict": "correct", "source": "remediation", "examKey": "m1",
+               "attempt": 1, "index": gi})
+    assert remediation.session_completed(conn, tmp_path, "c1", "m1", 1)
+    # a newer failed attempt makes the stored session stale -> not completed
+    assert not remediation.session_completed(conn, tmp_path, "c1", "m1", 2)
+
+
+def test_session_completed_ignores_unmarked_and_malformed_events(tmp_path):
+    conn = _conn()
+    s = remediation.finalize_session(_gaps(WEAK), WEAK, "m1", "c1", 1)
+    remediation.save_session(tmp_path, "c1", s)
+    # legacy remediation answers: no examKey/attempt markers -> must not count
+    for i in range(4):
+        _mark(conn, i, "lesson_check",
+              {"index": i, "type": "mcq", "correct": True, "source": "remediation"})
+    # forged garbage must be skipped, never raised on
+    _mark(conn, 20, "lesson_check", "not-a-dict")
+    _mark(conn, 21, "lesson_check", _check_payload("zero"))          # non-int index
+    _mark(conn, 22, "lesson_check", _check_payload(99))              # out of range
+    _mark(conn, 23, "lesson_check", _check_payload(0, examKey="final"))
+    _mark(conn, 24, "lesson_check", _check_payload(0, attempt=7))
+    assert not remediation.session_completed(conn, tmp_path, "c1", "m1", 1)
+
+
+def test_session_completed_legacy_session_without_apply(tmp_path):
+    conn = _conn()
+    legacy = remediation.finalize_session(_gaps(WEAK), WEAK, "m1", "c1", 1)
+    for g in legacy["gaps"]:
+        del g["apply"]                                               # session from before this ships
+    remediation.save_session(tmp_path, "c1", legacy)
+    for i in range(4):
+        _mark(conn, i, "lesson_check", _check_payload(i))
+    assert remediation.session_completed(conn, tmp_path, "c1", "m1", 1)  # practice alone suffices
+
+
+def test_session_completed_ignores_gap_with_unusable_apply(tmp_path):
+    # A gap whose apply dict is present but blank (e.g. a stripped/whitespace
+    # prompt) must not be treated as "has an apply task": the grade route
+    # (backend/app.py grade_remediation_apply) would refuse to grade it, so
+    # counting it as expected would permanently lock the retake.
+    conn = _conn()
+    raw = _gaps(WEAK[:1])
+    raw["gaps"][0]["apply"] = {"prompt": " ", "modelAnswer": "x"}
+    s = remediation.finalize_session(raw, WEAK[:1], "m1", "c1", 1)
+    remediation.save_session(tmp_path, "c1", s)
+    assert not remediation.session_completed(conn, tmp_path, "c1", "m1", 1)
+    for i in range(2):                                             # 1 gap x 2 practice items
+        _mark(conn, i, "lesson_check", _check_payload(i))
+    assert remediation.session_completed(conn, tmp_path, "c1", "m1", 1)  # unusable apply not expected

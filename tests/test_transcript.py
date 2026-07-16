@@ -106,3 +106,52 @@ def test_transcript_lists_courses_and_skips_malformed(tmp_path):
     (root / "broken" / "course.json").write_text("{nope")
     out = transcript.transcript(conn, root)
     assert [c["courseId"] for c in out] == ["demo"]
+
+
+def _cap_result(conn, cid, scope, score, passed, occurred, i=0):
+    events.insert_events(conn, [{
+        "client_event_id": f"cap-{scope}-{occurred}-{i}", "session_id": "server",
+        "event_type": "capstone_result", "occurred_at": occurred,
+        "course_id": cid, "topic_id": scope,
+        "payload": {"scope": scope, "score": score, "passed": passed,
+                    "perCriterion": [], "summary": "s", "attempt": i + 1},
+    }])
+
+
+def test_course_record_assembles_capstone_rows(tmp_path):
+    conn = _conn()
+    root = _course(tmp_path)
+    manifest = json.loads((root / "demo" / "course.json").read_text())
+    _cap_result(conn, "demo", "m1", 0.6, False, "2026-07-13T09:00:00+00:00", 0)
+    _cap_result(conn, "demo", "m1", 0.8, True, "2026-07-14T09:00:00+00:00", 1)
+    _cap_result(conn, "demo", "course", 0.9, True, "2026-07-15T09:00:00+00:00", 0)
+    rec = transcript.course_record(conn, root, "demo", manifest)
+    assert [r["scope"] for r in rec["capstones"]] == ["m1", "course"]   # manifest order, course last
+    m1 = rec["capstones"][0]
+    assert m1["title"] == "M1" and m1["attempts"] == 2 and m1["bestScore"] == 0.8
+    assert m1["passed"] and m1["passedOn"] == "2026-07-14"              # first passing attempt
+    assert rec["capstones"][1]["title"] == "Course capstone"
+
+
+def test_course_record_capstones_empty_without_submissions(tmp_path):
+    conn = _conn()
+    root = _course(tmp_path)
+    manifest = json.loads((root / "demo" / "course.json").read_text())
+    assert transcript.course_record(conn, root, "demo", manifest)["capstones"] == []
+
+
+def test_course_record_capstones_skip_dropped_scopes_and_forged_payloads(tmp_path):
+    conn = _conn()
+    root = _course(tmp_path)
+    manifest = json.loads((root / "demo" / "course.json").read_text())
+    _cap_result(conn, "demo", "m9", 0.9, True, "2026-07-13T09:00:00+00:00", 0)  # dropped module
+    events.insert_events(conn, [{                                                # forged payload
+        "client_event_id": "cap-forged", "session_id": "s",
+        "event_type": "capstone_result", "occurred_at": "2026-07-13T10:00:00+00:00",
+        "course_id": "demo", "topic_id": "m1", "payload": "not-a-dict",
+    }])
+    _cap_result(conn, "demo", "m1", 0.6, False, "2026-07-13T11:00:00+00:00", 0)
+    rec = transcript.course_record(conn, root, "demo", manifest)                 # must not raise
+    assert [r["scope"] for r in rec["capstones"]] == ["m1"]
+    assert rec["capstones"][0]["attempts"] == 1                                  # forged row skipped entirely
+    assert rec["capstones"][0]["bestScore"] == 0.6 and not rec["capstones"][0]["passed"]

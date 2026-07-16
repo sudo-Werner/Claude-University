@@ -66,3 +66,14 @@ test("activity escapes examLabel and courseTitle on exam entries", () => {
   assert.doesNotMatch(html, /<img src=x>/);
   assert.doesNotMatch(html, /<b>x<\/b>/);
 });
+
+test("capstone_result entries show label, score, and outcome", () => {
+  const html = activityHTML([
+    { occurredAt: "2026-07-16T10:00:00+00:00", type: "capstone_result",
+      courseTitle: "Algo", examLabel: "Sorting capstone", score: 0.75, passed: true },
+  ], { now: new Date("2026-07-16T12:00:00+00:00") });
+  assert.ok(html.includes("<b>Capstone</b>"));
+  assert.ok(html.includes("Sorting capstone"));
+  assert.ok(html.includes("75%"));
+  assert.ok(html.includes("passed"));
+});

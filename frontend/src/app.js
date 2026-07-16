@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
@@ -356,8 +356,38 @@ export async function init({ window, fetch }) {
       view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
       return;
     }
-    view.innerHTML = capstoneHTML(cap);
+    ui.capState = { scope, cap, work: "", busy: false, result: null };
+    paintCapstone();
+  }
+
+  function paintCapstone() {
+    const st = ui.capState;
+    const view = root.querySelector("#view");
+    view.innerHTML = capstoneHTML(st.cap, st);
     view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
+    // The textarea updates state without a repaint (a repaint would steal focus
+    // on every keystroke); only the submit button's disabled state refreshes.
+    const ta = view.querySelector('[data-field="cap-work"]');
+    if (ta) ta.addEventListener("input", () => {
+      st.work = ta.value;
+      const btn = view.querySelector('[data-action="cap-submit"]');
+      if (btn) btn.disabled = !ta.value.trim() || st.busy;
+    });
+    const submit = view.querySelector('[data-action="cap-submit"]');
+    if (submit) submit.addEventListener("click", submitCapstoneWork);
+  }
+
+  // The server records capstone_result itself — the client logs no event here.
+  async function submitCapstoneWork() {
+    const st = ui.capState;
+    if (!st || st.busy || !(st.work || "").trim()) return;
+    st.busy = true;
+    paintCapstone();
+    const result = await submitCapstone({ fetch, courseId: ui.courseId, scope: st.scope, work: st.work.trim() });
+    if (ui.screen !== "capstone" || ui.capState !== st) return; // navigated away mid-grade
+    st.busy = false;
+    st.result = result || { error: "Couldn't grade your capstone right now." };
+    paintCapstone();
   }
 
   // ---- summative exams (sub-project C) ----
@@ -376,13 +406,23 @@ export async function init({ window, fetch }) {
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showCurriculum);
     const view = root.querySelector("#view");
     startLoading(view, "lesson", EXAM_STAGES);
+    // A just-completed gap review's markers may still be sitting in the buffer —
+    // flush them before the retake gate re-checks the DB, or a freshly unlocked
+    // retake 409s in the common case (see doFlush interval above).
+    await doFlush();
+    if (ui.screen !== "exam-loading" || ui.loadSeq !== seq) return; // navigated away during flush
     const exam = await startExam({ fetch, courseId: ui.courseId, examKey });
     if (ui.screen !== "exam-loading" || ui.loadSeq !== seq) return; // navigated away mid-load
     if (!exam || exam.error) {
+      const fixGaps = exam && exam.code === "gap-review";
       view.innerHTML =
         `<div class="card"><div class="prompt">${esc((exam && exam.error) || "Couldn't prepare the exam right now.")}</div>` +
-        `<div class="nav"><button class="btn-back" data-action="back">Back</button></div></div>`;
+        `<div class="nav">${fixGaps ? '<button class="btn-primary" data-action="fix-gaps">Fix the gaps</button>' : ""}` +
+        `<button class="btn-back" data-action="back">Back</button></div></div>`;
       view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
+      if (fixGaps) {
+        view.querySelector('[data-action="fix-gaps"]').addEventListener("click", () => showRemediation(examKey));
+      }
       return;
     }
     ui.screen = "exam";
@@ -438,7 +478,8 @@ export async function init({ window, fetch }) {
     view.querySelectorAll("[data-lesson]").forEach((b) => {
       b.addEventListener("click", () => openLesson(b.getAttribute("data-lesson")));
     });
-    view.querySelector('[data-action="retake-exam"]').addEventListener("click", () => showExam(st.examKey));
+    const rt = view.querySelector('[data-action="retake-exam"]');
+    if (rt) rt.addEventListener("click", () => showExam(st.examKey));
     const fix = view.querySelector('[data-action="fix-gaps"]');
     if (fix) fix.addEventListener("click", () => showRemediation(st.examKey));
     view.querySelector('[data-action="back-curriculum"]').addEventListener("click", showCurriculum);
@@ -464,7 +505,8 @@ export async function init({ window, fetch }) {
       return;
     }
     ui.screen = "remediation";
-    ui.remState = { examKey, session, items: flatPractice(session), answers: {}, results: {} };
+    ui.remState = { examKey, session, items: flatPractice(session), answers: {}, results: {},
+                    applyAnswers: {}, applyResults: {}, applyBusy: {} };
     log("remediation_started", { courseId: ui.courseId, topicId: examKey });
     paintRemediation();
   }
@@ -472,7 +514,7 @@ export async function init({ window, fetch }) {
   function paintRemediation() {
     const st = ui.remState;
     const view = root.querySelector("#view");
-    view.innerHTML = remediationHTML(st.session, st);
+    view.innerHTML = remediationHTML(st.session, st, ui.manifest);
     view.querySelectorAll("[data-rq-choice]").forEach((b) => {
       b.addEventListener("click", () =>
         answerPractice(Number(b.getAttribute("data-rq")), Number(b.getAttribute("data-rq-choice"))));
@@ -484,8 +526,52 @@ export async function init({ window, fetch }) {
         answerPractice(k, inp ? inp.value : "");
       });
     });
+    // Apply-it textareas update state without a repaint (a repaint would steal
+    // focus on every keystroke); only their button's disabled state refreshes.
+    view.querySelectorAll("textarea[data-rem-apply]").forEach((t) => {
+      t.addEventListener("input", () => {
+        const gi = Number(t.getAttribute("data-rem-apply"));
+        st.applyAnswers[gi] = t.value;
+        const btn = view.querySelector(`[data-action="rem-apply"][data-gap="${gi}"]`);
+        if (btn) btn.disabled = !t.value.trim() || !!st.applyBusy[gi];
+      });
+    });
+    view.querySelectorAll('[data-action="rem-apply"]').forEach((b) => {
+      b.addEventListener("click", () => submitApply(Number(b.getAttribute("data-gap"))));
+    });
+    // Builds-on chips: trace the weakness to its upstream lesson (Item D).
+    view.querySelectorAll("[data-lesson]").forEach((b) => {
+      b.addEventListener("click", () => openLesson(b.getAttribute("data-lesson")));
+    });
     view.querySelector('[data-action="retake-exam"]').addEventListener("click", () => showExam(st.examKey));
     view.querySelector('[data-action="back-curriculum"]').addEventListener("click", showCurriculum);
+  }
+
+  async function submitApply(gi) {
+    const st = ui.remState;
+    if (!st) return;
+    const answer = (st.applyAnswers[gi] || "").trim();
+    const prior = st.applyResults[gi];
+    if (!answer || st.applyBusy[gi] || (prior && prior.verdict)) return; // one submission per gap
+    st.applyBusy[gi] = true;
+    paintRemediation();
+    const result = await gradeRemediationApply({
+      fetch, courseId: ui.courseId, examKey: st.examKey, gapIndex: gi, answer,
+    });
+    if (ui.screen !== "remediation" || ui.remState !== st) return; // navigated away mid-grade
+    st.applyBusy[gi] = false;
+    st.applyResults[gi] = result || { error: "Couldn't grade this answer right now." };
+    if (result && result.verdict) {
+      const gap = st.session.gaps[gi] || {};
+      // Apply verdicts feed mastery through the lesson_explained pool; the
+      // examKey/attempt/index markers are what the backend retake gate counts.
+      log("lesson_explained", {
+        courseId: ui.courseId, topicId: gap.lessonId,
+        payload: { verdict: result.verdict, source: "remediation",
+                   examKey: st.examKey, attempt: st.session.attempt, index: gi },
+      });
+    }
+    paintRemediation();
   }
 
   function answerPractice(k, answer) {
@@ -500,7 +586,8 @@ export async function init({ window, fetch }) {
     // checks; the source tag keeps the provenance readable in the event log.
     log("lesson_check", {
       courseId: ui.courseId, topicId: item.lessonId,
-      payload: { index: k, type: item.check.type, correct: result.correct, source: "remediation" },
+      payload: { index: k, type: item.check.type, correct: result.correct, source: "remediation",
+                 examKey: st.examKey, attempt: st.session.attempt },
     });
     paintRemediation();
   }

@@ -190,3 +190,28 @@ def test_activity_labels_exam_results(conn, tmp_path):
     assert entries[1]["score"] == 0.7 and entries[1]["passed"] is False
     assert entries[2]["examLabel"] == "Sorting exam"
     assert entries[2]["passed"] is True
+
+
+def test_capstone_result_counts_toward_streak(conn):
+    events.insert_events(conn, [_ev(1, "capstone_result", "2026-07-15T09:00:00+00:00",
+                                    topic_id="m1")])
+    assert stats.streak_days(conn, today=TODAY) == 1
+
+
+def test_activity_labels_capstone_results(conn, tmp_path):
+    root = tmp_path / "courses"
+    (root / "c1").mkdir(parents=True)
+    (root / "c1" / "course.json").write_text(json.dumps({
+        "id": "c1", "title": "Algo", "modules": [
+            {"id": "m1", "title": "Sorting", "lessons": [{"id": "c1-l1", "title": "L1"}]}],
+    }))
+    ev = _ev(1, "capstone_result", "2026-07-15T09:00:00+00:00", topic_id="m1")
+    ev["payload"] = {"scope": "m1", "score": 0.75, "passed": True, "attempt": 1}
+    cv = _ev(2, "capstone_result", "2026-07-15T10:00:00+00:00", topic_id="course")
+    cv["payload"] = {"scope": "course", "score": 0.5, "passed": False, "attempt": 1}
+    events.insert_events(conn, [ev, cv])
+    entries = stats.recent_activity(conn, root)
+    assert entries[0]["examLabel"] == "Course capstone"
+    assert entries[0]["score"] == 0.5 and entries[0]["passed"] is False
+    assert entries[1]["examLabel"] == "Sorting capstone"
+    assert entries[1]["passed"] is True

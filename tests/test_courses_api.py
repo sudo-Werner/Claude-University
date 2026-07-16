@@ -796,7 +796,8 @@ def test_remediation_generates_serves_and_reuses(tmp_path, monkeypatch):
                           {"type": "mcq", "prompt": "q", "choices": ["a", "b"],
                            "answer": 0, "explanation": "e"},
                           {"type": "fill", "prompt": "q2", "answer": "w", "explanation": "e2"},
-                      ]}]}
+                      ],
+                      "apply": {"prompt": "<p>scenario</p>", "modelAnswer": "covers x"}}]}
     calls = []
 
     def fake_run(prompt, validate=None, **kw):
@@ -830,6 +831,119 @@ def test_remediation_maps_claude_errors(tmp_path, monkeypatch):
     assert not (tmp_path / cid / "remediation" / "m1.json").exists()
 
 
+def _remediation_session_on_disk(root, cid, lesson_id, *, with_apply=True, attempt=1,
+                                 exam_key="m1"):
+    from backend import remediation
+    gap = {"lessonId": lesson_id, "lessonTitle": "A", "objectives": [],
+           "explanationHtml": "<p>angle</p>",
+           "practice": [
+               {"type": "mcq", "prompt": "q", "choices": ["a", "b"],
+                "answer": 0, "explanation": "e"},
+               {"type": "fill", "prompt": "q2", "answer": "w", "explanation": "e2"},
+           ]}
+    if with_apply:
+        gap["apply"] = {"prompt": "<p>scenario</p>", "modelAnswer": "covers x"}
+    session = {"examKey": exam_key, "courseId": cid, "attempt": attempt,
+               "generatedAt": "2026-07-16T00:00:00+00:00", "gaps": [gap]}
+    remediation.save_session(root, cid, session)
+    return session
+
+
+def test_remediation_grade_returns_verdict_and_model_answer(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    _remediation_session_on_disk(tmp_path, cid, lesson_id)
+    monkeypatch.setattr(claude_client, "run_structured",
+                        lambda prompt, **kw: {"verdict": "close",
+                                              "note": "Nearly <script>x</script>"})
+    r = client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                    json={"gapIndex": 0, "answer": "my attempt"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["verdict"] == "close"
+    assert "<script>" not in body["note"]                       # sanitized
+    assert body["modelAnswer"] == "covers x"                    # revealed only after grading
+
+
+def test_remediation_grade_statuses(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    # 404: no session on disk
+    assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                       json={"gapIndex": 0, "answer": "a"}).status_code == 404
+    _remediation_session_on_disk(tmp_path, cid, lesson_id)
+    # 400: bad gapIndex shapes
+    for bad in [{"gapIndex": 5, "answer": "a"}, {"gapIndex": -1, "answer": "a"},
+                {"gapIndex": "0", "answer": "a"}, {"answer": "a"}]:
+        assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                           json=bad).status_code == 400
+    # 400: empty answer
+    assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                       json={"gapIndex": 0, "answer": "  "}).status_code == 400
+    # 400: non-string answer
+    assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                       json={"gapIndex": 0, "answer": 5}).status_code == 400
+    # 502 on Claude failure
+    def boom(prompt, **kw):
+        raise claude_client.ClaudeError("nope")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                       json={"gapIndex": 0, "answer": "a"}).status_code == 502
+    # 503 when Claude needs reauth
+    def auth_boom(prompt, **kw):
+        raise claude_client.ClaudeAuthError("login")
+    monkeypatch.setattr(claude_client, "run_structured", auth_boom)
+    r = client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                    json={"gapIndex": 0, "answer": "a"})
+    assert r.status_code == 503 and r.get_json()["code"] == "reauth"
+
+
+def test_remediation_grade_rejects_non_dict_body(tmp_path, monkeypatch):
+    """A forged, truthy non-dict JSON body (list, string, ...) must not survive past
+    `request.get_json()` into `.get()` calls — that would raise AttributeError -> 500."""
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    _remediation_session_on_disk(tmp_path, cid, lesson_id)
+    assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                       json=[1, 2]).status_code == 400
+    assert client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                       json="oops").status_code == 400
+
+
+def test_remediation_grade_400_for_legacy_gap_without_apply(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    _remediation_session_on_disk(tmp_path, cid, lesson_id, with_apply=False)  # legacy Pi session
+    r = client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                    json={"gapIndex": 0, "answer": "a"})
+    assert r.status_code == 400
+
+
+def test_remediation_grade_400_for_gap_with_blank_modelAnswer(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    # Create a session with a gap whose apply has prompt but blank modelAnswer
+    from backend import remediation
+    gap = {"lessonId": lesson_id, "lessonTitle": "A", "objectives": [],
+           "explanationHtml": "<p>angle</p>",
+           "practice": [
+               {"type": "mcq", "prompt": "q", "choices": ["a", "b"],
+                "answer": 0, "explanation": "e"},
+           ],
+           "apply": {"prompt": "<p>x</p>", "modelAnswer": "  "}}
+    session = {"examKey": "m1", "courseId": cid, "attempt": 1,
+               "generatedAt": "2026-07-16T00:00:00+00:00", "gaps": [gap]}
+    remediation.save_session(tmp_path, cid, session)
+    r = client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                    json={"gapIndex": 0, "answer": "a"})
+    assert r.status_code == 400
+
+
 def test_final_locked_until_all_modules_passed(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     manifest, lesson_id = _fixture_course(courses, tmp_path)
@@ -856,3 +970,241 @@ def test_transcript_route_returns_courses(tmp_path, monkeypatch):
     body = r.get_json()
     assert body["courses"][0]["courseId"] == manifest["id"]
     assert body["courses"][0]["final"]["passed"] is False
+
+
+def _capstone_file(root, cid, scope, title):
+    cap = {"scope": scope, "title": title, "intro": "i", "items": [
+        {"title": "A", "detail": "d", "source": "s"},
+        {"title": "B", "detail": "d", "source": "s"}]}
+    p = root / cid / "capstones" / f"{scope}.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(cap))
+    return cap
+
+
+def _capstone_generate():
+    rubric = {"rubric": [{"criterion": f"C{i}"} for i in range(4)]}
+    grade = {"perCriterion": [
+        {"index": i, "met": "met", "note": "n", "evidence": "q"} for i in range(4)],
+        "summary": "s"}
+
+    def fake(prompt, *, validate=None, **kw):
+        obj = grade if '"perCriterion"' in prompt else rubric
+        assert validate is None or validate(obj)
+        return obj
+    return fake
+
+
+def test_capstone_submit_grades_and_records(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    _capstone_file(tmp_path, cid, mid, "Mod A")
+    monkeypatch.setattr(claude_client, "run_structured", _capstone_generate())
+    r = client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json={"work": "my project"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["score"] == 1.0 and body["passed"] is True and body["attempt"] == 1
+    assert len(body["rubric"]) == 4
+    assert body["perCriterion"][0]["evidence"] == "q"           # response keeps evidence
+    saved = json.loads((tmp_path / cid / "capstones" / f"{mid}.json").read_text())
+    assert len(saved["rubric"]) == 4                            # read-time upgrade persisted
+    r2 = client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json={"work": "more"})
+    assert r2.get_json()["attempt"] == 2                        # unlimited attempts
+    ev = client.get("/api/events?type=capstone_result").get_json()["events"]
+    assert len(ev) == 2
+    assert "evidence" not in ev[0]["payload"]["perCriterion"][0]  # never stored
+
+
+def test_capstone_submit_requires_work(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    _capstone_file(tmp_path, cid, mid, "Mod A")
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json={}).status_code == 400
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit",
+                       json={"work": "  "}).status_code == 400
+
+
+def test_capstone_submit_rejects_non_string_work(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    _capstone_file(tmp_path, cid, mid, "Mod A")
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit",
+                       json={"work": 123}).status_code == 400
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit",
+                       json={"work": ["x"]}).status_code == 400
+
+
+def test_capstone_submit_rejects_non_dict_body(tmp_path, monkeypatch):
+    """A forged, truthy non-dict JSON body (list, string, ...) must not survive past
+    `request.get_json()` into `.get()` calls — that would raise AttributeError -> 500."""
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json=[1, 2]).status_code == 400
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json="oops").status_code == 400
+
+
+def test_capstone_submit_404_without_generated_capstone(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit",
+                       json={"work": "w"}).status_code == 404
+    assert client.post("/api/courses/nope/capstone/m1/submit",
+                       json={"work": "w"}).status_code == 404
+
+
+def test_capstone_submit_maps_claude_errors(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    _capstone_file(tmp_path, cid, mid, "Mod A")
+
+    def boom(prompt, **kw):
+        raise claude_client.ClaudeError("nope")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit",
+                       json={"work": "w"}).status_code == 502
+
+    def auth_boom(prompt, **kw):
+        raise claude_client.ClaudeAuthError("login")
+    monkeypatch.setattr(claude_client, "run_structured", auth_boom)
+    r = client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json={"work": "w"})
+    assert r.status_code == 503 and r.get_json()["code"] == "reauth"
+
+
+def _post_marker(client, cid, event_type, payload, i, topic_id):
+    r = client.post("/api/events", json={"events": [{
+        "client_event_id": f"gm-{event_type}-{i}", "session_id": "s1",
+        "event_type": event_type, "occurred_at": f"2026-07-16T10:{i:02d}:00+00:00",
+        "course_id": cid, "topic_id": topic_id, "payload": payload,
+    }]})
+    assert r.status_code == 200
+
+
+def test_retake_gate_matrix(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    # Stub generation FIRST: reaching it (502) proves the gate is OPEN; 409 proves CLOSED.
+    def boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeError("stub")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+
+    # 1. no prior result -> first attempts always allowed (gate open, stub reached)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 502
+
+    # 2. latest failed, gap review never generated -> 409
+    weak = [{"lessonId": lesson_id, "lessonTitle": "A", "objectives": ["o"]}]
+    _post_exam_result(client, cid, "m1",
+                      {"score": 0.5, "passed": False, "attempt": 1, "weakSpots": weak}, i=1)
+    r = client.post(f"/api/courses/{cid}/exams/m1")
+    assert r.status_code == 409
+    assert "gap review" in r.get_json()["error"]
+    assert r.get_json()["code"] == "gap-review"  # frontend routes this to a "Fix the gaps" escape hatch
+
+    # 3. session exists but is incomplete -> still 409
+    _remediation_session_on_disk(tmp_path, cid, lesson_id, attempt=1)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 409
+
+    # 4. legacy events without examKey/attempt markers do not count -> still 409
+    for i in range(2):
+        _post_marker(client, cid, "lesson_check",
+                     {"index": i, "type": "mcq", "correct": True, "source": "remediation"},
+                     i, lesson_id)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 409
+
+    # 5. fully worked session (2 practice + 1 apply) -> gate opens (stub reached)
+    for i in range(2):
+        _post_marker(client, cid, "lesson_check",
+                     {"index": i, "type": "mcq", "correct": True, "source": "remediation",
+                      "examKey": "m1", "attempt": 1}, 10 + i, lesson_id)
+    _post_marker(client, cid, "lesson_explained",
+                 {"verdict": "correct", "source": "remediation", "examKey": "m1",
+                  "attempt": 1, "index": 0}, 20, lesson_id)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 502
+
+    # 6. passed exams retake freely even with an old fail on record
+    _post_exam_result(client, cid, "m1",
+                      {"score": 0.9, "passed": True, "attempt": 2, "weakSpots": []}, i=2)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 502
+
+
+def test_retake_gate_stale_session_blocks_after_new_fail(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    def boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeError("stub")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    weak = [{"lessonId": lesson_id, "lessonTitle": "A", "objectives": ["o"]}]
+    _post_exam_result(client, cid, "m1",
+                      {"score": 0.5, "passed": False, "attempt": 2, "weakSpots": weak}, i=3)
+    # session + events all belong to attempt 1: completed for 1, stale for 2
+    _remediation_session_on_disk(tmp_path, cid, lesson_id, attempt=1)
+    for i in range(2):
+        _post_marker(client, cid, "lesson_check",
+                     {"index": i, "type": "mcq", "correct": True, "source": "remediation",
+                      "examKey": "m1", "attempt": 1}, 30 + i, lesson_id)
+    _post_marker(client, cid, "lesson_explained",
+                 {"verdict": "correct", "source": "remediation", "examKey": "m1",
+                  "attempt": 1, "index": 0}, 40, lesson_id)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 409
+
+
+def test_retake_gate_full_corrective_loop_via_api(tmp_path, monkeypatch):
+    """The gap-review escape hatch end to end: fail -> retake 409 (with the code the
+    frontend keys "Fix the gaps" off of) -> POST remediation for real through the route
+    (not written straight to disk) -> mark every practice + apply item complete via real
+    event posts -> the retake reaches generation again. Proven by the stubbed-502
+    technique (reaching generation proves the gate is open), same as the gate matrix."""
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+
+    def boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeError("stub")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+
+    # 1. fail the exam
+    weak = [{"lessonId": lesson_id, "lessonTitle": "A", "objectives": ["o"]}]
+    _post_exam_result(client, cid, "m1",
+                      {"score": 0.5, "passed": False, "attempt": 1, "weakSpots": weak}, i=1)
+
+    # 2. retake 409s carrying the code the frontend routes to "Fix the gaps"
+    r = client.post(f"/api/courses/{cid}/exams/m1")
+    assert r.status_code == 409
+    assert r.get_json()["code"] == "gap-review"
+
+    # 3. POST remediation for real — through the route, not written to disk directly
+    gaps = {"gaps": [{"lessonId": lesson_id, "explanationHtml": "<p>angle</p>",
+                      "practice": [
+                          {"type": "mcq", "prompt": "q", "choices": ["a", "b"],
+                           "answer": 0, "explanation": "e"},
+                          {"type": "fill", "prompt": "q2", "answer": "w", "explanation": "e2"},
+                      ],
+                      "apply": {"prompt": "<p>scenario</p>", "modelAnswer": "covers x"}}]}
+    monkeypatch.setattr(claude_client, "run_structured",
+                        lambda prompt, validate=None, **kw: gaps)
+    r2 = client.post(f"/api/courses/{cid}/exams/m1/remediation")
+    assert r2.status_code == 200
+    assert (tmp_path / cid / "remediation" / "m1.json").exists()
+
+    # 4. generated but not yet worked -> still gated
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 409
+
+    # 5. insert completion marker events for the 2 practice items + the 1 apply item
+    for i in range(2):
+        _post_marker(client, cid, "lesson_check",
+                     {"index": i, "type": "mcq", "correct": True, "source": "remediation",
+                      "examKey": "m1", "attempt": 1}, i, lesson_id)
+    _post_marker(client, cid, "lesson_explained",
+                 {"verdict": "correct", "source": "remediation", "examKey": "m1",
+                  "attempt": 1, "index": 0}, 10, lesson_id)
+
+    # 6. retake now reaches generation -- the gate is open
+    assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 502

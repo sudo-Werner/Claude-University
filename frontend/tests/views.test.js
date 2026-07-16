@@ -632,6 +632,21 @@ test("syllabusHTML drops non-http(s) source URLs", () => {
   assert.ok(html.includes("https://ok.example/x"));
 });
 
+test("syllabusHTML renders builds-on lines from prereqs, skipping unknown ids", () => {
+  const course = { ...COURSE, modules: [{ id: "m1", title: "Foundations", outcomes: [OBJ],
+    lessons: [
+      { id: "l1", title: "Vectors <b>", estMinutes: 90, objectives: [OBJ], prereqs: [] },
+      { id: "l2", title: "Matrices", estMinutes: 90, objectives: [OBJ], prereqs: ["l1", "ghost"] },
+    ] }] };
+  const html = syllabusHTML(course);
+  assert.ok(html.includes("Builds on: Vectors &lt;b&gt;"));     // resolved title, esc()'d
+  assert.ok(!html.includes("ghost"));                            // unknown id skipped silently
+});
+
+test("syllabusHTML omits builds-on when prereqs are empty or absent", () => {
+  assert.ok(!syllabusHTML(COURSE).includes("Builds on:"));       // COURSE's lesson has prereqs: []
+});
+
 test("dashboard shows the streak tile with day count", () => {
   const html = dashboardHTML({ ...DASHBOARD_SEED, streakDays: 4 }, idleTimer);
   assert.match(html, /STREAK/);
@@ -771,4 +786,50 @@ test("curriculum flags a module you moved beyond without passing its exam", () =
 test("curriculum marks the recommended next step with a chip", () => {
   const html = curriculumHTML(GATE_MANIFEST, {}, null, {}, false);
   assert.ok(/data-lesson="l1"[^>]*>[\s\S]*?c-next/.test(html.split('data-lesson="l2"')[0]));
+});
+
+const CAP = { scope: "m1", title: "Mod A", intro: "i",
+  items: [{ title: "A", detail: "d", source: "s" }] };
+
+test("capstone renders a submit-your-work card with busy and disabled states", () => {
+  const empty = capstoneHTML(CAP, { work: "", busy: false, result: null });
+  assert.match(empty, /data-field="cap-work"/);
+  assert.match(empty, /data-action="cap-submit"[^>]*disabled/);
+  const ready = capstoneHTML(CAP, { work: "my project", busy: false, result: null });
+  assert.doesNotMatch(ready, /data-action="cap-submit"[^>]*disabled/);
+  assert.ok(ready.includes("my project"));                            // textarea keeps the draft
+  const busy = capstoneHTML(CAP, { work: "my project", busy: true, result: null });
+  assert.ok(busy.includes("Grading…"));
+  assert.match(busy, /data-action="cap-submit"[^>]*disabled/);
+});
+
+test("capstone renders the graded result: badges, raw notes, escaped evidence", () => {
+  const result = {
+    score: 0.625, passed: false, attempt: 1, summary: "Solid <em>start</em>",
+    rubric: [{ criterion: "Uses &lt;b&gt;real&lt;/b&gt; data" }, { criterion: "C1" },
+             { criterion: "C2" }, { criterion: "C3" }],
+    perCriterion: [
+      { index: 0, met: "met", note: "Good <em>use</em>", evidence: "I <scraped> the data" },
+      { index: 1, met: "partial", note: "n", evidence: "" },
+      { index: 2, met: "unmet", note: "n", evidence: "" },
+      { index: 3, met: "partial", note: "n", evidence: "" },
+    ],
+  };
+  const html = capstoneHTML(CAP, { work: "w", busy: false, result });
+  assert.ok(html.includes("Uses &lt;b&gt;real&lt;/b&gt; data"));      // criterion raw (pre-escaped server-side)
+  assert.ok(html.includes("Good <em>use</em>"));                       // note raw (server-sanitized)
+  assert.ok(html.includes("I &lt;scraped&gt; the data"));              // evidence esc()'d
+  assert.ok(html.includes("Not passed — 63% (70% needed)"));
+  assert.ok(html.includes("Solid <em>start</em>"));                    // summary raw
+  assert.ok(html.includes("Partially met") && html.includes("Not met") && html.includes("Met"));
+  assert.ok(html.includes("Submit again"));                            // same textarea stays
+  const passed = capstoneHTML(CAP, { work: "w", busy: false,
+    result: { ...result, score: 0.75, passed: true } });
+  assert.ok(passed.includes("Passed — 75%"));
+});
+
+test("capstone submit errors render softly and keep the card usable", () => {
+  const html = capstoneHTML(CAP, { work: "w", busy: false, result: { error: "boom <x>" } });
+  assert.ok(html.includes("boom &lt;x&gt;"));
+  assert.doesNotMatch(html, /data-action="cap-submit"[^>]*disabled/);
 });

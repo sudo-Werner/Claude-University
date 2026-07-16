@@ -78,12 +78,18 @@ def remediation_prompt(*, manifest, exam_key, weak_spots, spine_lessons):
         "objective's Bloom level is apply or higher, make its practice question require the "
         "learner to APPLY the objective — a scenario-based stem — not recall a definition, "
         "within the mcq/fill format above.\n"
+        "- apply: ONE free-response application task on those objectives: pose a NOVEL "
+        "scenario, case, or problem that does not appear in the lessons — the learner must "
+        "USE the concept to resolve it, not describe the concept. Shape: "
+        '{"prompt":"<the scenario, simple HTML (p, em, strong, code) only>",'
+        '"modelAnswer":"<what a correct answer covers>"}.\n'
         "Before emitting, re-answer each mcq question independently from the question text "
         "alone. Confirm the choice at answer is the answer you get, and that no distractor is "
         "also defensibly correct — if one is, rewrite it.\n"
         "Echo each gap's lessonId verbatim.\n"
         "Reply with ONLY a JSON object, no prose, no fence:\n"
-        '{"gaps":[{"lessonId":"<from gap>","explanationHtml":"<html>","practice":[...]}]}'
+        '{"gaps":[{"lessonId":"<from gap>","explanationHtml":"<html>","practice":[...],'
+        '"apply":{"prompt":"<html>","modelAnswer":"<text>"}}]}'
     )
 
 
@@ -102,6 +108,13 @@ def valid_remediation(obj, weak_spots):
         if not (isinstance(practice, list) and PRACTICE_MIN <= len(practice) <= PRACTICE_MAX):
             return False
         if not all(generation.valid_check(p) for p in practice):
+            return False
+        apply = g.get("apply")
+        if not isinstance(apply, dict):
+            return False
+        if not (isinstance(apply.get("prompt"), str) and apply["prompt"].strip()):
+            return False
+        if not (isinstance(apply.get("modelAnswer"), str) and apply["modelAnswer"].strip()):
             return False
     return True
 
@@ -127,6 +140,10 @@ def finalize_session(obj, weak_spots, exam_key, course_id, attempt):
             "objectives": [o for o in w.get("objectives", []) if isinstance(o, str)],
             "explanationHtml": generation.sanitize_html(g["explanationHtml"]),
             "practice": practice,
+            "apply": {
+                "prompt": generation.sanitize_html(g["apply"]["prompt"]),
+                "modelAnswer": generation.sanitize_html(g["apply"]["modelAnswer"]),
+            },
         })
     return {
         "examKey": exam_key,
@@ -182,3 +199,65 @@ def ensure_session(content_dir, course_id, exam_key, failed_payload, *,
     session = finalize_session(obj, weak_spots, exam_key, course_id, attempt)
     save_session(content_dir, course_id, session)
     return session
+
+
+def _usable_apply(gap):
+    """True when gap's apply task has a non-blank prompt AND a non-blank
+    modelAnswer — the same rule /remediation/grade (backend/app.py) enforces
+    before it will grade an answer. A gap whose apply dict is present but
+    blank/malformed must NOT count as "has an apply task" here: the grade
+    route would refuse it, so treating it as expected would permanently lock
+    the retake."""
+    apply_item = gap.get("apply") if isinstance(gap, dict) else None
+    return (isinstance(apply_item, dict)
+            and isinstance(apply_item.get("prompt"), str) and apply_item["prompt"].strip()
+            and isinstance(apply_item.get("modelAnswer"), str) and apply_item["modelAnswer"].strip())
+
+
+def _marked_indices(conn, course_id, exam_key, attempt, event_type):
+    """Distinct payload.index values from remediation-marked events of one type.
+    Payloads are client-forgeable: anything malformed, unmarked (legacy answers
+    logged before markers shipped), or for another exam/attempt is skipped."""
+    rows = conn.execute(
+        "SELECT payload FROM events WHERE event_type = ? AND course_id = ?",
+        (event_type, course_id),
+    ).fetchall()
+    out = set()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except ValueError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("source") != "remediation":
+            continue
+        if payload.get("examKey") != exam_key or payload.get("attempt") != attempt:
+            continue
+        idx = payload.get("index")
+        if isinstance(idx, int) and not isinstance(idx, bool):
+            out.add(idx)
+    return out
+
+
+def session_completed(conn, content_dir, course_id, exam_key, expected_attempt):
+    """True when the stored gap review for the given failed attempt has been fully
+    worked: every practice item answered (flat indices matching the frontend's
+    flatPractice ordering) and every apply task submitted — apply items are counted
+    only when the session has a USABLE one (see _usable_apply): legacy sessions on
+    the Pi have none, and a blank/malformed apply dict is excluded too, since the
+    grade route would refuse to grade it and that would permanently lock the
+    retake. No session on disk, or a session for an older attempt, means the
+    corrective step for THIS attempt hasn't happened -> False."""
+    session = load_session(content_dir, course_id, exam_key)
+    if session is None or session.get("attempt") != expected_attempt:
+        return False
+    attempt = session.get("attempt")
+    gaps = [g for g in session.get("gaps", []) if isinstance(g, dict)]
+    practice_total = sum(len(g.get("practice") or []) for g in gaps)
+    apply_expected = {i for i, g in enumerate(gaps) if _usable_apply(g)}
+    checks = _marked_indices(conn, course_id, exam_key, attempt, "lesson_check")
+    if len({i for i in checks if 0 <= i < practice_total}) < practice_total:
+        return False
+    applies = _marked_indices(conn, course_id, exam_key, attempt, "lesson_explained")
+    return apply_expected <= applies

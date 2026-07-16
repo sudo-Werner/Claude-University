@@ -145,8 +145,13 @@ export async function startExam({ fetch, courseId, examKey }) {
   const resp = await fetch(`/api/courses/${courseId}/exams/${examKey}`, { method: "POST" });
   if (!resp.ok) {
     let message = "Couldn't prepare the exam right now.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    let code;
+    try {
+      const body = await resp.json();
+      if (body && body.error) message = body.error;
+      if (body && body.code) code = body.code;
+    } catch (e) {}
+    return { error: message, code };
   }
   return resp.json();
 }
@@ -178,5 +183,33 @@ export async function startRemediation({ fetch, courseId, examKey }) {
 export async function loadTranscript({ fetch }) {
   const resp = await fetch("/api/transcript");
   if (!resp.ok) return null;
+  return resp.json();
+}
+
+export async function gradeRemediationApply({ fetch, courseId, examKey, gapIndex, answer }) {
+  const resp = await fetch(`/api/courses/${courseId}/exams/${examKey}/remediation/grade`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gapIndex, answer }),
+  });
+  if (!resp.ok) {
+    let message = "Couldn't grade this answer right now.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}
+
+export async function submitCapstone({ fetch, courseId, scope, work }) {
+  const resp = await fetch(`/api/courses/${courseId}/capstone/${scope}/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ work }),
+  });
+  if (!resp.ok) {
+    let message = "Couldn't grade your capstone right now.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
   return resp.json();
 }

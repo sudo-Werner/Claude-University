@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
@@ -250,14 +250,23 @@ def create_app(db_path=None):
         slots = exams.blueprint(manifest, exam_key)
         if slots is None:
             return jsonify({"error": "exam not found"}), 404
-        if exam_key == "final":
-            conn = db.get_connection(path)
-            try:
-                status = exams.exam_status(conn, course_id, manifest)
-            finally:
-                conn.close()
-            if not exams.final_unlocked(status, manifest):
+        conn = db.get_connection(path)
+        try:
+            status = exams.exam_status(conn, course_id, manifest)
+            if exam_key == "final" and not exams.final_unlocked(status, manifest):
                 return jsonify({"error": "The final is locked — pass every module exam first."}), 409
+            # Bloom's corrective-then-reassess: while an exam is not yet passed, a
+            # retake after a fail is blocked until that fail's gap review is completed.
+            # First attempts have no failed result and pass straight through.
+            if not status.get(exam_key, {}).get("passed"):
+                latest = remediation.latest_failed_result(conn, course_id, exam_key)
+                if latest is not None and not remediation.session_completed(
+                        conn, courses.CONTENT_DIR, course_id, exam_key,
+                        latest.get("attempt")):
+                    return jsonify({"error": "Complete the gap review before retaking — that's the corrective step.",
+                                    "code": "gap-review"}), 409
+        finally:
+            conn.close()
         spine_lessons = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"]
         prompt = exams.exam_prompt(manifest=manifest, exam_key=exam_key,
                                    slots=slots, spine_lessons=spine_lessons)
@@ -333,6 +342,49 @@ def create_app(db_path=None):
             return jsonify({"error": "could not prepare the gap review — try again"}), 502
         return jsonify(session)
 
+    @app.post("/api/courses/<course_id>/exams/<exam_key>/remediation/grade")
+    def grade_remediation_apply(course_id, exam_key):
+        if not _ID_RE.match(course_id) or not (exam_key == "final" or _ID_RE.match(exam_key)):
+            return jsonify({"error": "exam not found"}), 404
+        session = remediation.load_session(courses.CONTENT_DIR, course_id, exam_key)
+        if session is None:
+            return jsonify({"error": "no gap review on record for this exam"}), 404
+        body = request.get_json(silent=True)
+        body = body if isinstance(body, dict) else {}
+        gap_index = body.get("gapIndex")
+        gaps = session.get("gaps", [])
+        if not (isinstance(gap_index, int) and not isinstance(gap_index, bool)
+                and 0 <= gap_index < len(gaps)):
+            return jsonify({"error": "gapIndex must identify a gap in the review"}), 400
+        gap = gaps[gap_index] if isinstance(gaps[gap_index], dict) else {}
+        apply_item = gap.get("apply")
+        # Legacy sessions on the Pi predate apply items — nothing to grade there.
+        if not (isinstance(apply_item, dict)
+                and isinstance(apply_item.get("prompt"), str) and apply_item["prompt"].strip()
+                and isinstance(apply_item.get("modelAnswer"), str) and apply_item["modelAnswer"].strip()):
+            return jsonify({"error": "this gap has no apply task"}), 400
+        answer = body.get("answer")
+        answer = answer.strip() if isinstance(answer, str) else ""
+        if not answer:
+            return jsonify({"error": "answer is required"}), 400
+        # Reuse the exercise grader verbatim (verdict trio + note) — no new prompt builder.
+        prompt = generation.grade_prompt(
+            prompt_html=apply_item.get("prompt", ""),
+            solution_ans=apply_item.get("modelAnswer", ""),
+            solution_note="",
+            answer=answer,
+        )
+        try:
+            result = claude_client.run_structured(prompt, validate=generation.valid_grade)
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not grade this answer"}), 502
+        # modelAnswer is revealed only after grading, like a solution reveal.
+        return jsonify({"verdict": result["verdict"],
+                        "note": generation.sanitize_html(result["note"]),
+                        "modelAnswer": apply_item.get("modelAnswer", "")})
+
     @app.post("/api/courses/<course_id>/lessons/<lesson_id>/deepen")
     def deepen_lesson_route(course_id, lesson_id):
         if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
@@ -384,6 +436,38 @@ def create_app(db_path=None):
         if capstone is None:
             return jsonify({"error": "not found"}), 404
         return jsonify(capstone)
+
+    @app.post("/api/courses/<course_id>/capstone/<scope>/submit")
+    def submit_capstone_route(course_id, scope):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        if scope != "course" and not _ID_RE.match(scope):
+            return jsonify({"error": "not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        body = request.get_json(silent=True)
+        body = body if isinstance(body, dict) else {}
+        work = body.get("work")
+        work = work.strip() if isinstance(work, str) else ""
+        if not work:
+            return jsonify({"error": "work is required"}), 400
+        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        conn = db.get_connection(path)
+        try:
+            result = capstone.submit_capstone(
+                courses.CONTENT_DIR, conn, course_id, scope, work,
+                manifest=manifest, generate=generate,
+            )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not grade your capstone — your work was not lost, try again"}), 502
+        finally:
+            conn.close()
+        if result is None:
+            return jsonify({"error": "no capstone to submit against — open the capstone first"}), 404
+        return jsonify(result)
 
     @app.get("/api/courses/<course_id>/library")
     def get_library(course_id):

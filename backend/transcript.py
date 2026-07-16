@@ -26,6 +26,48 @@ def _first_pass_dates(conn, course_id):
     return dates
 
 
+def _capstone_rows(conn, course_id, manifest):
+    """Transcript rows for graded capstones (Item E): one row per scope with at
+    least one capstone_result event, in manifest-module order with the course
+    scope last. Scopes dropped by a later revision are skipped, and payloads are
+    server-written but still parsed defensively — a forged client event with this
+    type must never 500 the transcript, so malformed rows are skipped entirely
+    (mirrors exams.exam_status)."""
+    rows = conn.execute(
+        "SELECT topic_id, occurred_at, payload FROM events "
+        "WHERE event_type = 'capstone_result' AND course_id = ? "
+        "ORDER BY occurred_at ASC, id ASC",
+        (course_id,),
+    ).fetchall()
+    module_titles = {m.get("id"): m.get("title", "") for m in manifest.get("modules", [])}
+    by_scope = {}
+    for row in rows:
+        scope = row["topic_id"]
+        if scope != "course" and scope not in module_titles:
+            continue
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except ValueError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        entry = by_scope.setdefault(scope, {
+            "scope": scope,
+            "title": "Course capstone" if scope == "course" else module_titles[scope],
+            "attempts": 0, "bestScore": 0.0, "passed": False, "passedOn": None,
+        })
+        entry["attempts"] += 1
+        score = payload.get("score")
+        if isinstance(score, (int, float)) and not isinstance(score, bool):
+            entry["bestScore"] = max(entry["bestScore"], float(score))
+        if payload.get("passed"):
+            entry["passed"] = True
+            if entry["passedOn"] is None:
+                entry["passedOn"] = row["occurred_at"][:10]
+    order = [m.get("id") for m in manifest.get("modules", [])] + ["course"]
+    return [by_scope[s] for s in order if s in by_scope]
+
+
 def course_record(conn, content_dir, course_id, manifest):
     status = exams.exam_status(conn, course_id, manifest)
     dates = _first_pass_dates(conn, course_id)
@@ -49,6 +91,7 @@ def course_record(conn, content_dir, course_id, manifest):
         "title": manifest.get("title", ""),
         "modules": modules,
         "final": row("final", "Final exam"),
+        "capstones": _capstone_rows(conn, course_id, manifest),
         "coursePassed": passed,
         "passedOn": passed_on,
         "masteryCounts": mastery.mastery_counts(m),

@@ -70,15 +70,18 @@ export function examResultHTML(result) {
       `<ul>${(w.objectives || []).map((o) => `<li>${esc(o)}</li>`).join("")}</ul></div>`)
     .join("");
   const qs = (result.perQuestion || []).map(resultQuestion).join("");
-  const fix = !result.passed && (result.weakSpots || []).length
-    ? `<button class="btn-primary" data-action="fix-gaps">Fix the gaps</button>`
-    : "";
+  // Item B: a gated fail routes through the corrective step — the retake button
+  // only shows where the backend gate would allow it (pass, or nothing to remediate).
+  const fixable = !result.passed && (result.weakSpots || []).length > 0;
+  const fix = fixable
+    ? `<button class="btn-primary" data-action="fix-gaps">Fix the gaps</button>` +
+      `<div class="exam-note">Retake unlocks after the gap review.</div>`
+    : `<button class="btn-secondary" data-action="retake-exam">Retake with fresh questions</button>`;
   return (
     `<div class="exam-result">${banner}` +
     (weak ? `<h2>Focus next on</h2>${weak}` : "") +
     (qs ? `<h2>Question by question</h2>${qs}` : "") +
     `<div class="nav">${fix}` +
-    `<button class="btn-secondary" data-action="retake-exam">Retake with fresh questions</button>` +
     `<button class="btn-back" data-action="back-curriculum">Back to course</button>` +
     `</div></div>`
   );

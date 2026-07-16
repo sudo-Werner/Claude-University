@@ -50,3 +50,28 @@ test("transcriptHTML empty state", () => {
   assert.ok(html.includes("No courses yet"));
   assert.ok(html.includes("not an accredited credential"));
 });
+
+test("passed exam rows include the attempt count", () => {
+  const html = transcriptHTML(DATA);
+  assert.ok(html.includes("90% · 2026-07-10 · 2 attempts"));
+  assert.ok(html.includes("88% · 2026-07-12 · 1 attempt"));   // singular on the final
+});
+
+test("capstone rows render after the final with the same status treatment", () => {
+  const withCaps = { courses: [{ ...DATA.courses[0], capstones: [
+    { scope: "m1", title: "Sorting", attempts: 2, bestScore: 0.75, passed: true, passedOn: "2026-07-13" },
+    { scope: "course", title: "Course capstone", attempts: 1, bestScore: 0.4, passed: false, passedOn: null },
+  ] }] };
+  const html = transcriptHTML(withCaps);
+  assert.ok(html.includes("Capstone: Sorting"));
+  assert.ok(html.includes("Course capstone"));
+  assert.ok(!html.includes("Capstone: Course capstone"));      // course scope is not double-labelled
+  assert.ok(html.includes("75% · 2026-07-13 · 2 attempts"));
+  assert.ok(html.includes("best 40% · 1 attempt"));
+  assert.ok(html.indexOf("Capstone: Sorting") > html.indexOf("Final exam"));
+});
+
+test("courses without capstone submissions show nothing new", () => {
+  const html = transcriptHTML(DATA);                            // DATA has no capstones field
+  assert.ok(!html.includes("Capstone"));
+});
