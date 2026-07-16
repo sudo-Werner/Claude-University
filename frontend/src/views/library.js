@@ -3,7 +3,7 @@ import { esc } from "../escape.js";
 // #accredited-sources — the course "Library": real, web-retrieved accredited sources,
 // grouped by type. title/note arrive server-sanitized; the URL is a genuinely retrieved
 // search result, rendered as a real external link (href esc'd, opened safely).
-const TYPE_ORDER = ["university", "preprint", "peer-reviewed", "textbook", "official-docs", "reference"];
+const TYPE_ORDER = ["university", "preprint", "peer-reviewed", "textbook", "official-docs", "reference", "video"];
 const TYPE_LABEL = {
   university: "University",
   preprint: "Preprint / scholarly",
@@ -11,6 +11,7 @@ const TYPE_LABEL = {
   textbook: "Textbook",
   "official-docs": "Official docs",
   reference: "Reference",
+  video: "Video",
 };
 
 function sourceRow(s) {
