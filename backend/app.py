@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
@@ -384,6 +384,36 @@ def create_app(db_path=None):
         if capstone is None:
             return jsonify({"error": "not found"}), 404
         return jsonify(capstone)
+
+    @app.post("/api/courses/<course_id>/capstone/<scope>/submit")
+    def submit_capstone_route(course_id, scope):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        if scope != "course" and not _ID_RE.match(scope):
+            return jsonify({"error": "not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        body = request.get_json(silent=True) or {}
+        work = (body.get("work") or "").strip()
+        if not work:
+            return jsonify({"error": "work is required"}), 400
+        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        conn = db.get_connection(path)
+        try:
+            result = capstone.submit_capstone(
+                courses.CONTENT_DIR, conn, course_id, scope, work,
+                manifest=manifest, generate=generate,
+            )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not grade your capstone — your work was not lost, try again"}), 502
+        finally:
+            conn.close()
+        if result is None:
+            return jsonify({"error": "no capstone to submit against — open the capstone first"}), 404
+        return jsonify(result)
 
     @app.get("/api/courses/<course_id>/library")
     def get_library(course_id):

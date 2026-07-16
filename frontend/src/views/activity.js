@@ -33,6 +33,13 @@ function entryHTML(e) {
       `<span class="act-text"><b>Reviewed gaps</b> ${esc(e.examLabel || "")} ` +
       `<span class="act-course">${esc(e.courseTitle || "")}</span></span></div>`;
   }
+  if (e.type === "capstone_result") {
+    const pct = Math.round((e.score || 0) * 100);
+    return `<div class="act-entry"><span class="act-time">${when}</span>` +
+      `<span class="act-text"><b>Capstone</b> ${esc(e.examLabel || "")} ` +
+      `<span class="act-course">${esc(e.courseTitle || "")}</span>` +
+      `<span class="act-quality">${pct}% — ${e.passed ? "passed" : "not passed"}</span></span></div>`;
+  }
   const verb = VERBS[e.type] || e.type;
   const what = e.lessonTitle ? esc(e.lessonTitle) : (e.courseTitle ? esc(e.courseTitle) : "");
   const context = e.lessonTitle && e.courseTitle ? `<span class="act-course">${esc(e.courseTitle)}</span>` : "";

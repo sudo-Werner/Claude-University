@@ -856,3 +856,86 @@ def test_transcript_route_returns_courses(tmp_path, monkeypatch):
     body = r.get_json()
     assert body["courses"][0]["courseId"] == manifest["id"]
     assert body["courses"][0]["final"]["passed"] is False
+
+
+def _capstone_file(root, cid, scope, title):
+    cap = {"scope": scope, "title": title, "intro": "i", "items": [
+        {"title": "A", "detail": "d", "source": "s"},
+        {"title": "B", "detail": "d", "source": "s"}]}
+    p = root / cid / "capstones" / f"{scope}.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(cap))
+    return cap
+
+
+def _capstone_generate():
+    rubric = {"rubric": [{"criterion": f"C{i}"} for i in range(4)]}
+    grade = {"perCriterion": [
+        {"index": i, "met": "met", "note": "n", "evidence": "q"} for i in range(4)],
+        "summary": "s"}
+
+    def fake(prompt, *, validate=None, **kw):
+        obj = grade if '"perCriterion"' in prompt else rubric
+        assert validate is None or validate(obj)
+        return obj
+    return fake
+
+
+def test_capstone_submit_grades_and_records(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    _capstone_file(tmp_path, cid, mid, "Mod A")
+    monkeypatch.setattr(claude_client, "run_structured", _capstone_generate())
+    r = client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json={"work": "my project"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["score"] == 1.0 and body["passed"] is True and body["attempt"] == 1
+    assert len(body["rubric"]) == 4
+    assert body["perCriterion"][0]["evidence"] == "q"           # response keeps evidence
+    saved = json.loads((tmp_path / cid / "capstones" / f"{mid}.json").read_text())
+    assert len(saved["rubric"]) == 4                            # read-time upgrade persisted
+    r2 = client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json={"work": "more"})
+    assert r2.get_json()["attempt"] == 2                        # unlimited attempts
+    ev = client.get("/api/events?type=capstone_result").get_json()["events"]
+    assert len(ev) == 2
+    assert "evidence" not in ev[0]["payload"]["perCriterion"][0]  # never stored
+
+
+def test_capstone_submit_requires_work(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    _capstone_file(tmp_path, cid, mid, "Mod A")
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json={}).status_code == 400
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit",
+                       json={"work": "  "}).status_code == 400
+
+
+def test_capstone_submit_404_without_generated_capstone(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit",
+                       json={"work": "w"}).status_code == 404
+    assert client.post("/api/courses/nope/capstone/m1/submit",
+                       json={"work": "w"}).status_code == 404
+
+
+def test_capstone_submit_maps_claude_errors(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    _capstone_file(tmp_path, cid, mid, "Mod A")
+
+    def boom(prompt, **kw):
+        raise claude_client.ClaudeError("nope")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit",
+                       json={"work": "w"}).status_code == 502
+
+    def auth_boom(prompt, **kw):
+        raise claude_client.ClaudeAuthError("login")
+    monkeypatch.setattr(claude_client, "run_structured", auth_boom)
+    r = client.post(f"/api/courses/{cid}/capstone/{mid}/submit", json={"work": "w"})
+    assert r.status_code == 503 and r.get_json()["code"] == "reauth"

@@ -7,12 +7,12 @@ from backend import courses
 # review, attempted a pre-quiz, sat an exam, or worked a gap review. session_start
 # (just opening the app) does not count.
 STUDY_EVENTS = ("lesson_view", "lesson_reviewed", "prequiz_attempt",
-                "exam_result", "remediation_started")
+                "exam_result", "remediation_started", "capstone_result")
 
 # Event types worth showing in the study log. Checks, hints, and timer ticks
 # are noise at log granularity and are filtered out here, server-side.
 ACTIVITY_EVENTS = ("lesson_view", "lesson_reviewed", "course_created", "course_revised",
-                   "exam_result", "remediation_started")
+                   "exam_result", "remediation_started", "capstone_result")
 
 
 def _utc_today():
@@ -92,11 +92,15 @@ def recent_activity(conn, content_dir, limit=50):
             "lessonTitle": lesson_titles.get(r["topic_id"]) if r["topic_id"] else None,
             "quality": payload.get("quality"),
         }
-        if r["event_type"] in ("exam_result", "remediation_started"):
+        if r["event_type"] in ("exam_result", "remediation_started", "capstone_result"):
             key = r["topic_id"]
-            entry["examLabel"] = ("Final exam" if key == "final"
-                                  else f'{module_titles.get(key, "Module")} exam')
-            if r["event_type"] == "exam_result":
+            if r["event_type"] == "capstone_result":
+                entry["examLabel"] = ("Course capstone" if key == "course"
+                                      else f'{module_titles.get(key, "Module")} capstone')
+            else:
+                entry["examLabel"] = ("Final exam" if key == "final"
+                                      else f'{module_titles.get(key, "Module")} exam')
+            if r["event_type"] in ("exam_result", "capstone_result"):
                 entry["score"] = payload.get("score")
                 entry["passed"] = bool(payload.get("passed"))
         out.append(entry)
