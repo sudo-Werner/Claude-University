@@ -912,6 +912,17 @@ def test_capstone_submit_requires_work(tmp_path, monkeypatch):
                        json={"work": "  "}).status_code == 400
 
 
+def test_capstone_submit_rejects_non_string_work(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, mid = _capstone_course(courses, tmp_path)
+    cid = manifest["id"]
+    _capstone_file(tmp_path, cid, mid, "Mod A")
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit",
+                       json={"work": 123}).status_code == 400
+    assert client.post(f"/api/courses/{cid}/capstone/{mid}/submit",
+                       json={"work": ["x"]}).status_code == 400
+
+
 def test_capstone_submit_404_without_generated_capstone(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     manifest, mid = _capstone_course(courses, tmp_path)

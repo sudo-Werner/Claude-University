@@ -395,7 +395,8 @@ def create_app(db_path=None):
         if manifest is None:
             return jsonify({"error": "course not found"}), 404
         body = request.get_json(silent=True) or {}
-        work = (body.get("work") or "").strip()
+        work = body.get("work")
+        work = work.strip() if isinstance(work, str) else ""
         if not work:
             return jsonify({"error": "work is required"}), 400
         generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
