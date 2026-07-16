@@ -827,8 +827,28 @@ LESSON_CHAT_SYSTEM = (
     "the solution is revealed, discuss it directly."
 )
 
+# Socratic co-work: the committed never-reveals alternative to the side-chat's
+# give-in-when-asked-twice behavior. The Reveal solution button is the escape hatch.
+SOCRATIC_COWORK_SYSTEM = (
+    "You are working through the lesson's MAIN EXERCISE with a learner who wants to reach "
+    "the solution themselves. You have the reference answer below — NEVER state it, never "
+    "lay out the full approach, and never confirm a bare guess as correct until the "
+    "learner has explained the reasoning behind it. If they ask you directly for the "
+    "answer or say they give up, warmly decline in one sentence, remind them the Reveal "
+    "solution button is there if they want out, then offer a smaller step by breaking the "
+    "current question into an easier one. Otherwise respond to the learner's LATEST step "
+    "only: if it is right, confirm it in a few words and ask the ONE question that moves "
+    "them a single step forward; if it is wrong or rests on a misconception, do not "
+    "correct it outright — ask a short question or give a tiny concrete example that lets "
+    "them see the problem themselves. One question per turn. Keep every turn under 80 "
+    "words. Mirror the lesson's OWN vocabulary: use the exact terms, labels, and step "
+    "names that appear in the lesson text below. When the learner has stated the complete "
+    "solution in their own words, tell them plainly they have it and to type their final "
+    "answer into the exercise answer box to check it."
+)
 
-def lesson_chat_prompt(lesson, messages, solution_revealed=False):
+
+def lesson_chat_prompt(lesson, messages, solution_revealed=False, socratic=False):
     revealed_line = ("The learner has already revealed the solution."
                      if solution_revealed
                      else "The learner has NOT yet revealed the solution.")
@@ -838,7 +858,8 @@ def lesson_chat_prompt(lesson, messages, solution_revealed=False):
         f"Reference answer: {lesson.get('solutionAns', '')}\n"
         f"Why it is right: {lesson.get('solutionNote', '')}\n"
     )
-    lines = [LESSON_CHAT_SYSTEM, "", "The lesson the learner is studying:", ctx,
+    system = SOCRATIC_COWORK_SYSTEM if socratic else LESSON_CHAT_SYSTEM
+    lines = [system, "", "The lesson the learner is studying:", ctx,
              revealed_line, ""]
     for m in messages:
         who = "Learner" if m.get("role") == "user" else "You"
@@ -847,8 +868,9 @@ def lesson_chat_prompt(lesson, messages, solution_revealed=False):
     return "\n".join(lines)
 
 
-def lesson_chat_sse(lesson, messages, *, stream_fn, solution_revealed=False):
-    prompt = lesson_chat_prompt(lesson, messages, solution_revealed=solution_revealed)
+def lesson_chat_sse(lesson, messages, *, stream_fn, solution_revealed=False, socratic=False):
+    prompt = lesson_chat_prompt(lesson, messages, solution_revealed=solution_revealed,
+                                socratic=socratic)
     try:
         for chunk in stream_fn(prompt):
             yield _sse("delta", chunk)

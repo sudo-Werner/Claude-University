@@ -856,6 +856,57 @@ def test_lesson_chat_prompt_carries_solution_reveal_state():
     assert "has NOT yet revealed" not in shown
 
 
+def test_socratic_cowork_system_rules():
+    s = gen.SOCRATIC_COWORK_SYSTEM
+    assert "NEVER state it" in s
+    assert "Reveal solution button" in s
+    assert "One question per turn" in s
+    assert "under 80 words" in s
+    assert "exercise answer box" in s
+
+
+def test_lesson_chat_prompt_socratic_swaps_system_keeps_context():
+    lesson = {"topic": "HTTP requests", "promptHtml": "<p>what is a GET</p>",
+              "solutionAns": "GET /x", "solutionNote": "method+path"}
+    p = gen.lesson_chat_prompt(lesson, [{"role": "user", "content": "first step?"}],
+                               socratic=True)
+    assert "NEVER state it" in p                      # socratic system present
+    assert "ONE short guiding question" not in p      # default system replaced
+    assert "HTTP requests" in p
+    assert "what is a GET" in p
+    assert "GET /x" in p                              # reference answer still in context
+    assert "has NOT yet revealed the solution" in p
+    assert "Learner: first step?" in p
+    assert p.rstrip().endswith("You:")
+
+
+def test_lesson_chat_prompt_socratic_carries_reveal_state():
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    shown = gen.lesson_chat_prompt(lesson, [], solution_revealed=True, socratic=True)
+    assert "has already revealed the solution" in shown
+
+
+def test_lesson_chat_prompt_default_unchanged_without_socratic():
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    p = gen.lesson_chat_prompt(lesson, [])
+    assert "ONE short guiding question" in p
+    assert "give it plainly" in p
+    assert "NEVER state it" not in p
+
+
+def test_lesson_chat_sse_threads_socratic_flag():
+    seen = []
+
+    def fake_stream(prompt):
+        seen.append(prompt)
+        yield "ok"
+
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    chunks = list(gen.lesson_chat_sse(lesson, [], stream_fn=fake_stream, socratic=True))
+    assert "NEVER state it" in seen[0]
+    assert _events(chunks)[-1][0] == "done"
+
+
 # ---- self-consistency: prompt hardening + verification pass ----
 
 def _full_lesson(**over):

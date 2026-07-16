@@ -517,13 +517,26 @@ def create_app(db_path=None):
         lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
         if lesson is None:
             return jsonify({"error": "lesson not found"}), 404
-        body = request.get_json(silent=True) or {}
-        # The side-chat can web-search so it isn't limited to the model's training cutoff;
-        # the model only searches when the question needs current/factual info.
-        stream_fn = lambda p: claude_client.stream(p, tools=["WebSearch", "WebFetch"])
+        body = request.get_json(silent=True)
+        body = body if isinstance(body, dict) else {}
+        messages = body.get("messages", [])
+        if not isinstance(messages, list):
+            messages = []
+        messages = [m for m in messages if isinstance(m, dict)]
+        # Any forged mode value falls back to the normal chat: the flag only selects
+        # between two system prompts (the reference answer is in context either way).
+        socratic = body.get("mode") == "socratic"
+        if socratic:
+            # No web tools: the exercise is self-contained with the solution in
+            # context, and toolless turns are faster.
+            stream_fn = lambda p: claude_client.stream(p)
+        else:
+            # The side-chat can web-search so it isn't limited to the model's training cutoff;
+            # the model only searches when the question needs current/factual info.
+            stream_fn = lambda p: claude_client.stream(p, tools=["WebSearch", "WebFetch"])
         sse = generation.lesson_chat_sse(
-            lesson, body.get("messages", []), stream_fn=stream_fn,
-            solution_revealed=bool(body.get("solutionRevealed")))
+            lesson, messages, stream_fn=stream_fn,
+            solution_revealed=bool(body.get("solutionRevealed")), socratic=socratic)
         return app.response_class(sse, mimetype="text/event-stream")
 
     @app.get("/api/courses/<course_id>/reviews")
