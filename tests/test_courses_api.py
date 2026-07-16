@@ -704,6 +704,21 @@ def test_apply_revision_404_for_illegal_id(tmp_path, monkeypatch):
     assert client.post("/api/courses/Bad_Id!/apply-revision", json={}).status_code == 404
 
 
+def test_apply_revision_prunes_review_items(tmp_path, monkeypatch):
+    from backend import review_items
+    manifest = courses.write_course(tmp_path, COMPILED)
+    cid = manifest["id"]
+    kept_id = manifest["modules"][0]["lessons"][0]["id"]
+    review_items.save_items(tmp_path, cid, {"lessonId": kept_id, "reviewCount": 0, "items": []})
+    review_items.save_items(tmp_path, cid, {"lessonId": "ghost-lesson", "reviewCount": 0, "items": []})
+    client = _client(tmp_path, monkeypatch)
+    revised = {**manifest, "title": "Deep ML (Revised)"}
+    r = client.post(f"/api/courses/{cid}/apply-revision", json={"course": revised})
+    assert r.status_code == 200
+    assert review_items.load_items(tmp_path, cid, kept_id) is not None
+    assert review_items.load_items(tmp_path, cid, "ghost-lesson") is None
+
+
 # ---- #5 explain-it-back grading ----
 
 def test_explain_route_grades_explanation(tmp_path, monkeypatch):
@@ -1292,3 +1307,139 @@ def test_retake_gate_full_corrective_loop_via_api(tmp_path, monkeypatch):
 
     # 6. retake now reaches generation -- the gate is open
     assert client.post(f"/api/courses/{cid}/exams/m1").status_code == 502
+
+
+# ---------------------------------------------------------------------------
+# fresh review items
+# ---------------------------------------------------------------------------
+
+def test_review_items_route_returns_items(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+
+    items = {"items": [
+        {"type": "mcq", "prompt": "q1", "choices": ["a", "b"], "answer": 0, "explanation": "e1"},
+        {"type": "fill", "prompt": "q2", "answer": "x", "explanation": "e2"},
+    ]}
+    monkeypatch.setattr(claude_client, "run_structured",
+                        lambda prompt, validate=None, **kw: items)
+    resp = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/review-items")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert len(body["items"]) == 2
+    assert (root / cid / "review-items" / f"{lesson_id}.json").exists()
+
+
+def test_review_items_route_reuses_cache_for_same_review_count(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    calls = []
+
+    def fake(prompt, validate=None, **kw):
+        calls.append(prompt)
+        return {"items": [{"type": "fill", "prompt": "q", "answer": "x", "explanation": "e"}]}
+
+    monkeypatch.setattr(claude_client, "run_structured", fake)
+    r1 = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/review-items")
+    r2 = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/review-items")
+    assert r1.status_code == 200 and r2.status_code == 200
+    assert len(calls) == 1  # served from disk on the second call
+
+
+def test_review_items_route_review_count_from_seeded_events(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client, db, events
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+
+    app_db = client.application.config["DB_PATH"]
+    conn = db.get_connection(app_db)
+    try:
+        events.insert_events(conn, [{
+            "client_event_id": "rev-1", "session_id": "s1", "event_type": "lesson_reviewed",
+            "occurred_at": "2026-07-10T09:00:00+00:00", "course_id": cid,
+            "topic_id": lesson_id, "payload": {"quality": "good"},
+        }])
+    finally:
+        conn.close()
+
+    seen_prompts = []
+
+    def fake(prompt, validate=None, **kw):
+        seen_prompts.append(prompt)
+        return {"items": [{"type": "fill", "prompt": "q", "answer": "x", "explanation": "e"}]}
+
+    monkeypatch.setattr(claude_client, "run_structured", fake)
+    resp = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/review-items")
+    assert resp.status_code == 200
+    stored = json.loads((root / cid / "review-items" / f"{lesson_id}.json").read_text())
+    assert stored["reviewCount"] == 1        # one lesson_reviewed event seeded
+
+    # A second review event bumps the stamp -> cache miss -> regenerates
+    conn = db.get_connection(app_db)
+    try:
+        events.insert_events(conn, [{
+            "client_event_id": "rev-2", "session_id": "s1", "event_type": "lesson_reviewed",
+            "occurred_at": "2026-07-11T09:00:00+00:00", "course_id": cid,
+            "topic_id": lesson_id, "payload": {"quality": "good"},
+        }])
+    finally:
+        conn.close()
+    resp2 = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/review-items")
+    assert resp2.status_code == 200
+    stored2 = json.loads((root / cid / "review-items" / f"{lesson_id}.json").read_text())
+    assert stored2["reviewCount"] == 2
+    assert len(seen_prompts) == 2
+
+
+def test_review_items_route_404s(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    assert client.get(f"/api/courses/{cid}/lessons/nope/review-items").status_code == 404
+    assert client.get("/api/courses/nope/lessons/x/review-items").status_code == 404
+    assert client.get(f"/api/courses/Bad_Id/lessons/{lesson_id}/review-items").status_code == 404
+
+
+def test_review_items_route_does_not_require_cached_lesson_file(client, tmp_path, monkeypatch):
+    """Items come from the manifest + spine, not the lesson body — deleting the cached
+    lesson file must not 404 the route."""
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    (root / cid / "lessons" / f"{lesson_id}.json").unlink()
+    monkeypatch.setattr(claude_client, "run_structured",
+                        lambda prompt, validate=None, **kw: {"items": [
+                            {"type": "fill", "prompt": "q", "answer": "x", "explanation": "e"}]})
+    resp = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/review-items")
+    assert resp.status_code == 200
+
+
+def test_review_items_route_maps_claude_errors(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+
+    def boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeError("nope")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    assert client.get(f"/api/courses/{cid}/lessons/{lesson_id}/review-items").status_code == 502
+
+    def auth_boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeAuthError("login")
+    monkeypatch.setattr(claude_client, "run_structured", auth_boom)
+    r = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/review-items")
+    assert r.status_code == 503 and r.get_json()["code"] == "reauth"

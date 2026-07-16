@@ -194,8 +194,11 @@ def apply_revision(content_dir, course_id, revised, *, now=None):
     # Pending exams and gap reviews for modules dropped by the revision are dead.
     # (Not locked: a concurrent start for a just-dropped module can at worst leave
     # one stale file, which status/freshness checks ignore and the next revision removes.)
-    from backend import exams, remediation
+    from backend import exams, remediation, review_items
     module_ids = {m.get("id") for m in revised.get("modules", [])}
     exams.prune_pending(content_dir, course_id, module_ids | {"final"})
     remediation.prune(content_dir, course_id, module_ids | {"final"})
+    # review-items are keyed by lesson id (like spine.json), not exam key -> reuse `seen`,
+    # the lesson-id set already validated above and used for spine.prune.
+    review_items.prune(content_dir, course_id, seen)
     return revised

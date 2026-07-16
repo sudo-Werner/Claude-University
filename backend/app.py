@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 
@@ -549,6 +549,39 @@ def create_app(db_path=None):
         finally:
             conn.close()
         return jsonify({"due": due})
+
+    @app.get("/api/courses/<course_id>/lessons/<lesson_id>/review-items")
+    def get_review_items(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        lesson_meta = next(
+            (l for l in courses.flatten_lessons(manifest) if l["id"] == lesson_id), None)
+        if lesson_meta is None:
+            return jsonify({"error": "lesson not found"}), 404
+        conn = db.get_connection(path)
+        try:
+            review_count = len(srs.reviews_by_lesson(conn, course_id).get(lesson_id, []))
+        finally:
+            conn.close()
+        spine_entry = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"].get(lesson_id)
+        cached_lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
+        existing_checks = cached_lesson.get("checks", []) if isinstance(cached_lesson, dict) else []
+        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        try:
+            with generation._gen_lock(("review-items", course_id, lesson_id)):
+                result = review_items.ensure_review_items(
+                    courses.CONTENT_DIR, course_id, lesson_id, review_count,
+                    lesson_meta=lesson_meta, spine_entry=spine_entry,
+                    existing_checks=existing_checks, generate=generate,
+                )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not prepare fresh review questions"}), 502
+        return jsonify({"items": result["items"]})
 
     @app.post("/api/courses/<course_id>/revise")
     def post_course_revise(course_id):
