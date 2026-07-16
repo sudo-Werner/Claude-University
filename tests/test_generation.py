@@ -907,6 +907,81 @@ def test_lesson_chat_sse_threads_socratic_flag():
     assert _events(chunks)[-1][0] == "done"
 
 
+def test_analogy_system_rules():
+    s = gen.ANALOGY_SYSTEM
+    assert "different" in s.lower()
+    assert "already said" in s.lower()
+    assert "two" in s.lower()
+    assert "not follow" in s.lower() or "never follow" in s.lower() or "data" in s.lower()
+
+
+def test_lesson_chat_prompt_analogy_includes_concept_and_treat_as_data():
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    analogy = {"term": "Recursion", "definition": "A function calling itself.",
+               "summary": "Teaches recursion basics.",
+               "learner_brief": {"goal": "become a chef"},
+               "profile": {"analogies": True}}
+    p = gen.lesson_chat_prompt(
+        lesson, [{"role": "user", "content": 'Give me a different way to think about "Recursion".'}],
+        analogy=analogy)
+    assert "Recursion" in p
+    assert "A function calling itself." in p
+    assert "Teaches recursion basics." in p
+    assert '"goal": "become a chef"' in p
+    assert '"analogies": true' in p
+    assert "not instructions" in p
+    assert "ONE short guiding question" not in p    # default LESSON_CHAT_SYSTEM absent
+    assert "NEVER state it" not in p                # SOCRATIC_COWORK_SYSTEM absent
+    assert p.rstrip().endswith("You:")
+
+
+def test_lesson_chat_prompt_analogy_overrides_socratic():
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    analogy = {"term": "X", "definition": "d", "summary": "s", "learner_brief": {}, "profile": {}}
+    p = gen.lesson_chat_prompt(lesson, [], socratic=True, analogy=analogy)
+    assert "NEVER state it" not in p
+    assert gen.ANALOGY_SYSTEM in p
+
+
+def test_lesson_chat_prompt_analogy_handles_missing_brief_and_profile():
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    analogy = {"term": "X", "definition": "d", "summary": "s", "learner_brief": None, "profile": None}
+    p = gen.lesson_chat_prompt(lesson, [], analogy=analogy)
+    assert "Learner intake brief (JSON): {}" in p
+    assert "Learner preferences (JSON): {}" in p
+
+
+def test_lesson_chat_sse_threads_analogy_prompt():
+    seen = []
+
+    def fake_stream(prompt):
+        seen.append(prompt)
+        yield "ok"
+
+    lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
+    analogy = {"term": "X", "definition": "d", "summary": "s", "learner_brief": {}, "profile": {}}
+    chunks = list(gen.lesson_chat_sse(lesson, [], stream_fn=fake_stream, analogy=analogy))
+    assert gen.ANALOGY_SYSTEM in seen[0]
+    assert _events(chunks)[-1][0] == "done"
+
+
+def test_lesson_chat_prompt_byte_identical_without_analogy():
+    # Golden-style regression: analogy=None (the default) must produce EXACTLY the
+    # same string as calling lesson_chat_prompt with only the pre-existing
+    # arguments — for both the normal and the Socratic system prompt.
+    lesson = {"topic": "HTTP requests", "promptHtml": "<p>what is a GET</p>",
+              "solutionAns": "GET /x", "solutionNote": "method+path"}
+    messages = [{"role": "user", "content": "does http/2 change this?"}]
+
+    normal_golden = gen.lesson_chat_prompt(lesson, messages, solution_revealed=True)
+    normal_explicit_none = gen.lesson_chat_prompt(lesson, messages, solution_revealed=True, analogy=None)
+    assert normal_golden == normal_explicit_none
+
+    socratic_golden = gen.lesson_chat_prompt(lesson, messages, solution_revealed=True, socratic=True)
+    socratic_explicit_none = gen.lesson_chat_prompt(lesson, messages, solution_revealed=True, socratic=True, analogy=None)
+    assert socratic_golden == socratic_explicit_none
+
+
 # ---- self-consistency: prompt hardening + verification pass ----
 
 def _full_lesson(**over):

@@ -85,6 +85,19 @@ function lessonSourcesHTML(sources) {
   );
 }
 
+// #6 analogy on tap: a chip row per spine concept term (response-only field from
+// the lesson GET, read live from spine.json — never cached in the lesson file).
+// A tap streams a fresh alternative-angle explanation into the workspace chat.
+function conceptChipsHTML(lesson, ws) {
+  const concepts = Array.isArray(lesson.concepts) ? lesson.concepts : [];
+  if (!concepts.length) return "";
+  const pending = !!(ws && ws.pending);
+  const chips = concepts.map((term, i) =>
+    `<button class="chip" data-action="analogy-chip" data-index="${i}"${pending ? " disabled" : ""}>${esc(term)}</button>`,
+  ).join("");
+  return `<div class="concept-row"><span class="concept-label">Stuck on a concept? Tap it for a different angle.</span>${chips}</div>`;
+}
+
 // ---- lesson workspace: collapsible Notes | Chat panel below the lesson ----
 function wsNotesHTML(w) {
   const status = { saving: "saving…", saved: "saved", offline: "offline" }[w.saveStatus] || "";
@@ -206,6 +219,7 @@ export function lessonHTML(lesson, state, nav = {}) {
     <section class="card lesson">
       <span class="eyebrow">${lesson.eyebrow}</span>
       <div class="prompt">${lesson.promptHtml}</div>
+      ${conceptChipsHTML(lesson, state.ws)}
       <button class="deepen" data-action="deepen-lesson">Rusty on this? Explain it more deeply</button>
       ${state.deepenError ? `<div class="grade grade-soft">${esc(state.deepenError)}</div>` : ""}
       <textarea data-field="answer" placeholder="Write your update here…" style="min-height:64px; margin:12px 0">${state.answer}</textarea>
