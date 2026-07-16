@@ -564,3 +564,10 @@ textarea::placeholder{color:#b3a994}
 .tr-status.passed { color: var(--ok, #2e7d4f); font-weight: 600; }
 .tr-status.failed { color: var(--warn, #b26a00); }
 .tr-note { color: var(--mut, #8a7d6d); font-size: 12px; margin: 14px 0 4px; }
+.rem-builds { font-size: 12px; color: var(--text-dim, #8a7d6d); margin: 0 0 8px; }
+.rem-chip { display: inline-block; margin: 0 4px 4px 4px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border-field, #d8cfc2); background: transparent; font-size: 12px; cursor: pointer; color: inherit; }
+.rem-chip:hover { border-color: var(--purple, #7c6aff); }
+.rem-apply { margin: 12px 0 4px; padding-top: 10px; border-top: 1px dashed var(--border-field, #d8cfc2); }
+.rem-apply textarea { width: 100%; min-height: 72px; margin: 8px 0; }
+.rem-apply-prompt { font-family: var(--serif); font-size: 15px; line-height: 1.55; }
+.rem-model { margin-top: 8px; font-size: 14px; color: var(--text-2, inherit); }

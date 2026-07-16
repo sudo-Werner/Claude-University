@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
@@ -464,7 +464,8 @@ export async function init({ window, fetch }) {
       return;
     }
     ui.screen = "remediation";
-    ui.remState = { examKey, session, items: flatPractice(session), answers: {}, results: {} };
+    ui.remState = { examKey, session, items: flatPractice(session), answers: {}, results: {},
+                    applyAnswers: {}, applyResults: {}, applyBusy: {} };
     log("remediation_started", { courseId: ui.courseId, topicId: examKey });
     paintRemediation();
   }
@@ -472,7 +473,7 @@ export async function init({ window, fetch }) {
   function paintRemediation() {
     const st = ui.remState;
     const view = root.querySelector("#view");
-    view.innerHTML = remediationHTML(st.session, st);
+    view.innerHTML = remediationHTML(st.session, st, ui.manifest);
     view.querySelectorAll("[data-rq-choice]").forEach((b) => {
       b.addEventListener("click", () =>
         answerPractice(Number(b.getAttribute("data-rq")), Number(b.getAttribute("data-rq-choice"))));
@@ -484,8 +485,52 @@ export async function init({ window, fetch }) {
         answerPractice(k, inp ? inp.value : "");
       });
     });
+    // Apply-it textareas update state without a repaint (a repaint would steal
+    // focus on every keystroke); only their button's disabled state refreshes.
+    view.querySelectorAll("textarea[data-rem-apply]").forEach((t) => {
+      t.addEventListener("input", () => {
+        const gi = Number(t.getAttribute("data-rem-apply"));
+        st.applyAnswers[gi] = t.value;
+        const btn = view.querySelector(`[data-action="rem-apply"][data-gap="${gi}"]`);
+        if (btn) btn.disabled = !t.value.trim() || !!st.applyBusy[gi];
+      });
+    });
+    view.querySelectorAll('[data-action="rem-apply"]').forEach((b) => {
+      b.addEventListener("click", () => submitApply(Number(b.getAttribute("data-gap"))));
+    });
+    // Builds-on chips: trace the weakness to its upstream lesson (Item D).
+    view.querySelectorAll("[data-lesson]").forEach((b) => {
+      b.addEventListener("click", () => openLesson(b.getAttribute("data-lesson")));
+    });
     view.querySelector('[data-action="retake-exam"]').addEventListener("click", () => showExam(st.examKey));
     view.querySelector('[data-action="back-curriculum"]').addEventListener("click", showCurriculum);
+  }
+
+  async function submitApply(gi) {
+    const st = ui.remState;
+    if (!st) return;
+    const answer = (st.applyAnswers[gi] || "").trim();
+    const prior = st.applyResults[gi];
+    if (!answer || st.applyBusy[gi] || (prior && prior.verdict)) return; // one submission per gap
+    st.applyBusy[gi] = true;
+    paintRemediation();
+    const result = await gradeRemediationApply({
+      fetch, courseId: ui.courseId, examKey: st.examKey, gapIndex: gi, answer,
+    });
+    if (ui.screen !== "remediation" || ui.remState !== st) return; // navigated away mid-grade
+    st.applyBusy[gi] = false;
+    st.applyResults[gi] = result || { error: "Couldn't grade this answer right now." };
+    if (result && result.verdict) {
+      const gap = st.session.gaps[gi] || {};
+      // Apply verdicts feed mastery through the lesson_explained pool; the
+      // examKey/attempt/index markers are what the backend retake gate counts.
+      log("lesson_explained", {
+        courseId: ui.courseId, topicId: gap.lessonId,
+        payload: { verdict: result.verdict, source: "remediation",
+                   examKey: st.examKey, attempt: st.session.attempt, index: gi },
+      });
+    }
+    paintRemediation();
   }
 
   function answerPractice(k, answer) {
@@ -500,7 +545,8 @@ export async function init({ window, fetch }) {
     // checks; the source tag keeps the provenance readable in the event log.
     log("lesson_check", {
       courseId: ui.courseId, topicId: item.lessonId,
-      payload: { index: k, type: item.check.type, correct: result.correct, source: "remediation" },
+      payload: { index: k, type: item.check.type, correct: result.correct, source: "remediation",
+                 examKey: st.examKey, attempt: st.session.attempt },
     });
     paintRemediation();
   }

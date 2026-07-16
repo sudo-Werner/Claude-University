@@ -180,3 +180,17 @@ export async function loadTranscript({ fetch }) {
   if (!resp.ok) return null;
   return resp.json();
 }
+
+export async function gradeRemediationApply({ fetch, courseId, examKey, gapIndex, answer }) {
+  const resp = await fetch(`/api/courses/${courseId}/exams/${examKey}/remediation/grade`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gapIndex, answer }),
+  });
+  if (!resp.ok) {
+    let message = "Couldn't grade this answer right now.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}
