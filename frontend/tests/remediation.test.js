@@ -89,6 +89,25 @@ test("remediationComplete needs all practice plus every present apply", () => {
   assert.equal(remediationComplete(legacy, { ...EMPTY, results: allPractice }), true);      // no apply anywhere
 });
 
+test("gap with an unusable (blank prompt) apply renders no block and doesn't gate completion", () => {
+  const unusable = {
+    examKey: "m1", attempt: 1,
+    gaps: [
+      { lessonId: "c1-l1", lessonTitle: "L1", objectives: [],
+        explanationHtml: "<p>e</p>",
+        practice: [{ type: "mcq", prompt: "<p>Q</p>", choices: ["a", "b"], answer: 0, explanation: "e" }],
+        apply: { prompt: "", modelAnswer: "x" } },
+    ],
+  };
+  const html = remediationHTML(unusable, { ...EMPTY }, MANIFEST);
+  assert.ok(!html.includes('data-action="rem-apply"'));                // no apply block rendered
+  assert.equal(remediationComplete(unusable, { ...EMPTY, results: { 0: { correct: true } } }), true);
+  // control: a proper apply on the same shape still requires a verdict
+  const proper = { ...unusable,
+    gaps: [{ ...unusable.gaps[0], apply: { prompt: "<p>p</p>", modelAnswer: "m" } }] };
+  assert.equal(remediationComplete(proper, { ...EMPTY, results: { 0: { correct: true } } }), false);
+});
+
 test("retake button is disabled with unlock copy until the session is complete", () => {
   const locked = remediationHTML(SESSION, { ...EMPTY }, MANIFEST);
   assert.ok(/data-action="retake-exam"[^>]*disabled/.test(locked));

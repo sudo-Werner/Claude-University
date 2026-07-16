@@ -240,3 +240,19 @@ def test_session_completed_legacy_session_without_apply(tmp_path):
     for i in range(4):
         _mark(conn, i, "lesson_check", _check_payload(i))
     assert remediation.session_completed(conn, tmp_path, "c1", "m1", 1)  # practice alone suffices
+
+
+def test_session_completed_ignores_gap_with_unusable_apply(tmp_path):
+    # A gap whose apply dict is present but blank (e.g. a stripped/whitespace
+    # prompt) must not be treated as "has an apply task": the grade route
+    # (backend/app.py grade_remediation_apply) would refuse to grade it, so
+    # counting it as expected would permanently lock the retake.
+    conn = _conn()
+    raw = _gaps(WEAK[:1])
+    raw["gaps"][0]["apply"] = {"prompt": " ", "modelAnswer": "x"}
+    s = remediation.finalize_session(raw, WEAK[:1], "m1", "c1", 1)
+    remediation.save_session(tmp_path, "c1", s)
+    assert not remediation.session_completed(conn, tmp_path, "c1", "m1", 1)
+    for i in range(2):                                             # 1 gap x 2 practice items
+        _mark(conn, i, "lesson_check", _check_payload(i))
+    assert remediation.session_completed(conn, tmp_path, "c1", "m1", 1)  # unusable apply not expected

@@ -201,6 +201,19 @@ def ensure_session(content_dir, course_id, exam_key, failed_payload, *,
     return session
 
 
+def _usable_apply(gap):
+    """True when gap's apply task has a non-blank prompt AND a non-blank
+    modelAnswer — the same rule /remediation/grade (backend/app.py) enforces
+    before it will grade an answer. A gap whose apply dict is present but
+    blank/malformed must NOT count as "has an apply task" here: the grade
+    route would refuse it, so treating it as expected would permanently lock
+    the retake."""
+    apply_item = gap.get("apply") if isinstance(gap, dict) else None
+    return (isinstance(apply_item, dict)
+            and isinstance(apply_item.get("prompt"), str) and apply_item["prompt"].strip()
+            and isinstance(apply_item.get("modelAnswer"), str) and apply_item["modelAnswer"].strip())
+
+
 def _marked_indices(conn, course_id, exam_key, attempt, event_type):
     """Distinct payload.index values from remediation-marked events of one type.
     Payloads are client-forgeable: anything malformed, unmarked (legacy answers
@@ -231,16 +244,18 @@ def session_completed(conn, content_dir, course_id, exam_key, expected_attempt):
     """True when the stored gap review for the given failed attempt has been fully
     worked: every practice item answered (flat indices matching the frontend's
     flatPractice ordering) and every apply task submitted — apply items are counted
-    only when the session has them (legacy sessions on the Pi don't). No session on
-    disk, or a session for an older attempt, means the corrective step for THIS
-    attempt hasn't happened -> False."""
+    only when the session has a USABLE one (see _usable_apply): legacy sessions on
+    the Pi have none, and a blank/malformed apply dict is excluded too, since the
+    grade route would refuse to grade it and that would permanently lock the
+    retake. No session on disk, or a session for an older attempt, means the
+    corrective step for THIS attempt hasn't happened -> False."""
     session = load_session(content_dir, course_id, exam_key)
     if session is None or session.get("attempt") != expected_attempt:
         return False
     attempt = session.get("attempt")
     gaps = [g for g in session.get("gaps", []) if isinstance(g, dict)]
     practice_total = sum(len(g.get("practice") or []) for g in gaps)
-    apply_expected = {i for i, g in enumerate(gaps) if isinstance(g.get("apply"), dict)}
+    apply_expected = {i for i, g in enumerate(gaps) if _usable_apply(g)}
     checks = _marked_indices(conn, course_id, exam_key, attempt, "lesson_check")
     if len({i for i in checks if 0 <= i < practice_total}) < practice_total:
         return False

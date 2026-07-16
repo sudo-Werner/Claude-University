@@ -20,6 +20,20 @@ export function lessonIndexFrom(manifest) {
   return idx;
 }
 
+// A gap's apply task is usable only when it has a non-blank prompt AND a
+// non-blank modelAnswer — the same rule the backend grade route (POST
+// .../remediation/grade in backend/app.py) enforces before it will grade an
+// answer, and the same rule backend/remediation.py's session_completed uses
+// server-side. A gap with a present-but-blank/malformed apply dict must NOT
+// be treated as "has an apply task" here, or the retake unlock (and this
+// render gate) could depend on a task nothing can ever grade.
+export function usableApply(gap) {
+  const apply = gap && gap.apply;
+  return !!(apply
+    && typeof apply.prompt === "string" && apply.prompt.trim()
+    && typeof apply.modelAnswer === "string" && apply.modelAnswer.trim());
+}
+
 // The retake unlock (Item B): every practice item answered and every present
 // apply task graded. The backend detector is authoritative; this mirrors it.
 export function remediationComplete(session, state) {
@@ -28,7 +42,7 @@ export function remediationComplete(session, state) {
     if (!(state.results && state.results[k])) return false;
   }
   return (session.gaps || []).every((g, gi) =>
-    !g.apply || !!(state.applyResults && state.applyResults[gi] && state.applyResults[gi].verdict));
+    !usableApply(g) || !!(state.applyResults && state.applyResults[gi] && state.applyResults[gi].verdict));
 }
 
 function practiceItem(check, k, state) {
@@ -61,7 +75,7 @@ function practiceItem(check, k, state) {
 const APPLY_LABEL = { correct: "Correct", close: "Almost there", incorrect: "Not quite" };
 
 function applyBlock(gap, gi, state) {
-  if (!gap.apply || !gap.apply.prompt) return "";
+  if (!usableApply(gap)) return "";
   const res = state.applyResults && state.applyResults[gi];
   const busy = !!(state.applyBusy && state.applyBusy[gi]);
   const done = !!(res && res.verdict);
