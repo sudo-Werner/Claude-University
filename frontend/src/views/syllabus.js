@@ -8,9 +8,16 @@ function objList(objectives) {
   return items ? `<ul class="obj-list">${items}</ul>` : "";
 }
 
-function moduleBlock(module) {
+// Item D: the compiled prereq graph's first consumer. Plain text only — the
+// syllabus renders pre-enrolment (and in the revision review), so no links.
+function buildsOnLine(lesson, titles) {
+  const names = (lesson.prereqs || []).map((id) => titles[id]).filter(Boolean);
+  return names.length ? `<div class="syl-builds">Builds on: ${names.map(esc).join(", ")}</div>` : "";
+}
+
+function moduleBlock(module, titles) {
   const lessons = (module.lessons || [])
-    .map((l) => `<div class="syl-lesson"><div class="syl-lesson-title">${esc(l.title || "")}</div>${objList(l.objectives)}</div>`)
+    .map((l) => `<div class="syl-lesson"><div class="syl-lesson-title">${esc(l.title || "")}</div>${objList(l.objectives)}${buildsOnLine(l, titles)}</div>`)
     .join("");
   return `<section class="syl-module"><h3>${esc(module.title || "")}</h3>${lessons}</section>`;
 }
@@ -27,7 +34,9 @@ export function syllabusHTML(course, { actions = true } = {}) {
   const skills = (course.skills || []).map((s) => `<li>${esc(s)}</li>`).join("");
   const outcomes = objList(course.outcomes);
   const level = course.level || {};
-  const modules = (course.modules || []).map(moduleBlock).join("");
+  const titles = {};
+  (course.modules || []).forEach((m) => (m.lessons || []).forEach((l) => { titles[l.id] = l.title || ""; }));
+  const modules = (course.modules || []).map((m) => moduleBlock(m, titles)).join("");
   return (
     `<div class="syllabus">` +
     `<div class="eyebrow">PROPOSED COURSE</div>` +

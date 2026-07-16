@@ -6,19 +6,32 @@ function pct(score) {
   return `${Math.round((score || 0) * 100)}%`;
 }
 
+function attemptsLabel(n) {
+  return `${n} attempt${n === 1 ? "" : "s"}`;
+}
+
 function examRow(r) {
   let status = `<span class="tr-status">Not taken</span>`;
   if (r.passed) {
     status = `<span class="tr-status passed">${pct(r.bestScore)}` +
-      `${r.passedOn ? ` · ${esc(r.passedOn)}` : ""}</span>`;
+      `${r.passedOn ? ` · ${esc(r.passedOn)}` : ""}` +
+      `${r.attempts ? ` · ${attemptsLabel(r.attempts)}` : ""}</span>`;
   } else if (r.attempts) {
-    status = `<span class="tr-status failed">best ${pct(r.bestScore)} · ${r.attempts} attempt${r.attempts === 1 ? "" : "s"}</span>`;
+    status = `<span class="tr-status failed">best ${pct(r.bestScore)} · ${attemptsLabel(r.attempts)}</span>`;
   }
   return `<div class="tr-row"><span class="tr-name">${esc(r.title)}</span>${status}</div>`;
 }
 
+// Capstone rows reuse the exam-row treatment; module scopes get a "Capstone:"
+// prefix, the course scope's title is already "Course capstone".
+function capstoneRow(r) {
+  const title = r.scope === "course" ? r.title : `Capstone: ${r.title}`;
+  return examRow({ ...r, title });
+}
+
 function courseBlock(c) {
-  const rows = (c.modules || []).map(examRow).join("") + examRow(c.final || {});
+  const rows = (c.modules || []).map(examRow).join("") + examRow(c.final || {}) +
+    (c.capstones || []).map(capstoneRow).join("");
   const passed = c.coursePassed
     ? `<span class="course-passed">Passed${c.passedOn ? ` — ${esc(c.passedOn)}` : ""}</span>`
     : "";

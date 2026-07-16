@@ -632,6 +632,21 @@ test("syllabusHTML drops non-http(s) source URLs", () => {
   assert.ok(html.includes("https://ok.example/x"));
 });
 
+test("syllabusHTML renders builds-on lines from prereqs, skipping unknown ids", () => {
+  const course = { ...COURSE, modules: [{ id: "m1", title: "Foundations", outcomes: [OBJ],
+    lessons: [
+      { id: "l1", title: "Vectors <b>", estMinutes: 90, objectives: [OBJ], prereqs: [] },
+      { id: "l2", title: "Matrices", estMinutes: 90, objectives: [OBJ], prereqs: ["l1", "ghost"] },
+    ] }] };
+  const html = syllabusHTML(course);
+  assert.ok(html.includes("Builds on: Vectors &lt;b&gt;"));     // resolved title, esc()'d
+  assert.ok(!html.includes("ghost"));                            // unknown id skipped silently
+});
+
+test("syllabusHTML omits builds-on when prereqs are empty or absent", () => {
+  assert.ok(!syllabusHTML(COURSE).includes("Builds on:"));       // COURSE's lesson has prereqs: []
+});
+
 test("dashboard shows the streak tile with day count", () => {
   const html = dashboardHTML({ ...DASHBOARD_SEED, streakDays: 4 }, idleTimer);
   assert.match(html, /STREAK/);
