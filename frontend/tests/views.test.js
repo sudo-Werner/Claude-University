@@ -10,6 +10,7 @@ import { loadingHTML, LESSON_STAGES, CAPSTONE_STAGES } from "../src/views/loadin
 import { libraryHTML } from "../src/views/library.js";
 import { syllabusHTML } from "../src/views/syllabus.js";
 import { homeHTML } from "../src/views/home.js";
+import { activateHTML } from "../src/views/activate.js";
 const DASHBOARD_SEED = {
   topic: "Backpropagation, intuitively",
   sub: "Module 3 · Neural Networks · Lesson 2",
@@ -917,4 +918,19 @@ test("capstone submit errors render softly and keep the card usable", () => {
   const html = capstoneHTML(CAP, { work: "w", busy: false, result: { error: "boom <x>" } });
   assert.ok(html.includes("boom &lt;x&gt;"));
   assert.doesNotMatch(html, /data-action="cap-submit"[^>]*disabled/);
+});
+
+test("activateHTML escapes the title and shows the prior-knowledge question", () => {
+  const html = activateHTML("<script>alert(1)</script> Recursion");
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /BEFORE YOU START/);
+  assert.match(html, /What do you already know — or suspect — about this topic\?/);
+  assert.match(html, /A sentence or two is plenty\. The lesson will build on your answer\./);
+  assert.match(html, /maxlength="2000"/);
+  assert.match(html, /data-field="pk-text"/);
+  assert.match(html, /data-action="pk-start"/);
+  assert.match(html, /data-action="pk-skip"/);
+  assert.match(html, />Start lesson</);
+  assert.match(html, />Skip</);
 });
