@@ -571,3 +571,14 @@ textarea::placeholder{color:#b3a994}
 .rem-apply textarea { width: 100%; min-height: 72px; margin: 8px 0; }
 .rem-apply-prompt { font-family: var(--serif); font-size: 15px; line-height: 1.55; }
 .rem-model { margin-top: 8px; font-size: 14px; color: var(--text-2, inherit); }
+.cap-submit textarea { width: 100%; min-height: 120px; margin: 8px 0; }
+.cap-crit { padding: 10px 0; border-top: 1px solid var(--border-field, #d8cfc2); }
+.cap-chead { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.cap-cname { font-size: 14px; font-weight: 600; }
+.cap-badge { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.cap-badge-met { color: var(--ok, #2e7d4f); }
+.cap-badge-partial { color: var(--warn, #b26a00); }
+.cap-badge-unmet { color: var(--warn, #b26a00); }
+.cap-note { font-family: var(--serif); font-size: 14px; line-height: 1.5; color: var(--text-2, inherit); }
+.cap-evidence { font-size: 13px; font-style: italic; color: var(--text-dim, #8a7d6d); margin-top: 4px; }
+.cap-summary { font-family: var(--serif); font-size: 14px; line-height: 1.55; margin-top: 12px; }

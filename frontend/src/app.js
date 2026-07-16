@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
@@ -356,8 +356,38 @@ export async function init({ window, fetch }) {
       view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
       return;
     }
-    view.innerHTML = capstoneHTML(cap);
+    ui.capState = { scope, cap, work: "", busy: false, result: null };
+    paintCapstone();
+  }
+
+  function paintCapstone() {
+    const st = ui.capState;
+    const view = root.querySelector("#view");
+    view.innerHTML = capstoneHTML(st.cap, st);
     view.querySelector('[data-action="back"]').addEventListener("click", showCurriculum);
+    // The textarea updates state without a repaint (a repaint would steal focus
+    // on every keystroke); only the submit button's disabled state refreshes.
+    const ta = view.querySelector('[data-field="cap-work"]');
+    if (ta) ta.addEventListener("input", () => {
+      st.work = ta.value;
+      const btn = view.querySelector('[data-action="cap-submit"]');
+      if (btn) btn.disabled = !ta.value.trim() || st.busy;
+    });
+    const submit = view.querySelector('[data-action="cap-submit"]');
+    if (submit) submit.addEventListener("click", submitCapstoneWork);
+  }
+
+  // The server records capstone_result itself — the client logs no event here.
+  async function submitCapstoneWork() {
+    const st = ui.capState;
+    if (!st || st.busy || !(st.work || "").trim()) return;
+    st.busy = true;
+    paintCapstone();
+    const result = await submitCapstone({ fetch, courseId: ui.courseId, scope: st.scope, work: st.work.trim() });
+    if (ui.screen !== "capstone" || ui.capState !== st) return; // navigated away mid-grade
+    st.busy = false;
+    st.result = result || { error: "Couldn't grade your capstone right now." };
+    paintCapstone();
   }
 
   // ---- summative exams (sub-project C) ----
@@ -438,7 +468,8 @@ export async function init({ window, fetch }) {
     view.querySelectorAll("[data-lesson]").forEach((b) => {
       b.addEventListener("click", () => openLesson(b.getAttribute("data-lesson")));
     });
-    view.querySelector('[data-action="retake-exam"]').addEventListener("click", () => showExam(st.examKey));
+    const rt = view.querySelector('[data-action="retake-exam"]');
+    if (rt) rt.addEventListener("click", () => showExam(st.examKey));
     const fix = view.querySelector('[data-action="fix-gaps"]');
     if (fix) fix.addEventListener("click", () => showRemediation(st.examKey));
     view.querySelector('[data-action="back-curriculum"]').addEventListener("click", showCurriculum);
