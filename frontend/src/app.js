@@ -4,12 +4,13 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
 import { lessonHTML, ratingLocked } from "./views/lesson.js";
+import { activateHTML } from "./views/activate.js";
 import { curriculumHTML } from "./views/curriculum.js";
 import { capstoneHTML } from "./views/capstone.js";
 import { libraryHTML } from "./views/library.js";
@@ -631,6 +632,59 @@ export async function init({ window, fetch }) {
     ui.screen = "lesson-loading";
     const view = root.querySelector("#view");
     if (view) startLoading(view, "lesson", LESSON_STAGES);
+    // Prior-knowledge activation: a not-yet-generated lesson gets one free-text
+    // question before the slow generation call; an already-generated lesson (or a
+    // failed/errored status check) opens exactly as before — the feature only adds.
+    if (!opts.review) {
+      const status = await getLessonStatus({ fetch, courseId: ui.courseId, lessonId });
+      if (ui.screen !== "lesson-loading" || ui.loadSeq !== seq) return; // navigated away mid-check
+      if (!status.error && status.generated === false) {
+        ui.screen = "activate";
+        paintActivate(lessonId, opts, seq);
+        return;
+      }
+    }
+    await finishOpenLesson(lessonId, opts, seq);
+  }
+
+  // The prior-knowledge question card. Both buttons funnel into the same
+  // "continue" path, which re-arms the loading skeleton and hands off to
+  // finishOpenLesson — the exact tail a cache hit already takes.
+  function paintActivate(lessonId, opts, seq) {
+    const view = root.querySelector("#view");
+    if (!view) return;
+    const found = flatLessons().find((l) => l.id === lessonId);
+    const title = found ? found.title : lessonId;
+    view.innerHTML = activateHTML(title);
+    let text = "";
+    // The textarea updates local state without a repaint — a repaint would steal
+    // focus on every keystroke (same idiom as the capstone workspace textarea).
+    const ta = view.querySelector('[data-field="pk-text"]');
+    if (ta) ta.addEventListener("input", () => { text = ta.value; });
+    const continueToLesson = async () => {
+      ui.screen = "lesson-loading";
+      const v = root.querySelector("#view");
+      if (v) startLoading(v, "lesson", LESSON_STAGES);
+      await finishOpenLesson(lessonId, opts, seq);
+    };
+    const startBtn = view.querySelector('[data-action="pk-start"]');
+    if (startBtn) startBtn.addEventListener("click", async () => {
+      const trimmed = text.trim();
+      if (trimmed) {
+        log("prior_knowledge", { courseId: ui.courseId, topicId: lessonId, payload: { text: trimmed } });
+        await doFlush(); // the event must be in the DB before the lesson GET reads it
+      }
+      if (ui.screen !== "activate" || ui.loadSeq !== seq) return; // navigated away mid-flush
+      await continueToLesson();
+    });
+    const skipBtn = view.querySelector('[data-action="pk-skip"]');
+    if (skipBtn) skipBtn.addEventListener("click", () => { continueToLesson(); });
+  }
+
+  // Shared tail: load the (now-cached, or freshly generated) lesson and show it.
+  // Used both when the status check says "already generated" and by the activate
+  // card's two buttons. Identical body to the pre-refactor openLesson tail.
+  async function finishOpenLesson(lessonId, opts, seq) {
     const lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId });
     if (ui.screen !== "lesson-loading" || ui.loadSeq !== seq) return; // navigated away mid-load
     ui.lesson = lesson;
