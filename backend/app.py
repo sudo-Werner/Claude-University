@@ -350,7 +350,8 @@ def create_app(db_path=None):
         apply_item = gap.get("apply")
         # Legacy sessions on the Pi predate apply items — nothing to grade there.
         if not (isinstance(apply_item, dict)
-                and isinstance(apply_item.get("prompt"), str) and apply_item["prompt"].strip()):
+                and isinstance(apply_item.get("prompt"), str) and apply_item["prompt"].strip()
+                and isinstance(apply_item.get("modelAnswer"), str) and apply_item["modelAnswer"].strip()):
             return jsonify({"error": "this gap has no apply task"}), 400
         answer = body.get("answer")
         answer = answer.strip() if isinstance(answer, str) else ""

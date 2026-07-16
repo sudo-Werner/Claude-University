@@ -900,6 +900,27 @@ def test_remediation_grade_400_for_legacy_gap_without_apply(tmp_path, monkeypatc
     assert r.status_code == 400
 
 
+def test_remediation_grade_400_for_gap_with_blank_modelAnswer(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    manifest, lesson_id = _fixture_course(courses, tmp_path)
+    cid = manifest["id"]
+    # Create a session with a gap whose apply has prompt but blank modelAnswer
+    from backend import remediation
+    gap = {"lessonId": lesson_id, "lessonTitle": "A", "objectives": [],
+           "explanationHtml": "<p>angle</p>",
+           "practice": [
+               {"type": "mcq", "prompt": "q", "choices": ["a", "b"],
+                "answer": 0, "explanation": "e"},
+           ],
+           "apply": {"prompt": "<p>x</p>", "modelAnswer": "  "}}
+    session = {"examKey": "m1", "courseId": cid, "attempt": 1,
+               "generatedAt": "2026-07-16T00:00:00+00:00", "gaps": [gap]}
+    remediation.save_session(tmp_path, cid, session)
+    r = client.post(f"/api/courses/{cid}/exams/m1/remediation/grade",
+                    json={"gapIndex": 0, "answer": "a"})
+    assert r.status_code == 400
+
+
 def test_final_locked_until_all_modules_passed(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     manifest, lesson_id = _fixture_course(courses, tmp_path)
