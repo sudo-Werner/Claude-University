@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { shellHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
@@ -974,9 +974,32 @@ export async function init({ window, fetch }) {
     log("lesson_check", {
       courseId: ui.courseId,
       topicId: ui.lesson.id,
-      payload: { index: i, type: check.type, correct: result.correct },
+      payload: {
+        index: i, type: check.type, correct: result.correct,
+        ...(ui.lessonState.freshItems ? { source: "review" } : {}),
+      },
     });
     paintLesson();
+  }
+
+  // Fires the fresh-retrieval-items generation for a review lesson right after its
+  // lessonState is created. Sets freshPending synchronously — before the caller's first
+  // paint — so the placeholder shows immediately. On resolve, adopts the items onto the
+  // CAPTURED lesson/lessonState only if the learner is still on that same lessonState
+  // (capture-then-guard, per sendWsChat's onScreen idiom) and hasn't already answered
+  // with the original checks. Every outcome clears freshPending; repaint only happens
+  // while still on the lesson screen for this same lessonState.
+  function fetchFreshItems(ls, lesson) {
+    ls.freshPending = true;
+    loadReviewItems({ fetch, courseId: ui.courseId, lessonId: lesson.id }).then((res) => {
+      if (ui.lessonState === ls && !res.error && Array.isArray(res.items) && res.items.length
+          && Object.keys(ls.checkResults).length === 0) {
+        lesson.checks = res.items;
+        ls.freshItems = true;
+      }
+      ls.freshPending = false;
+      if (ui.lessonState === ls && ui.screen === "lesson") paintLesson();
+    });
   }
 
   async function advanceAfterLesson() {
@@ -987,6 +1010,7 @@ export async function init({ window, fetch }) {
       ui.lesson = lesson;
       if (lessonFailed(ui.lesson)) { await refreshSummary(); if (ui.screen !== "lesson") return; showCourse(); return; }
       ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main", isReview: true };
+      fetchFreshItems(ui.lessonState, ui.lesson);
       log("lesson_view", { courseId: ui.courseId, topicId: nextId });
       showLesson();
       return;
@@ -1010,6 +1034,7 @@ export async function init({ window, fetch }) {
     ui.lesson = lesson;
     if (lessonFailed(ui.lesson)) { showCourse(); return; }
     ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main", isReview: true };
+    fetchFreshItems(ui.lessonState, ui.lesson);
     log("lesson_view", { courseId: ui.courseId, topicId: due[0] });
     if (!ui.timer.running) startTimer();
     showLesson();
