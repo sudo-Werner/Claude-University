@@ -78,12 +78,18 @@ def remediation_prompt(*, manifest, exam_key, weak_spots, spine_lessons):
         "objective's Bloom level is apply or higher, make its practice question require the "
         "learner to APPLY the objective — a scenario-based stem — not recall a definition, "
         "within the mcq/fill format above.\n"
+        "- apply: ONE free-response application task on those objectives: pose a NOVEL "
+        "scenario, case, or problem that does not appear in the lessons — the learner must "
+        "USE the concept to resolve it, not describe the concept. Shape: "
+        '{"prompt":"<the scenario, simple HTML (p, em, strong, code) only>",'
+        '"modelAnswer":"<what a correct answer covers>"}.\n'
         "Before emitting, re-answer each mcq question independently from the question text "
         "alone. Confirm the choice at answer is the answer you get, and that no distractor is "
         "also defensibly correct — if one is, rewrite it.\n"
         "Echo each gap's lessonId verbatim.\n"
         "Reply with ONLY a JSON object, no prose, no fence:\n"
-        '{"gaps":[{"lessonId":"<from gap>","explanationHtml":"<html>","practice":[...]}]}'
+        '{"gaps":[{"lessonId":"<from gap>","explanationHtml":"<html>","practice":[...],'
+        '"apply":{"prompt":"<html>","modelAnswer":"<text>"}}]}'
     )
 
 
@@ -102,6 +108,13 @@ def valid_remediation(obj, weak_spots):
         if not (isinstance(practice, list) and PRACTICE_MIN <= len(practice) <= PRACTICE_MAX):
             return False
         if not all(generation.valid_check(p) for p in practice):
+            return False
+        apply = g.get("apply")
+        if not isinstance(apply, dict):
+            return False
+        if not (isinstance(apply.get("prompt"), str) and apply["prompt"].strip()):
+            return False
+        if not (isinstance(apply.get("modelAnswer"), str) and apply["modelAnswer"].strip()):
             return False
     return True
 
@@ -127,6 +140,10 @@ def finalize_session(obj, weak_spots, exam_key, course_id, attempt):
             "objectives": [o for o in w.get("objectives", []) if isinstance(o, str)],
             "explanationHtml": generation.sanitize_html(g["explanationHtml"]),
             "practice": practice,
+            "apply": {
+                "prompt": generation.sanitize_html(g["apply"]["prompt"]),
+                "modelAnswer": generation.sanitize_html(g["apply"]["modelAnswer"]),
+            },
         })
     return {
         "examKey": exam_key,

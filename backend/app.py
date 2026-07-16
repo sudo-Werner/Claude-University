@@ -333,6 +333,47 @@ def create_app(db_path=None):
             return jsonify({"error": "could not prepare the gap review — try again"}), 502
         return jsonify(session)
 
+    @app.post("/api/courses/<course_id>/exams/<exam_key>/remediation/grade")
+    def grade_remediation_apply(course_id, exam_key):
+        if not _ID_RE.match(course_id) or not (exam_key == "final" or _ID_RE.match(exam_key)):
+            return jsonify({"error": "exam not found"}), 404
+        session = remediation.load_session(courses.CONTENT_DIR, course_id, exam_key)
+        if session is None:
+            return jsonify({"error": "no gap review on record for this exam"}), 404
+        body = request.get_json(silent=True) or {}
+        gap_index = body.get("gapIndex")
+        gaps = session.get("gaps", [])
+        if not (isinstance(gap_index, int) and not isinstance(gap_index, bool)
+                and 0 <= gap_index < len(gaps)):
+            return jsonify({"error": "gapIndex must identify a gap in the review"}), 400
+        gap = gaps[gap_index] if isinstance(gaps[gap_index], dict) else {}
+        apply_item = gap.get("apply")
+        # Legacy sessions on the Pi predate apply items — nothing to grade there.
+        if not (isinstance(apply_item, dict)
+                and isinstance(apply_item.get("prompt"), str) and apply_item["prompt"].strip()):
+            return jsonify({"error": "this gap has no apply task"}), 400
+        answer = body.get("answer")
+        answer = answer.strip() if isinstance(answer, str) else ""
+        if not answer:
+            return jsonify({"error": "answer is required"}), 400
+        # Reuse the exercise grader verbatim (verdict trio + note) — no new prompt builder.
+        prompt = generation.grade_prompt(
+            prompt_html=apply_item.get("prompt", ""),
+            solution_ans=apply_item.get("modelAnswer", ""),
+            solution_note="",
+            answer=answer,
+        )
+        try:
+            result = claude_client.run_structured(prompt, validate=generation.valid_grade)
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not grade this answer"}), 502
+        # modelAnswer is revealed only after grading, like a solution reveal.
+        return jsonify({"verdict": result["verdict"],
+                        "note": generation.sanitize_html(result["note"]),
+                        "modelAnswer": apply_item.get("modelAnswer", "")})
+
     @app.post("/api/courses/<course_id>/lessons/<lesson_id>/deepen")
     def deepen_lesson_route(course_id, lesson_id):
         if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):

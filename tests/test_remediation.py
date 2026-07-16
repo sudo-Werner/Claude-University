@@ -36,6 +36,7 @@ def _gaps(weak):
              "answer": 1, "explanation": "because"},
             {"type": "fill", "prompt": "Blank?", "answer": "word", "explanation": "why"},
         ],
+        "apply": {"prompt": "<p>A novel scenario.</p>", "modelAnswer": "Covers X and Y."},
     } for w in weak]}
 
 
@@ -135,3 +136,31 @@ def test_ensure_session_reuses_fresh_and_regenerates_stale(tmp_path):
                                     manifest=_manifest(), spine_lessons={},
                                     generate=lambda p, v: _gaps(WEAK[:1]))
     assert s3["attempt"] == 2 and len(s3["gaps"]) == 1            # regenerated
+
+
+def test_prompt_demands_apply_item_with_novel_scenario():
+    p = remediation.remediation_prompt(manifest=_manifest(), exam_key="m1",
+                                       weak_spots=WEAK, spine_lessons={})
+    assert '"apply"' in p and '"modelAnswer"' in p
+    assert "NOVEL scenario, case, or problem that does not appear in the lessons" in p
+
+
+def test_valid_remediation_requires_apply_on_new_generations():
+    good = _gaps(WEAK)
+    assert remediation.valid_remediation(good, WEAK)
+    missing = json.loads(json.dumps(good)); del missing["gaps"][0]["apply"]
+    assert not remediation.valid_remediation(missing, WEAK)
+    empty = json.loads(json.dumps(good)); empty["gaps"][0]["apply"]["prompt"] = " "
+    assert not remediation.valid_remediation(empty, WEAK)
+    no_model = json.loads(json.dumps(good)); no_model["gaps"][0]["apply"]["modelAnswer"] = ""
+    assert not remediation.valid_remediation(no_model, WEAK)
+
+
+def test_finalize_sanitizes_apply_fields():
+    raw = _gaps(WEAK)
+    raw["gaps"][0]["apply"] = {"prompt": "<p>Scenario <script>x()</script></p>",
+                               "modelAnswer": "Covers <script>y()</script> Z"}
+    s = remediation.finalize_session(raw, WEAK, "m1", "c1", 2)
+    assert "<script>" not in s["gaps"][0]["apply"]["prompt"]
+    assert "<script>" not in s["gaps"][0]["apply"]["modelAnswer"]
+    assert s["gaps"][1]["apply"]["modelAnswer"] == "Covers X and Y."

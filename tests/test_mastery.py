@@ -99,6 +99,15 @@ def test_performance_summary_struggling():
     assert "struggling" in s.lower()
 
 
+def test_accuracy_pool_folds_remediation_apply_verdicts():
+    conn = _conn()
+    _ev(conn, "lesson_explained", "demo-l1",
+        {"verdict": "close", "source": "remediation", "examKey": "m1",
+         "attempt": 1, "index": 0}, "2026-07-16T10:00:00Z")
+    pool = mastery._accuracy_pool(conn, "demo")
+    assert pool["demo-l1"] == (0.5, 1.0)
+
+
 def test_performance_summary_strong():
     conn = _conn()
     import tempfile, pathlib
