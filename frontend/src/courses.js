@@ -64,6 +64,20 @@ export async function explainAnswer({ fetch, courseId, lessonId, explanation }) 
   return resp.json();
 }
 
+export async function gradeTeaching({ fetch, courseId, lessonId, messages }) {
+  const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/teach`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages }),
+  });
+  if (!resp.ok) {
+    let message = "Couldn't grade your teaching right now.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}
+
 export async function loadLibrary({ fetch, courseId }) {
   const resp = await fetch(`/api/courses/${courseId}/library`);
   if (!resp.ok) {
