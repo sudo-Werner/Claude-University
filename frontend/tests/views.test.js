@@ -125,6 +125,37 @@ test("lesson shows a soft error if deepening failed", () => {
   assert.match(html, /Couldn't rewrite this lesson/);
 });
 
+test("lesson renders no concept chip row when concepts is absent or empty", () => {
+  const absent = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.doesNotMatch(absent, /concept-row/);
+  const empty = lessonHTML({ ...SAMPLE_LESSON, concepts: [] }, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.doesNotMatch(empty, /concept-row/);
+});
+
+test("lesson renders an escaped chip per concept term", () => {
+  const withConcepts = { ...SAMPLE_LESSON, concepts: ["Gradient", "<script>alert(1)</script>"] };
+  const html = lessonHTML(withConcepts, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.match(html, /concept-row/);
+  assert.match(html, /Stuck on a concept\? Tap it for a different angle\./);
+  assert.match(html, /data-action="analogy-chip" data-index="0"/);
+  assert.match(html, /data-action="analogy-chip" data-index="1"/);
+  assert.match(html, />Gradient</);
+  assert.doesNotMatch(html, /<script>alert\(1\)/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+});
+
+test("lesson disables concept chips while the workspace is pending", () => {
+  const withConcepts = { ...SAMPLE_LESSON, concepts: ["Gradient"] };
+  const idle = lessonHTML(withConcepts, { answer: "", hintVisible: false, solutionRevealed: false,
+    ws: { open: true, tab: "chat", notes: "", chat: [], pending: false, saveStatus: "" } });
+  assert.doesNotMatch(idle, /data-action="analogy-chip" data-index="0" disabled/);
+  const pending = lessonHTML(withConcepts, { answer: "", hintVisible: false, solutionRevealed: false,
+    ws: { open: true, tab: "chat", notes: "", chat: [], pending: true, saveStatus: "" } });
+  assert.match(pending, /data-action="analogy-chip" data-index="0" disabled/);
+  const noWs = lessonHTML(withConcepts, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.doesNotMatch(noWs, /data-action="analogy-chip" data-index="0" disabled/);
+});
+
 test("lesson shows no grade banner before checking", () => {
   const html = lessonHTML(SAMPLE_LESSON, { answer: "x", hintVisible: false, solutionRevealed: false });
   assert.doesNotMatch(html, /class="grade /);
