@@ -501,3 +501,76 @@ def test_kick_restock_single_flight_second_kick_is_noop(tmp_path):
     assert len(calls) == 1  # the second kick never called generate at all
     release.set()  # let the first run finish so its thread doesn't outlive the test
     time.sleep(0.3)
+
+
+# ---- submit_results ----
+
+def _good_results_body(**over):
+    body = {"client_event_id": "ce-1", "session_id": "s1", "round_id": "round-000000000001",
+            "format": "rapid_fire", "score": 6, "total": 8, "missed": {"c-l1": 2}}
+    body.update(over)
+    return body
+
+
+def test_submit_results_inserts_quiz_round_event_and_deletes_file(conn, tmp_path):
+    root = tmp_path / "courses"
+    quiz.save_round(root, "c", _round("round-000000000001"))
+    result = quiz.submit_results(root, conn, "c", _good_results_body())
+    assert result == {"ok": True}
+    row = conn.execute("SELECT event_type, course_id, topic_id, payload FROM events").fetchone()
+    assert row["event_type"] == "quiz_round"
+    assert row["course_id"] == "c"
+    assert row["topic_id"] == "round-000000000001"
+    payload = json.loads(row["payload"])
+    assert payload == {"format": "rapid_fire", "score": 6, "total": 8, "missed": {"c-l1": 2}}
+    assert quiz.bank_count(root, "c") == 0
+
+
+def test_submit_results_is_idempotent_on_client_event_id(conn, tmp_path):
+    root = tmp_path / "courses"
+    quiz.submit_results(root, conn, "c", _good_results_body())
+    quiz.submit_results(root, conn, "c", _good_results_body())  # replay
+    count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
+    assert count == 1
+
+
+def test_submit_results_missing_round_file_is_still_ok(conn, tmp_path):
+    root = tmp_path / "courses"
+    result = quiz.submit_results(root, conn, "c", _good_results_body())
+    assert result == {"ok": True}
+
+
+@pytest.mark.parametrize("bad", [
+    {"client_event_id": ""}, {"session_id": ""}, {"round_id": "not-a-round-id"},
+    {"format": "trivia"}, {"score": -1}, {"score": "6"}, {"total": 0}, {"total": -5},
+])
+def test_submit_results_rejects_malformed_body(conn, tmp_path, bad):
+    root = tmp_path / "courses"
+    with pytest.raises(ValueError):
+        quiz.submit_results(root, conn, "c", _good_results_body(**bad))
+    assert conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"] == 0
+
+
+def test_submit_results_clamps_missed_counts_and_drops_bad_entries(conn, tmp_path):
+    root = tmp_path / "courses"
+    body = _good_results_body(missed={"c-l1": -3, "c-l2": 2, "7": None, "c-l3": "bad", "c-l4": True})
+    quiz.submit_results(root, conn, "c", body)
+    row = conn.execute("SELECT payload FROM events").fetchone()
+    missed = json.loads(row["payload"])["missed"]
+    assert missed == {"c-l1": 0, "c-l2": 2}
+
+
+def test_submit_results_clamps_score_above_total(conn, tmp_path):
+    root = tmp_path / "courses"
+    quiz.submit_results(root, conn, "c", _good_results_body(score=99, total=8))
+    row = conn.execute("SELECT payload FROM events").fetchone()
+    assert json.loads(row["payload"])["score"] == 8
+
+
+def test_submit_results_missing_missed_key_defaults_to_empty(conn, tmp_path):
+    root = tmp_path / "courses"
+    body = _good_results_body()
+    del body["missed"]
+    quiz.submit_results(root, conn, "c", body)
+    row = conn.execute("SELECT payload FROM events").fetchone()
+    assert json.loads(row["payload"])["missed"] == {}

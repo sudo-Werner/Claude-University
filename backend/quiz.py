@@ -465,3 +465,61 @@ def kick_restock(content_dir, db_path, course_id, *, generate, spawn=None):
 
     spawner = spawn or (lambda target: threading.Thread(target=target, daemon=True).start())
     spawner(run)
+
+
+# ---- results ----
+
+def _clean_missed(missed):
+    """Best-effort clamp, never a 400: keep only string keys with a non-
+    negative int value. Miss counts only ever influence review scheduling,
+    never content (decision: security) — a malformed entry is dropped, not
+    rejected."""
+    out = {}
+    if not isinstance(missed, dict):
+        return out
+    for lid, count in missed.items():
+        if not (isinstance(lid, str) and lid):
+            continue
+        if isinstance(count, bool) or not isinstance(count, int):
+            continue
+        out[lid] = max(0, count)
+    return out
+
+
+def submit_results(content_dir, conn, course_id, body):
+    """Insert one quiz_round event (idempotent on client_event_id via
+    events.insert_events' INSERT OR IGNORE — a replay is a safe no-op) and
+    delete the round file (consume_round is itself a no-op if it's already
+    gone). Raises ValueError on a malformed body; the route maps that to 400
+    without touching the DB or the bank."""
+    client_event_id = body.get("client_event_id")
+    session_id = body.get("session_id")
+    round_id = body.get("round_id")
+    fmt = body.get("format")
+    score = body.get("score")
+    total = body.get("total")
+    if not (isinstance(client_event_id, str) and client_event_id):
+        raise ValueError("client_event_id is required")
+    if not (isinstance(session_id, str) and session_id):
+        raise ValueError("session_id is required")
+    if not (isinstance(round_id, str) and ROUND_ID_RE.match(round_id)):
+        raise ValueError("round_id is invalid")
+    if fmt not in FORMATS:
+        raise ValueError("format is invalid")
+    if isinstance(score, bool) or not isinstance(score, int) or score < 0:
+        raise ValueError("score must be a non-negative integer")
+    if isinstance(total, bool) or not isinstance(total, int) or total <= 0:
+        raise ValueError("total must be a positive integer")
+    score = min(score, total)
+    missed = _clean_missed(body.get("missed"))
+    events.insert_events(conn, [{
+        "client_event_id": client_event_id,
+        "session_id": session_id,
+        "event_type": "quiz_round",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "course_id": course_id,
+        "topic_id": round_id,
+        "payload": {"format": fmt, "score": score, "total": total, "missed": missed},
+    }])
+    consume_round(content_dir, course_id, round_id)
+    return {"ok": True}
