@@ -588,3 +588,47 @@ def test_backfill_course_resolver_exception_still_writes_lesson_without_figures(
 
 def test_backfill_course_missing_course_returns_zero(tmp_path):
     assert images.backfill_course(tmp_path / "courses", "no-such-course", generate=lambda p, v: {}) == 0
+
+
+def test_backfill_course_survives_timeout_and_continues_batch(tmp_path):
+    """backfill_course must handle subprocess.TimeoutExpired (not just ClaudeError)
+    and continue processing remaining lessons."""
+    import subprocess
+    root = tmp_path / "courses"
+    (root / "demo" / "lessons").mkdir(parents=True)
+
+    lesson_1 = {"id": "demo-l1", "topic": "t", "promptHtml": "<p>First lesson.</p>"}
+    lesson_2 = {"id": "demo-l2", "topic": "t", "promptHtml": "<p>Second lesson.</p>"}
+    path_1 = root / "demo" / "lessons" / "demo-l1.json"
+    path_2 = root / "demo" / "lessons" / "demo-l2.json"
+    path_1.write_text(json.dumps(lesson_1))
+    path_2.write_text(json.dumps(lesson_2))
+
+    generate_calls = []
+    def generate_with_timeout_on_first(prompt, validate):
+        generate_calls.append(prompt)
+        if len(generate_calls) == 1:
+            # First lesson times out
+            raise subprocess.TimeoutExpired("claude", 240)
+        # Second lesson succeeds
+        return {"images": [], "promptHtml": "<p>Second lesson.</p>"}
+
+    def fake_resolve(course_id, lesson_id, slots, *, content_dir):
+        return []
+
+    import unittest.mock
+    with unittest.mock.patch.object(images, "resolve_images", fake_resolve):
+        count = images.backfill_course(root, "demo", generate=generate_with_timeout_on_first)
+
+    # Both lessons should have been attempted; count reflects successful ones
+    assert len(generate_calls) == 2, f"generate should be called twice, got {len(generate_calls)}"
+    assert count == 1, "one lesson succeeded and was written"
+
+    # First lesson should remain unchanged (timeout = skipped)
+    on_disk_1 = json.loads(path_1.read_text())
+    assert "images" not in on_disk_1
+
+    # Second lesson should have images added
+    on_disk_2 = json.loads(path_2.read_text())
+    assert "images" in on_disk_2
+    assert on_disk_2["images"] == []

@@ -434,7 +434,7 @@ def backfill_course(content_dir, course_id, *, generate):
                 backfill_prompt(lesson),
                 lambda o: _valid_backfill_proposal(o, original_html),
             )
-        except claude_client.ClaudeError:
+        except Exception:
             continue  # never block the batch on one flaky lesson
         lesson["promptHtml"] = proposal["promptHtml"]
         try:

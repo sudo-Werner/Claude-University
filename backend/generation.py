@@ -1187,6 +1187,10 @@ def _reviewed_lesson(lesson, verify_generate, objectives=None):
     if not (isinstance(reviewed, dict) and valid_lesson(reviewed)):
         return lesson
     reviewed["sources"] = original_sources
+    if "images" in lesson:
+        reviewed["images"] = lesson["images"]
+    elif "images" in reviewed:
+        del reviewed["images"]
     return reviewed
 
 

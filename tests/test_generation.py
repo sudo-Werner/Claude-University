@@ -1329,6 +1329,48 @@ def test_verification_preserves_original_sources(tmp_path):
     assert [s["url"] for s in out["sources"]] == ["https://ocw.mit.edu/x"]
 
 
+def test_verification_preserves_original_images(tmp_path):
+    root = _course(tmp_path)
+    images_slot = [{"n": 1, "query": "cells", "caption": "Dividing cells"}]
+    raw = _full_lesson(images=list(images_slot), solutionAns="original")
+    audit = {"ok": False, "issues": ["caption mismatch"]}
+    # a rewrite that omits images (review reply has no images key) must preserve them
+    fixed = _full_lesson(solutionAns="reconciled")  # note: no images key
+
+    def fake_resolve(course_id, lesson_id, slots, *, content_dir):
+        # Return resolved images with the same captions from the slots
+        return [{"n": s["n"], "type": "web-image", "caption": s.get("caption"),
+                "file": f"{lesson_id}-{s['n']}.png"} for s in slots if isinstance(s, dict)]
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(raw),
+                            verify_generate=_verify_stub(audit, lambda: dict(fixed)),
+                            resolve_images=fake_resolve)
+    assert out["solutionAns"] == "reconciled"
+    # images should be preserved: the resolved version should have them with the same captions
+    assert len(out["images"]) == 1
+    assert out["images"][0]["caption"] == "Dividing cells"
+    assert out["images"][0]["n"] == 1
+
+
+def test_verification_does_not_add_images_to_imageless_lesson(tmp_path):
+    root = _course(tmp_path)
+    raw = _full_lesson(solutionAns="original")  # no images key
+    audit = {"ok": False, "issues": ["some issue"]}
+    # a lesson without images should stay without images, even if review reply somehow had them
+    fixed = _full_lesson(images=[{"n": 1, "query": "x"}], solutionAns="reconciled")
+
+    def fake_resolve(course_id, lesson_id, slots, *, content_dir):
+        return [{"n": s["n"], "type": "web-image", "file": f"{lesson_id}-{s['n']}.png"}
+                for s in slots if isinstance(s, dict)]
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(raw),
+                            verify_generate=_verify_stub(audit, lambda: dict(fixed)),
+                            resolve_images=fake_resolve)
+    # images must not be added: the original lesson never had them, so even if the
+    # review reply added images, they must be stripped out by _reviewed_lesson
+    assert out["images"] == [], "images must not be added to a lesson that never proposed them"
+
+
 def test_ensure_lesson_skips_verification_when_not_requested(tmp_path):
     root = _course(tmp_path)
     raw = _full_lesson(solutionAns="unreviewed")
