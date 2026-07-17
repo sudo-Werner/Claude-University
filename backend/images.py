@@ -287,9 +287,11 @@ def _resolve_one_slot(n, slot, course_id, lesson_id, *, images_dir, http_get, st
         openverse = openverse_search(query, http_get=http_get)
         valid = valid + [c for c in openverse if license_allowed(c.get("licenseShort"))]
     downloaded = []
+    attempts = 0
     for candidate in valid:
-        if len(downloaded) >= MAX_DOWNLOADS_PER_SLOT:
+        if attempts >= MAX_DOWNLOADS_PER_SLOT:
             break
+        attempts += 1
         result = download_verified(candidate["thumbUrl"], http_get=http_get)
         if result is None:
             continue

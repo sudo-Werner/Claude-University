@@ -450,3 +450,52 @@ def test_resolve_images_caps_at_three_slots(tmp_path):
     assert resolved == []  # no candidates either way, but this proves slots[3:] are never touched:
     # (deadline note: resolve_images has no injectable clock in this signature, so a
     # deadline-exceeded test is omitted per this plan's Ambiguity Resolution 6.)
+
+
+def test_resolve_images_caps_download_attempts_not_successes(tmp_path):
+    """Verify that download attempts are capped at MAX_DOWNLOADS_PER_SLOT, even if all
+    downloads fail verification. This protects the per-lesson time budget by preventing
+    excessive attempts when candidates keep failing magic-byte checks."""
+    content_dir = tmp_path / "courses"
+
+    # Build 8 license-valid candidates from Commons + Openverse
+    commons_json = json.dumps({"query": {"pages": {
+        str(i): {"title": f"File:C{i}.png", "imageinfo": [{
+            "thumburl": f"https://upload.wikimedia.org/c{i}.png",
+            "descriptionurl": f"https://commons.wikimedia.org/wiki/File:C{i}.png",
+            "extmetadata": {"LicenseShortName": {"value": "CC0"}, "Artist": {"value": "Ann"},
+                            "AttributionRequired": {"value": "false"}}}]}
+        for i in range(4)  # 4 Commons candidates
+    }}}).encode()
+
+    openverse_json = json.dumps({"results": [
+        {"title": f"Openverse photo {i}", "creator": "Cara",
+         "thumbnail": f"https://api.openverse.org/thumb/{i}",
+         "license": "by", "license_url": "https://creativecommons.org/licenses/by/4.0/",
+         "foreign_landing_url": "https://flickr.com/x"}
+        for i in range(4)  # 4 Openverse candidates
+    ]}).encode()
+
+    download_calls = {"count": 0}
+
+    def fake_http_get(url):
+        # API search calls
+        if "commons.wikimedia.org" in url:
+            return commons_json
+        if "api.openverse.org" in url:
+            return openverse_json
+        # Download attempts — return SVG bytes (fails magic-byte verification)
+        download_calls["count"] += 1
+        return _SVG_BYTES
+
+    def fake_structured(prompt, *, validate=None, tools=None):
+        return {"pick": None}  # Explicit null drop (no vision error)
+
+    slots = [{"query": "test", "caption": "test caption"}]
+    resolved = images.resolve_images("demo", "demo-l1", slots, content_dir=content_dir,
+                                     http_get=fake_http_get, structured=fake_structured)
+
+    # All downloads fail verification, so no slot resolves
+    assert resolved == []
+    # But we should have capped attempts at MAX_DOWNLOADS_PER_SLOT (4), not tried all 8
+    assert download_calls["count"] <= images.MAX_DOWNLOADS_PER_SLOT
