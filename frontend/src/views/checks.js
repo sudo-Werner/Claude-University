@@ -1,6 +1,14 @@
 import { esc } from "../escape.js";
 
-const norm = (s) => String(s).trim().toLowerCase();
+// Fill answers are short canonical tokens, so trivial formatting differences —
+// internal spacing ("-70mV" vs "-70 mV") and dash/minus variants (a typographic
+// minus vs a keyboard hyphen) — must not fail an otherwise-correct answer. A sign
+// or a different token still differs, so this stays strict about meaning.
+const norm = (s) =>
+  String(s)
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/\s+/g, "")
+    .toLowerCase();
 
 export function gradeCheck(check, answer) {
   const correct =
