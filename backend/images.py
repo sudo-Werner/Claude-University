@@ -356,3 +356,111 @@ def resolve_images(course_id, lesson_id, slots, *, content_dir, http_get=_http_g
         if entry is not None:
             resolved.append(entry)
     return resolved
+
+
+def backfill_prompt(lesson):
+    topic = lesson.get("topic", "")
+    prompt_html = lesson.get("promptHtml", "")
+    return (
+        "You are retrofitting ONE existing cached lesson with optional figure "
+        "placements. Read its body below and decide whether 0-3 figures would "
+        "genuinely help, following these rules: a figure is warranted ONLY for "
+        "spatial, structural, process, or quantitative content the text explains "
+        "— never decorative; when in doubt, propose none. Prefer a real photo or "
+        "plate for concrete identification, a schematic for a process, a chart for "
+        "quantitative data. Budget at most one figure per major concept, at most "
+        "three total.\n"
+        f"Lesson topic: {topic}\n"
+        f"Lesson body (HTML):\n{prompt_html}\n\n"
+        "Reply with ONLY a JSON object (no prose, no fence) with exactly these keys:\n"
+        '  images: a list of 0-3 {"query": "<discriminating archive search terms>", '
+        '"caption": "<one sentence saying what to NOTICE>"}.\n'
+        '  promptHtml: the EXACT lesson body above, UNCHANGED character-for-character, '
+        "except for inserting a bare placement token [[figure:1]] (then [[figure:2]], "
+        "[[figure:3]] for additional figures) on its own, immediately after the closing "
+        "tag of the paragraph each figure illustrates — one token per images entry, in "
+        "order. Do NOT rewrite, rephrase, or otherwise alter any existing text.\n"
+    )
+
+
+def _valid_images_slots(images_val):
+    """Backfill-specific images-shape check: unlike generation.valid_images,
+    the key must ALWAYS be a list (possibly empty) — the proposal always states
+    a decision, it never omits the field."""
+    if not (isinstance(images_val, list) and len(images_val) <= MAX_SLOTS):
+        return False
+    for slot in images_val:
+        if not isinstance(slot, dict):
+            return False
+        for field in ("query", "caption"):
+            if not (isinstance(slot.get(field), str) and slot[field].strip()):
+                return False
+    return True
+
+
+def _valid_backfill_proposal(obj, original_prompt_html):
+    if not isinstance(obj, dict):
+        return False
+    if not _valid_images_slots(obj.get("images")):
+        return False
+    proposed_html = obj.get("promptHtml")
+    if not isinstance(proposed_html, str):
+        return False
+    return FIGURE_TOKEN_RE.sub("", proposed_html) == original_prompt_html
+
+
+def backfill_course(content_dir, course_id, *, generate):
+    """One-off retrofit: propose figure placements for every cached lesson in
+    course_id that doesn't carry an images field yet, resolve them, and rewrite
+    the lesson JSON. generate(prompt, validate) -> validated dict (the
+    run_structured convention). Idempotent — already-retrofitted lessons are
+    skipped, so re-running is safe. A flaky single lesson never blocks the
+    batch. Returns the number of lessons updated."""
+    lessons_dir = Path(content_dir) / course_id / "lessons"
+    if not lessons_dir.is_dir():
+        return 0
+    updated = 0
+    for path in sorted(lessons_dir.glob("*.json")):
+        try:
+            lesson = json.loads(path.read_text())
+        except ValueError:
+            continue
+        if not isinstance(lesson, dict) or "images" in lesson:
+            continue
+        lesson_id = path.stem
+        original_html = lesson.get("promptHtml", "")
+        try:
+            proposal = generate(
+                backfill_prompt(lesson),
+                lambda o: _valid_backfill_proposal(o, original_html),
+            )
+        except claude_client.ClaudeError:
+            continue  # never block the batch on one flaky lesson
+        lesson["promptHtml"] = proposal["promptHtml"]
+        try:
+            resolved = resolve_images(course_id, lesson_id, proposal["images"], content_dir=content_dir)
+        except Exception:
+            resolved = []
+        lesson["images"] = resolved
+        resolved_ns = {e["n"] for e in resolved if isinstance(e, dict) and isinstance(e.get("n"), int)}
+        lesson["promptHtml"] = strip_unresolved_figure_tokens(lesson["promptHtml"], resolved_ns)
+        fsutil.write_text_atomic(path, json.dumps(lesson, indent=2, ensure_ascii=False))
+        updated += 1
+    return updated
+
+
+if __name__ == "__main__":
+    import sys
+
+    _content_dir = Path(__file__).resolve().parent.parent / "content" / "courses"
+    _run = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+    if len(sys.argv) != 2 or (sys.argv[1] != "--all" and not re.match(r"^[a-z0-9-]+$", sys.argv[1])):
+        print("usage: python -m backend.images <course_id>|--all")
+        raise SystemExit(1)
+    if sys.argv[1] == "--all":
+        _course_ids = sorted(p.name for p in _content_dir.iterdir() if p.is_dir())
+    else:
+        _course_ids = [sys.argv[1]]
+    for _cid in _course_ids:
+        _count = backfill_course(_content_dir, _cid, generate=_run)
+        print(f"{_cid}: {_count} lessons backfilled with images")

@@ -499,3 +499,92 @@ def test_resolve_images_caps_download_attempts_not_successes(tmp_path):
     assert resolved == []
     # But we should have capped attempts at MAX_DOWNLOADS_PER_SLOT (4), not tried all 8
     assert download_calls["count"] <= images.MAX_DOWNLOADS_PER_SLOT
+
+
+def test_backfill_prompt_includes_lesson_body_and_shape_instructions():
+    lesson = {"topic": "Cells", "promptHtml": "<p>Cells divide.</p>"}
+    p = images.backfill_prompt(lesson)
+    assert "Cells divide." in p
+    assert "[[figure:1]]" in p
+    assert "images" in p and "promptHtml" in p
+
+
+def test_valid_backfill_proposal_rejects_rewritten_prose():
+    original = "<p>Cells divide.</p>"
+    good = {"images": [{"query": "q", "caption": "c"}], "promptHtml": "<p>Cells divide.</p>[[figure:1]]"}
+    bad = {"images": [{"query": "q", "caption": "c"}], "promptHtml": "<p>Cells split apart.</p>[[figure:1]]"}
+    assert images._valid_backfill_proposal(good, original) is True
+    assert images._valid_backfill_proposal(bad, original) is False
+
+
+def test_valid_backfill_proposal_rejects_bad_images_shape():
+    original = "<p>x</p>"
+    bad = {"images": [{"query": "q"}], "promptHtml": "<p>x</p>"}
+    assert images._valid_backfill_proposal(bad, original) is False
+    ok_empty = {"images": [], "promptHtml": "<p>x</p>"}
+    assert images._valid_backfill_proposal(ok_empty, original) is True
+
+
+def test_backfill_course_skips_lessons_already_carrying_images(tmp_path):
+    root = tmp_path / "courses"
+    (root / "demo" / "lessons").mkdir(parents=True)
+    already = {"id": "demo-l1", "promptHtml": "<p>x</p>", "images": []}
+    (root / "demo" / "lessons" / "demo-l1.json").write_text(json.dumps(already))
+    calls = []
+    def generate(prompt, validate):
+        calls.append(prompt)
+        return {"images": [], "promptHtml": "<p>x</p>"}
+    count = images.backfill_course(root, "demo", generate=generate)
+    assert count == 0
+    assert calls == []
+
+
+def test_backfill_course_resolves_and_rewrites_pending_lesson(tmp_path, monkeypatch):
+    root = tmp_path / "courses"
+    (root / "demo" / "lessons").mkdir(parents=True)
+    pending = {"id": "demo-l1", "topic": "t", "promptHtml": "<p>Cells divide.</p>"}
+    path = root / "demo" / "lessons" / "demo-l1.json"
+    path.write_text(json.dumps(pending))
+
+    def generate(prompt, validate):
+        obj = {"images": [{"query": "q", "caption": "c"}],
+               "promptHtml": "<p>Cells divide.</p>[[figure:1]]"}
+        assert validate(obj)
+        return obj
+
+    def fake_resolve(course_id, lesson_id, slots, *, content_dir):
+        return [{"n": 1, "type": "web-image", "file": "demo-l1-1.jpg", "caption": "c",
+                 "credit": "cred", "license": "CC0", "licenseUrl": None, "sourceUrl": "https://x"}]
+    monkeypatch.setattr(images, "resolve_images", fake_resolve)
+
+    count = images.backfill_course(root, "demo", generate=generate)
+    assert count == 1
+    on_disk = json.loads(path.read_text())
+    assert on_disk["images"][0]["file"] == "demo-l1-1.jpg"
+    assert "[[figure:1]]" in on_disk["promptHtml"]
+
+
+def test_backfill_course_resolver_exception_still_writes_lesson_without_figures(tmp_path, monkeypatch):
+    root = tmp_path / "courses"
+    (root / "demo" / "lessons").mkdir(parents=True)
+    pending = {"id": "demo-l1", "topic": "t", "promptHtml": "<p>Cells divide.</p>"}
+    path = root / "demo" / "lessons" / "demo-l1.json"
+    path.write_text(json.dumps(pending))
+
+    def generate(prompt, validate):
+        return {"images": [{"query": "q", "caption": "c"}],
+                "promptHtml": "<p>Cells divide.</p>[[figure:1]]"}
+
+    def boom(*a, **kw):
+        raise RuntimeError("archive outage")
+    monkeypatch.setattr(images, "resolve_images", boom)
+
+    count = images.backfill_course(root, "demo", generate=generate)
+    assert count == 1
+    on_disk = json.loads(path.read_text())
+    assert on_disk["images"] == []
+    assert "[[figure:1]]" not in on_disk["promptHtml"]
+
+
+def test_backfill_course_missing_course_returns_zero(tmp_path):
+    assert images.backfill_course(tmp_path / "courses", "no-such-course", generate=lambda p, v: {}) == 0
