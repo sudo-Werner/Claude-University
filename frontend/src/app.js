@@ -966,10 +966,98 @@ export async function init({ window, fetch }) {
     if (onScreen()) paintLesson();
   }
 
+  // ---- drawn diagrams (slice 2): lazy-loaded vendored renderers, cached for the
+  // session so a lesson with no drawn figures never pays the cost.
+  let _purifyPromise = null;
+  let _mermaidPromise = null;
+
+  function loadScript(src, globalName) {
+    if (window[globalName]) return Promise.resolve(window[globalName]);
+    return new Promise((resolve, reject) => {
+      const el = doc.createElement("script");
+      el.src = src;
+      el.onload = () => resolve(window[globalName]);
+      el.onerror = () => reject(new Error(`failed to load ${src}`));
+      doc.head.appendChild(el);
+    });
+  }
+
+  function loadPurify() {
+    if (!_purifyPromise) _purifyPromise = loadScript("/vendor/purify.min.js", "DOMPurify");
+    return _purifyPromise;
+  }
+
+  function loadMermaidLib() {
+    if (!_mermaidPromise) {
+      _mermaidPromise = loadScript("/vendor/mermaid.min.js", "mermaid").then((m) => {
+        m.initialize({ startOnLoad: false, securityLevel: "strict" });
+        return m;
+      });
+    }
+    return _mermaidPromise;
+  }
+
+  // Client-side SVG sanitization (defense in depth — the server allowlist in
+  // backend/figures.py already ran at generation time; this also guards a hand-edited
+  // cached lesson). DOMPurify's svg profile reassigns ALLOWED_TAGS/ALLOWED_ATTR from
+  // USE_PROFILES, so those explicit lists are advisory intent, not the operative filter;
+  // the FORBID_TAGS/FORBID_ATTR below ARE operative and remove the external-ref elements
+  // (image/style/use/a/foreignObject/script and href/xlink:href) on top of DOMPurify's
+  // core stripping of on* handlers and javascript: URLs. Effective client filter is thus
+  // the hardened svg profile — intentionally broader than the server's strict allowlist.
+  const SVG_SANITIZE_CONFIG = {
+    USE_PROFILES: { svg: true, svgFilters: true },
+    ALLOWED_TAGS: ["svg","g","rect","circle","ellipse","line","polyline","polygon","path","text","tspan","title","defs","marker"],
+    ALLOWED_ATTR: ["viewBox","x","y","x1","y1","x2","y2","cx","cy","r","rx","ry","width","height","d","points","transform","fill","stroke","stroke-width","stroke-dasharray","font-size","font-family","font-weight","text-anchor","dominant-baseline","opacity","fill-opacity","marker-end","marker-start","id","class"],
+    FORBID_TAGS: ["style","image","use","a","foreignObject","script"],
+    FORBID_ATTR: ["href","xlink:href"],
+  };
+
+  // Hydrates every svg/mermaid figure placeholder currently painted in `view`. Called
+  // once at the end of every paintLesson() repaint. lesson.js never string-interpolates
+  // figure code into the template (see its comment on drawnFigurePlaceholderHTML), so
+  // this is the ONLY place svg code is sanitized-again (DOMPurify, defense in depth over
+  // the server-side allowlist) and mermaid code is rendered. `lesson` is captured by
+  // value so a slow lazy-load that resolves after the learner has navigated away can
+  // never inject into a detached node (mirrors the onScreen staleness guard used by
+  // seedWorkspace/explain-grade elsewhere in this file) — repaints rebuild placeholders
+  // from scratch, so a fresh hydration on a fresh node is naturally idempotent.
+  function hydrateFigures(view, lesson) {
+    const entries = Array.isArray(lesson.images) ? lesson.images : [];
+    const byN = new Map(entries.map((e) => [e.n, e]));
+    const stillFresh = () => ui.screen === "lesson" && ui.lesson === lesson;
+
+    view.querySelectorAll("[data-fig-svg]").forEach((fig) => {
+      const entry = byN.get(Number(fig.dataset.figSvg));
+      if (!entry || typeof entry.code !== "string") return;
+      loadPurify()
+        .then((DOMPurify) => {
+          if (!stillFresh() || !fig.isConnected) return;
+          const clean = DOMPurify.sanitize(entry.code, SVG_SANITIZE_CONFIG);
+          fig.insertAdjacentHTML("afterbegin", clean);
+        })
+        .catch(() => {}); // lazy-load/sanitize failure -> the caption already shown is the fallback
+    });
+
+    view.querySelectorAll("[data-fig-mermaid]").forEach((fig) => {
+      const entry = byN.get(Number(fig.dataset.figMermaid));
+      if (!entry || typeof entry.code !== "string") return;
+      const renderId = `mermaid-fig-${entry.n}-${Math.random().toString(36).slice(2)}`;
+      loadMermaidLib()
+        .then((mermaid) => mermaid.render(renderId, entry.code))
+        .then(({ svg }) => {
+          if (!stillFresh() || !fig.isConnected) return;
+          fig.insertAdjacentHTML("afterbegin", svg);
+        })
+        .catch(() => {}); // parse/render failure -> caption-as-text fallback (nothing injected)
+    });
+  }
+
   function paintLesson() {
     const view = root.querySelector("#view");
     const nav = { hasPrev: !!adjacentLesson(-1), hasNext: !!adjacentLesson(1) };
     view.innerHTML = lessonHTML(ui.lesson, ui.lessonState, nav);
+    hydrateFigures(view, ui.lesson);
     const curBtn = view.querySelector('[data-action="curriculum"]');
     if (curBtn) curBtn.addEventListener("click", showCurriculum);
     const prevBtn = view.querySelector('[data-action="prev-lesson"]');
@@ -980,11 +1068,18 @@ export async function init({ window, fetch }) {
     const ta = view.querySelector('[data-field="answer"]');
     ta.addEventListener("input", () => {
       ui.lessonState.answer = ta.value;
-      const sel = ta.selectionStart;
-      paintLesson();
-      const ta2 = root.querySelector('[data-field="answer"]');
-      ta2.focus();
-      ta2.setSelectionRange(sel, sel);
+      const btn = view.querySelector('[data-action="check-answer"]');
+      if (btn) btn.disabled = !ta.value.trim() || !!ui.lessonState.grading;
+
+      // Keep reveal-solution button appearance in sync with the answer state
+      const revealBtn = view.querySelector('[data-action="reveal-solution"]');
+      if (revealBtn && !ui.lessonState.solutionRevealed) {
+        const REVEAL_TEXT = { locked: "Attempt first to unlock the solution", ready: "Reveal solution", shown: "Solution shown" };
+        const newState = ta.value.trim() ? "ready" : "locked";
+        revealBtn.className = "reveal " + newState;
+        const span = revealBtn.querySelector("span");
+        if (span) span.textContent = REVEAL_TEXT[newState];
+      }
     });
     view.querySelector('[data-action="toggle-hint"]').addEventListener("click", () => {
       ui.lessonState.hintVisible = !ui.lessonState.hintVisible;

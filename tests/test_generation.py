@@ -1950,3 +1950,105 @@ def test_teach_grade_prompt_coerces_non_string_content():
     messages = [{"role": "user", "content": 42}]
     p = gen.teach_grade_prompt(prompt_html="p", solution_ans="a", solution_note="n", messages=messages)
     assert '"text": "42"' in p
+
+
+def test_valid_images_mermaid_slot_shape():
+    assert gen.valid_images([{"type": "mermaid", "code": "graph TD; A-->B;", "caption": "c"}]) is True
+    assert gen.valid_images([{"type": "mermaid", "code": "", "caption": "c"}]) is False
+    assert gen.valid_images([{"type": "mermaid", "code": "x" * 8193, "caption": "c"}]) is False
+    assert gen.valid_images([{"type": "mermaid", "code": "x" * 8192, "caption": "c"}]) is True
+    assert gen.valid_images([{"type": "mermaid", "code": "x"}]) is False  # missing caption
+
+
+def test_valid_images_svg_slot_shape():
+    assert gen.valid_images([{"type": "svg", "code": "<svg></svg>", "caption": "c"}]) is True
+    assert gen.valid_images([{"type": "svg", "code": "", "caption": "c"}]) is False
+
+
+def test_valid_images_unknown_type_rejected():
+    assert gen.valid_images([{"type": "video", "code": "x", "caption": "c"}]) is False
+
+
+def test_valid_images_web_image_default_unchanged():
+    assert gen.valid_images([{"query": "q", "caption": "c"}]) is True
+    assert gen.valid_images([{"type": "web-image", "query": "q", "caption": "c"}]) is True
+
+
+def test_lesson_prompt_includes_drawn_figure_guidance():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="x-l1", lesson_title="T",
+                          module_title="M", position=1, total=2)
+    assert '"type": "mermaid"' in p
+    assert '"type": "svg"' in p
+    assert 'viewBox="0 0 800 500"' in p
+    assert "Drawn by Claude" not in p  # that's the FRONTEND credit text, not prompt copy
+
+
+def test_ensure_lesson_splits_mixed_type_slots_preserving_original_n(tmp_path):
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    made["promptHtml"] = "<p>a</p>[[figure:1]]<p>b</p>[[figure:2]]<p>c</p>[[figure:3]]"
+    made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
+    made["images"] = [
+        {"type": "svg", "code": '<svg viewBox="0 0 800 500"><rect width="10" height="10"/></svg>', "caption": "s"},
+        {"type": "mermaid", "code": "graph TD; A-->B;", "caption": "m"},
+        {"query": "cells", "caption": "w"},
+    ]
+
+    def fake_resolver(course_id, lesson_id, slots, *, content_dir):
+        # only the web-image slot (index 3, others None) should be passed through
+        assert slots[0] is None and slots[1] is None
+        assert slots[2] == {"query": "cells", "caption": "w"}
+        return [{"n": 3, "type": "web-image", "file": "demo-l1-3.jpg", "caption": "w",
+                 "credit": "c", "license": "CC0", "licenseUrl": None, "sourceUrl": ""}]
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made),
+                            resolve_images=fake_resolver)
+    ns_types = [(e["n"], e["type"]) for e in out["images"]]
+    assert ns_types == [(1, "svg"), (2, "mermaid"), (3, "web-image")]
+    assert "[[figure:1]]" in out["promptHtml"]
+    assert "[[figure:2]]" in out["promptHtml"]
+    assert "[[figure:3]]" in out["promptHtml"]
+
+
+def test_ensure_lesson_svg_rejection_strips_only_its_own_token(tmp_path):
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    made["promptHtml"] = "<p>a</p>[[figure:1]]<p>b</p>[[figure:2]]"
+    made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
+    made["images"] = [
+        {"type": "svg", "code": "<svg><rect></svg>", "caption": "bad, unparseable"},  # rejected
+        {"type": "mermaid", "code": "pie", "caption": "m"},
+    ]
+
+    def boom(*a, **kw):
+        raise AssertionError("resolver should not be called: no web-image slots")
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made),
+                            resolve_images=boom)
+    assert "[[figure:1]]" not in out["promptHtml"]
+    assert "[[figure:2]]" in out["promptHtml"]
+    assert out["images"] == [{"n": 2, "type": "mermaid", "code": "pie", "caption": "m"}]
+
+
+def test_ensure_lesson_mermaid_only_never_calls_resolver(tmp_path):
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    made["promptHtml"] = "<p>a</p>[[figure:1]]"
+    made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
+    made["images"] = [{"type": "mermaid", "code": "graph TD;", "caption": "m"}]
+
+    def boom(*a, **kw):
+        raise AssertionError("resolver should not be called")
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made),
+                            resolve_images=boom)
+    assert out["images"] == [{"n": 1, "type": "mermaid", "code": "graph TD;", "caption": "m"}]

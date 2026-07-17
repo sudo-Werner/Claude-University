@@ -362,10 +362,54 @@ test("expandFigureTokens renders a tokenless entry in a trailing Figures block",
 });
 
 test("expandFigureTokens renders nothing for an unknown figure type", () => {
-  const lesson = { images: [{ n: 1, type: "mermaid", code: "graph TD;", caption: "c" }] };
+  const lesson = { images: [{ n: 1, type: "carousel", code: "x", caption: "c" }] };
   const { html, figuresBlock } = expandFigureTokens("[[figure:1]]", lesson, "demo");
   assert.equal(html, "");
   assert.equal(figuresBlock, "");
+});
+
+// ---- drawn diagrams (slice 2): svg/mermaid arms render a placeholder, never raw code ----
+
+test("expandFigureTokens renders an svg figure as a placeholder, never the raw code", () => {
+  const lesson = { images: [{ n: 1, type: "svg", code: '<svg viewBox="0 0 800 500"><script>alert(1)</script></svg>', caption: "Pump schematic" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.match(html, /<figure class="lesson-fig lesson-fig-svg" data-fig-svg="1">/);
+  assert.match(html, /Pump schematic/);
+  assert.doesNotMatch(html, /<script>/);
+  assert.doesNotMatch(html, /<svg viewBox/); // the raw code string never appears in the template
+});
+
+test("expandFigureTokens renders a mermaid figure as a placeholder with caption", () => {
+  const lesson = { images: [{ n: 1, type: "mermaid", code: "graph TD; A-->B;", caption: "Water flow" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.match(html, /<figure class="lesson-fig lesson-fig-mermaid" data-fig-mermaid="1">/);
+  assert.match(html, /Water flow/);
+  assert.doesNotMatch(html, /graph TD/); // raw mermaid source never appears in the template
+});
+
+test("drawn figures (svg and mermaid) carry the exact credit 'Drawn by Claude'", () => {
+  const svgLesson = { images: [{ n: 1, type: "svg", code: "<svg></svg>", caption: "c" }] };
+  const mermaidLesson = { images: [{ n: 1, type: "mermaid", code: "pie", caption: "c" }] };
+  const { html: svgHtml } = expandFigureTokens("[[figure:1]]", svgLesson, "demo");
+  const { html: mermaidHtml } = expandFigureTokens("[[figure:1]]", mermaidLesson, "demo");
+  assert.match(svgHtml, /<span class="fig-credit">Drawn by Claude<\/span>/);
+  assert.match(mermaidHtml, /<span class="fig-credit">Drawn by Claude<\/span>/);
+});
+
+test("expandFigureTokens escapes the caption on svg/mermaid placeholders", () => {
+  const lesson = { images: [{ n: 1, type: "svg", code: "<svg></svg>", caption: "<script>alert(1)</script>" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.match(html, /&lt;script&gt;/);
+});
+
+test("expandFigureTokens web-image arm is unaffected by the svg/mermaid arms (regression)", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg", caption: "c",
+    credit: "cred", license: "CC0", licenseUrl: null, sourceUrl: "https://x" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.match(html, /<figure class="lesson-fig">/); // NOT lesson-fig-svg/lesson-fig-mermaid
+  assert.match(html, /src="\/api\/courses\/demo\/images\/demo-l1-1\.jpg"/);
+  assert.doesNotMatch(html, /Drawn by Claude/);
 });
 
 test("expandFigureTokens with no images field leaves promptHtml untouched", () => {

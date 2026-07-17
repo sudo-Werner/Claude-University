@@ -89,7 +89,7 @@ const FIGURE_TOKEN_RE = /\[\[figure:(\d+)\]\]/g;
 const FIGURE_FILENAME_RE = /^[a-z0-9-]+-\d\.(jpg|png|webp)$/;
 const SAFE_HREF_RE = /^https?:\/\//i;
 
-function figureHTML(entry, courseId) {
+function webImageFigureHTML(entry, courseId) {
   const src = `/api/courses/${esc(courseId)}/images/${esc(entry.file)}`;
   const licenseHref = entry.licenseUrl || entry.sourceUrl || "";
   // Only render an <a> if the href is a valid http(s) URL; otherwise show text
@@ -104,18 +104,47 @@ function figureHTML(entry, courseId) {
   );
 }
 
+// svg/mermaid figures are Claude-drawn diagrams (slice 2). The template NEVER
+// string-interpolates entry.code — it has no DOMPurify here, so raw code (which could
+// carry a <script> if a cached lesson were hand-edited) must never reach this string.
+// A placeholder is emitted instead; app.js's hydrateFigures() sanitizes/renders the
+// code and injects it into the placeholder (before the figcaption) after paint.
+function drawnFigurePlaceholderHTML(entry, dataAttr) {
+  return (
+    `<figure class="lesson-fig lesson-fig-${esc(entry.type)}" data-${dataAttr}="${entry.n}">` +
+    `<figcaption>${esc(entry.caption)} <span class="fig-credit">Drawn by Claude</span></figcaption>` +
+    `</figure>`
+  );
+}
+
+function figureHTML(entry, courseId) {
+  if (entry.type === "svg") return drawnFigurePlaceholderHTML(entry, "fig-svg");
+  if (entry.type === "mermaid") return drawnFigurePlaceholderHTML(entry, "fig-mermaid");
+  return webImageFigureHTML(entry, courseId);
+}
+
+function isValidFigureEntry(entry) {
+  if (!entry || typeof entry.n !== "number") return false;
+  if (entry.type === "web-image") {
+    return typeof entry.file === "string" && FIGURE_FILENAME_RE.test(entry.file);
+  }
+  if (entry.type === "svg" || entry.type === "mermaid") {
+    return typeof entry.code === "string" && entry.code.length > 0;
+  }
+  return false;
+}
+
 // Pure pre-render transform: expands [[figure:n]] tokens ONLY against this lesson's
-// OWN backend-written images array, and ONLY for type:"web-image" entries (unknown
-// types — e.g. a future slice-2 "mermaid"/"svg" — render nothing here). Returns the
-// expanded promptHtml plus a separate trailing block for entries whose token never
-// appeared in the prose (the retrofit/backfill case).
+// OWN backend-written images array, and ONLY for entries of a KNOWN type (web-image,
+// svg, mermaid — an unrecognized type renders nothing here, so a future new type stays
+// inert until its own slice ships). Returns the expanded promptHtml plus a separate
+// trailing block for entries whose token never appeared in the prose (the
+// retrofit/backfill case).
 export function expandFigureTokens(promptHtml, lesson, courseId) {
   const entries = Array.isArray(lesson.images) ? lesson.images : [];
   const byN = new Map();
   for (const entry of entries) {
-    if (entry && entry.type === "web-image" && typeof entry.n === "number"
-        && typeof entry.file === "string" && FIGURE_FILENAME_RE.test(entry.file)
-        && !byN.has(entry.n)) {
+    if (isValidFigureEntry(entry) && !byN.has(entry.n)) {
       byN.set(entry.n, entry);
     }
   }

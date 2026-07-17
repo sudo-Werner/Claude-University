@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from backend import claude_client, fsutil
+from backend import claude_client, figures, fsutil
 
 USER_AGENT = "ClaudeUniversity/1.0 (personal learning app; wernerpvanellewee@gmail.com)"
 
@@ -368,6 +368,51 @@ def resolve_images(course_id, lesson_id, slots, *, content_dir, http_get=_http_g
     return resolved
 
 
+def process_slots(course_id, lesson_id, slots, *, content_dir, resolve_images_fn=None):
+    """Shared by the generation hook (backend/generation.py's
+    `_generate_and_store_lesson`) and `backfill_course` below: splits typed image
+    slots by type, processes mermaid/svg locally (svg sanitized via
+    figures.sanitize_svg, dropped on rejection; mermaid passed through verbatim —
+    already shape-validated upstream), and routes ONLY web-image slots to
+    resolve_images — preserving each slot's ORIGINAL 1-based position as `n` by
+    padding non-web-image positions with None (resolve_images already skips
+    non-dict slots via `isinstance(slot, dict)`, so this needs no change to its
+    signature). Returns the combined entries list sorted by n. Never raises: a
+    resolve_images exception drops only the web-image entries — already-processed
+    local (mermaid/svg) entries are kept. `resolve_images_fn` is the same
+    dependency-injection seam tests already use (defaults to this module's own
+    `resolve_images`)."""
+    if not isinstance(slots, list):
+        return []
+    local_entries = []
+    web_image_slots = []
+    for i, slot in enumerate(slots, start=1):
+        if not isinstance(slot, dict):
+            web_image_slots.append(None)
+            continue
+        kind = slot.get("type", "web-image")
+        if kind == "svg":
+            sanitized = figures.sanitize_svg(slot.get("code", ""))
+            if sanitized is not None:
+                local_entries.append({"n": i, "type": "svg", "code": sanitized,
+                                       "caption": slot.get("caption", "")})
+            web_image_slots.append(None)
+        elif kind == "mermaid":
+            local_entries.append({"n": i, "type": "mermaid", "code": slot.get("code", ""),
+                                   "caption": slot.get("caption", "")})
+            web_image_slots.append(None)
+        else:
+            web_image_slots.append(slot)
+    resolver = resolve_images_fn or resolve_images
+    web_resolved = []
+    if any(s is not None for s in web_image_slots):
+        try:
+            web_resolved = resolver(course_id, lesson_id, web_image_slots, content_dir=content_dir)
+        except Exception:
+            web_resolved = []
+    return sorted(local_entries + web_resolved, key=lambda e: e["n"])
+
+
 def backfill_prompt(lesson):
     topic = lesson.get("topic", "")
     prompt_html = lesson.get("promptHtml", "")
@@ -390,21 +435,34 @@ def backfill_prompt(lesson):
         "[[figure:3]] for additional figures) on its own, immediately after the closing "
         "tag of the paragraph each figure illustrates — one token per images entry, in "
         "order. Do NOT rewrite, rephrase, or otherwise alter any existing text.\n"
+        + figures.DRAWN_FIGURE_GUIDANCE
     )
 
 
 def _valid_images_slots(images_val):
     """Backfill-specific images-shape check: unlike generation.valid_images,
     the key must ALWAYS be a list (possibly empty) — the proposal always states
-    a decision, it never omits the field."""
+    a decision, it never omits the field. Same three per-slot shapes as
+    generation.valid_images (web-image needs query+caption; mermaid/svg need
+    code (<=8192 chars) + caption); any other `type` is invalid."""
     if not (isinstance(images_val, list) and len(images_val) <= MAX_SLOTS):
         return False
     for slot in images_val:
         if not isinstance(slot, dict):
             return False
-        for field in ("query", "caption"):
-            if not (isinstance(slot.get(field), str) and slot[field].strip()):
+        kind = slot.get("type", "web-image")
+        if kind == "web-image":
+            for field in ("query", "caption"):
+                if not (isinstance(slot.get(field), str) and slot[field].strip()):
+                    return False
+        elif kind in ("mermaid", "svg"):
+            code = slot.get("code")
+            if not (isinstance(code, str) and code.strip() and len(code) <= 8192):
                 return False
+            if not (isinstance(slot.get("caption"), str) and slot["caption"].strip()):
+                return False
+        else:
+            return False
     return True
 
 
@@ -448,7 +506,7 @@ def backfill_course(content_dir, course_id, *, generate):
             continue  # never block the batch on one flaky lesson
         lesson["promptHtml"] = proposal["promptHtml"]
         try:
-            resolved = resolve_images(course_id, lesson_id, proposal["images"], content_dir=content_dir)
+            resolved = process_slots(course_id, lesson_id, proposal["images"], content_dir=content_dir)
         except Exception:
             resolved = []
         lesson["images"] = resolved

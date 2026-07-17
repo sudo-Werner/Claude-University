@@ -4,7 +4,7 @@ import re as _re
 import threading
 from pathlib import Path
 
-from backend import claude_client, courses, fsutil, images, spine
+from backend import claude_client, courses, figures, fsutil, images, spine
 
 # Single-flight: expensive generations (a lesson is ~110s of Max-plan web search) must
 # never run twice concurrently for the same artifact. The second caller blocks on the
@@ -206,11 +206,17 @@ def valid_check(item):
 
 
 def valid_images(images_val):
-    """If-present shape check for the raw generator output's images slots
-    ({query, caption} dicts). Absent (None) stays valid — cached lessons
-    without the field, and lessons that legitimately have zero figures, are
-    unaffected. Parameter is NOT named `images` — that name is now the
-    imported backend.images module in this file's global scope."""
+    """If-present shape check for the raw generator output's images slots. Absent
+    (None) stays valid — cached lessons without the field, and lessons that
+    legitimately have zero figures, are unaffected. Parameter is NOT named
+    `images` — that name is now the imported backend.images module in this
+    file's global scope.
+
+    Three slot shapes (drawn-diagrams slice, decision 1): a slot with no `type`
+    key, or `type: "web-image"`, needs non-empty string `query` + `caption`
+    (unchanged from slice 1); `type: "mermaid"` or `type: "svg"` needs a
+    non-empty string `code` (<=8192 chars) + non-empty string `caption`. Any
+    other `type` value is invalid."""
     if images_val is None:
         return True
     if not (isinstance(images_val, list) and len(images_val) <= 3):
@@ -218,9 +224,19 @@ def valid_images(images_val):
     for slot in images_val:
         if not isinstance(slot, dict):
             return False
-        for field in ("query", "caption"):
-            if not (isinstance(slot.get(field), str) and slot[field].strip()):
+        kind = slot.get("type", "web-image")
+        if kind == "web-image":
+            for field in ("query", "caption"):
+                if not (isinstance(slot.get(field), str) and slot[field].strip()):
+                    return False
+        elif kind in ("mermaid", "svg"):
+            code = slot.get("code")
+            if not (isinstance(code, str) and code.strip() and len(code) <= 8192):
                 return False
+            if not (isinstance(slot.get("caption"), str) and slot["caption"].strip()):
+                return False
+        else:
+            return False
     return True
 
 
@@ -304,7 +320,7 @@ _IMAGES_BLOCK = (
     '  images (optional — omit the key entirely if no figure genuinely helps): a list of 0-3 '
     '{"query": "<discriminating archive search terms>", "caption": "<one sentence saying what to '
     'NOTICE>"}, one per [[figure:n]] token you placed, in the same order.\n'
-)
+) + figures.DRAWN_FIGURE_GUIDANCE
 
 
 def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, position, total,
@@ -1272,12 +1288,14 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
     # Image resolution: the ONLY hook point that covers both cache-miss generation
     # AND deepen (deepen overwrites the lesson file wholesale). Fails open: any
     # exception here means the lesson ships with zero figures, never a blocked lesson.
+    # Splitting typed slots by type (svg/mermaid processed locally, only web-image
+    # slots hit the resolver) is shared with the backfill CLI via images.process_slots.
     slots = lesson.pop("images", None)
-    resolver = resolve_images or images.resolve_images
     resolved = []
     if isinstance(slots, list) and slots:
         try:
-            resolved = resolver(course_id, lesson_id, slots, content_dir=content_dir)
+            resolved = images.process_slots(course_id, lesson_id, slots, content_dir=content_dir,
+                                             resolve_images_fn=resolve_images)
         except Exception:
             resolved = []
     lesson["images"] = resolved
