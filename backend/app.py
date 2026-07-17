@@ -854,6 +854,35 @@ def create_app(db_path=None):
             conn.close()
         return jsonify(result)
 
+    @app.post("/api/courses/<course_id>/quiz/question-chat")
+    def post_quiz_question_chat(course_id):
+        # Post-answer, ephemeral, stateless chat about one already-answered quiz
+        # question (design doc decision 3) — no DB write, no events, mirrors the
+        # lesson chat route's shape but takes lesson_id from the body, not the URL.
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "invalid request"}), 400
+        lesson_id = body.get("lesson_id")
+        if not (isinstance(lesson_id, str)
+                and lesson_id in {l["id"] for l in courses.flatten_lessons(manifest)}):
+            return jsonify({"error": "lesson not found"}), 404
+        messages = body.get("messages")
+        if not quiz.valid_question_chat_messages(messages):
+            return jsonify({"error": "invalid messages"}), 400
+        # Fail-open grounding: a lesson not yet generated (None) still gets a chat,
+        # just without lesson content in the prompt (quiz_question_chat_prompt handles it).
+        lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
+        prompt = quiz.quiz_question_chat_prompt(lesson, body.get("question"), body.get("answerGiven"), messages)
+        # No web tools (decision 4): this re-explains material already in the question +
+        # lesson context, it doesn't need fresh facts.
+        sse = quiz.quiz_question_chat_sse(prompt, stream_fn=lambda p: claude_client.stream(p))
+        return app.response_class(sse, mimetype="text/event-stream")
+
     frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 
     @app.get("/")
