@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items, feedback
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items, feedback, quiz
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 _IMAGE_FILENAME_RE = _re.compile(r"^[a-z0-9-]+-\d\.(jpg|png|webp)$")
@@ -70,13 +70,31 @@ def create_app(db_path=None):
     @app.post("/api/events")
     def post_events():
         body = request.get_json(silent=True) or {}
+        raw_events = body.get("events", [])
         conn = db.get_connection(path)
         try:
-            result = events.insert_events(conn, body.get("events", []))
+            result = events.insert_events(conn, raw_events)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         finally:
             conn.close()
+        # Lesson-completion top-up (decision 6, fail-open, non-blocking): new
+        # material unlocks fresh quiz-round grounding, so nudge each newly-
+        # completed lesson's course to restock its Arcade bank. kick_restock's
+        # own try-lock and floor check make a spurious nudge (duplicate
+        # replay, bank already full) a no-op.
+        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        nudged = set()
+        for ev in raw_events:
+            if not isinstance(ev, dict) or ev.get("event_type") != "lesson_completed":
+                continue
+            cid = ev.get("course_id")
+            if isinstance(cid, str) and _ID_RE.match(cid) and cid not in nudged:
+                nudged.add(cid)
+                try:
+                    quiz.kick_restock(courses.CONTENT_DIR, path, cid, generate=generate)
+                except Exception:
+                    pass  # a restock nudge must never break event ingestion
         return jsonify(result)
 
     @app.get("/api/events")
@@ -778,6 +796,57 @@ def create_app(db_path=None):
         if not _ID_RE.match(course_id) or not _IMAGE_FILENAME_RE.match(filename):
             return jsonify({"error": "image not found"}), 404
         return send_from_directory(str(courses.CONTENT_DIR / course_id / "images"), filename)
+
+    @app.get("/api/courses/<course_id>/quiz/round")
+    def get_quiz_round(course_id):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        conn = db.get_connection(path)
+        try:
+            pool = quiz.question_pool(courses.CONTENT_DIR, conn, course_id, manifest)
+        finally:
+            conn.close()
+        if not pool:
+            return jsonify({"status": "locked"})
+        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        round_ = quiz.serve_round(courses.CONTENT_DIR, course_id)
+        # kick_restock is idempotent-safe (try-lock + its own floor check), so it
+        # is always safe to call here — whether the bank was empty (generating)
+        # or just below floor after serving.
+        quiz.kick_restock(courses.CONTENT_DIR, path, course_id, generate=generate)
+        if round_ is None:
+            return jsonify({"status": "generating"})
+        return jsonify({"status": "ready", "round": round_})
+
+    @app.post("/api/courses/<course_id>/quiz/results")
+    def post_quiz_results(course_id):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        body = request.get_json(silent=True) or {}
+        conn = db.get_connection(path)
+        try:
+            result = quiz.submit_results(courses.CONTENT_DIR, conn, course_id, body)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        finally:
+            conn.close()
+        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        quiz.kick_restock(courses.CONTENT_DIR, path, course_id, generate=generate)
+        return jsonify(result)
+
+    @app.get("/api/courses/<course_id>/quiz/stats")
+    def get_quiz_stats(course_id):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        conn = db.get_connection(path)
+        try:
+            result = quiz.quiz_stats(conn, course_id)
+        finally:
+            conn.close()
+        return jsonify(result)
 
     frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 
