@@ -523,3 +523,62 @@ def submit_results(content_dir, conn, course_id, body):
     }])
     consume_round(content_dir, course_id, round_id)
     return {"ok": True}
+
+
+# ---- stats: computed live from quiz_round events, no stored aggregates ----
+
+def _pct(score, total):
+    return round(score / total * 100) if total else 0
+
+
+def _quiz_streak_days(conn, course_id, today=None):
+    """Consecutive UTC days with >=1 played round in this course, anchored at
+    today or yesterday — same rule as stats.streak_days, scoped to one course
+    and to quiz_round events only."""
+    today = today or datetime.now(timezone.utc).date()
+    rows = conn.execute(
+        "SELECT DISTINCT substr(occurred_at, 1, 10) AS day FROM events "
+        "WHERE event_type = 'quiz_round' AND course_id = ? ORDER BY day DESC",
+        (course_id,),
+    ).fetchall()
+    days = []
+    for r in rows:
+        try:
+            days.append(date.fromisoformat(r["day"]))
+        except ValueError:
+            continue
+    if not days or days[0] < today - timedelta(days=1):
+        return 0
+    streak = 1
+    for prev, cur in zip(days, days[1:]):
+        if prev - cur != timedelta(days=1):
+            break
+        streak += 1
+    return streak
+
+
+def quiz_stats(conn, course_id, *, today=None):
+    """Computed entirely from quiz_round events — no stored aggregates
+    (decision 8): rounds played, best score as a %, per-format plays + best %,
+    last-10 history (newest first), and the course's quiz play streak."""
+    evs = _quiz_round_events(conn, course_id)
+    per_format = {}
+    for fmt in FORMATS:
+        fmt_evs = [e for e in evs if e["format"] == fmt]
+        if not fmt_evs:
+            continue
+        per_format[fmt] = {
+            "plays": len(fmt_evs),
+            "bestPct": max(_pct(e["score"], e["total"]) for e in fmt_evs),
+        }
+    history = [
+        {"date": e["occurred_at"][:10], "format": e["format"], "score": e["score"], "total": e["total"]}
+        for e in evs[-10:]
+    ][::-1]
+    return {
+        "roundsPlayed": len(evs),
+        "bestPct": max((_pct(e["score"], e["total"]) for e in evs), default=0),
+        "perFormat": per_format,
+        "history": history,
+        "streakDays": _quiz_streak_days(conn, course_id, today=today),
+    }

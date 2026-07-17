@@ -574,3 +574,54 @@ def test_submit_results_missing_missed_key_defaults_to_empty(conn, tmp_path):
     quiz.submit_results(root, conn, "c", body)
     row = conn.execute("SELECT payload FROM events").fetchone()
     assert json.loads(row["payload"])["missed"] == {}
+
+
+from datetime import date as D
+
+# ---- quiz_stats ----
+
+def test_quiz_stats_empty_course(conn):
+    stats = quiz.quiz_stats(conn, "c")
+    assert stats == {"roundsPlayed": 0, "bestPct": 0, "perFormat": {}, "history": [], "streakDays": 0}
+
+
+def test_quiz_stats_rounds_played_and_best_pct(conn):
+    _play(conn, "rapid_fire", score=4, total=8, occurred="2026-07-01T00:00:00+00:00")
+    _play(conn, "true_false", score=9, total=10, occurred="2026-07-02T00:00:00+00:00")
+    stats = quiz.quiz_stats(conn, "c")
+    assert stats["roundsPlayed"] == 2
+    assert stats["bestPct"] == 90
+
+
+def test_quiz_stats_per_format_plays_and_best(conn):
+    _play(conn, "rapid_fire", score=4, total=8, occurred="2026-07-01T00:00:00+00:00")
+    _play(conn, "rapid_fire", score=7, total=8, occurred="2026-07-02T00:00:00+00:00")
+    stats = quiz.quiz_stats(conn, "c")
+    assert stats["perFormat"]["rapid_fire"] == {"plays": 2, "bestPct": 88}
+    assert "true_false" not in stats["perFormat"]
+
+
+def test_quiz_stats_history_last_ten_newest_first(conn):
+    for i in range(12):
+        _play(conn, "rapid_fire", score=1, total=1, occurred=f"2026-07-{i + 1:02d}T00:00:00+00:00")
+    stats = quiz.quiz_stats(conn, "c")
+    assert len(stats["history"]) == 10
+    assert stats["history"][0]["date"] == "2026-07-12"
+    assert stats["history"][-1]["date"] == "2026-07-03"
+
+
+def test_quiz_stats_streak_today_yesterday_and_gap(conn):
+    _play(conn, "rapid_fire", occurred="2026-07-14T09:00:00+00:00")
+    _play(conn, "rapid_fire", occurred="2026-07-15T09:00:00+00:00")
+    assert quiz.quiz_stats(conn, "c", today=D(2026, 7, 15))["streakDays"] == 2
+    # yesterday only (nothing played today yet) keeps the streak alive
+    assert quiz.quiz_stats(conn, "c", today=D(2026, 7, 16))["streakDays"] == 2
+    # a full missed day breaks it
+    assert quiz.quiz_stats(conn, "c", today=D(2026, 7, 17))["streakDays"] == 0
+
+
+def test_quiz_stats_isolated_per_course(conn):
+    _play(conn, "rapid_fire", occurred="2026-07-01T00:00:00+00:00", course_id="c1")
+    _play(conn, "true_false", occurred="2026-07-01T00:00:00+00:00", course_id="c2")
+    assert quiz.quiz_stats(conn, "c1")["roundsPlayed"] == 1
+    assert "true_false" not in quiz.quiz_stats(conn, "c1")["perFormat"]
