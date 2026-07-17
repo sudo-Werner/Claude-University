@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { shellHTML, feedbackBarHTML } from "../src/views/shell.js";
 import { dashboardHTML } from "../src/views/dashboard.js";
-import { lessonHTML, ratingLocked, suggestedQuality } from "../src/views/lesson.js";
+import { lessonHTML, ratingLocked, suggestedQuality, expandFigureTokens } from "../src/views/lesson.js";
 import { diagnosticHTML } from "../src/views/diagnostic.js";
 import { curriculumHTML, lessonStatus, moduleProgress, recommendedStep } from "../src/views/curriculum.js";
 import { capstoneHTML } from "../src/views/capstone.js";
@@ -259,6 +259,142 @@ test("workspace chat shows the socratic banner and Exit only when the mode is on
   // A falsy flag renders byte-identically to a workspace that has never seen the mode.
   const legacy = lessonHTML(SAMPLE_LESSON, { ...base, ws: { open: true, tab: "chat", notes: "", chat: [], pending: false, saveStatus: "" } });
   assert.equal(off, legacy);
+});
+
+test("expandFigureTokens renders a figure with caption, credit, and license link", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg", caption: "Notice the valves",
+    credit: "Heart diagram — Jane Doe — CC BY-SA 4.0", license: "CC BY-SA 4.0",
+    licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0", sourceUrl: "https://commons.wikimedia.org/x" }] };
+  const { html, figuresBlock } = expandFigureTokens("<p>Intro.</p>[[figure:1]]<p>More.</p>", lesson, "demo");
+  assert.match(html, /<figure class="lesson-fig">/);
+  assert.match(html, /src="\/api\/courses\/demo\/images\/demo-l1-1\.jpg"/);
+  assert.match(html, /loading="lazy"/);
+  assert.match(html, /alt="Notice the valves"/);
+  assert.match(html, /Notice the valves/);
+  assert.match(html, /Heart diagram — Jane Doe — CC BY-SA 4\.0/);
+  assert.match(html, /href="https:\/\/creativecommons\.org\/licenses\/by-sa\/4\.0"/);
+  assert.match(html, /rel="noopener noreferrer"/);
+  assert.match(html, />CC BY-SA 4\.0<\/a>/);
+  assert.equal(figuresBlock, "");
+});
+
+test("expandFigureTokens falls back to sourceUrl when licenseUrl is null", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg", caption: "c",
+    credit: "cr", license: "CC0", licenseUrl: null, sourceUrl: "https://commons.wikimedia.org/x" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.match(html, /href="https:\/\/commons\.wikimedia\.org\/x"/);
+});
+
+test("expandFigureTokens escapes caption, credit, and license text (no raw HTML)", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg",
+    caption: "<script>alert(1)</script>",
+    credit: '"><img src=x onerror=alert(1)>',
+    license: "</a><b>x</b>", licenseUrl: "https://example.org", sourceUrl: "" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.doesNotMatch(html, /<script>/);
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.doesNotMatch(html, /<\/a><b>/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(html, /&quot;&gt;&lt;img/);
+  assert.match(html, /&lt;\/a&gt;&lt;b&gt;x&lt;\/b&gt;/);
+});
+
+test("expandFigureTokens rejects javascript: URLs in licenseUrl and renders text only", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg",
+    caption: "c", credit: "cr", license: "CC0",
+    licenseUrl: "javascript:alert(1)", sourceUrl: "" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.doesNotMatch(html, /<a[^>]*href/);  // NO <a> tag with href
+  assert.match(html, /CC0/);  // license text is still there
+  assert.doesNotMatch(html, /javascript:/);  // malicious URL stripped
+});
+
+test("expandFigureTokens rejects data: URLs in sourceUrl and renders text only", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg",
+    caption: "c", credit: "cr", license: "CC0",
+    licenseUrl: null, sourceUrl: "data:text/html,<script>alert(1)</script>" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.doesNotMatch(html, /<a[^>]*href/);  // NO <a> tag with href
+  assert.match(html, /CC0/);  // license text still rendered
+  assert.doesNotMatch(html, /data:/);  // malicious URL stripped
+});
+
+test("expandFigureTokens renders normal https URLs as clickable links", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg",
+    caption: "c", credit: "cr", license: "CC BY 4.0",
+    licenseUrl: "https://creativecommons.org/licenses/by/4.0", sourceUrl: "" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.match(html, /<a[^>]*href="[^"]*https:\/\/creativecommons/);
+  assert.match(html, /CC BY 4\.0<\/a>/);  // text inside the link
+});
+
+test("expandFigureTokens skips an entry whose filename fails the client-side regex", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "../evil.jpg",
+    caption: "c", credit: "c", license: "CC0", licenseUrl: null, sourceUrl: "" }] };
+  const { html, figuresBlock } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.doesNotMatch(html, /<figure/);
+  assert.equal(html, "");
+  assert.equal(figuresBlock, "");
+});
+
+test("expandFigureTokens strips a token with no matching images entry", () => {
+  const lesson = { images: [] };
+  const { html } = expandFigureTokens("<p>a</p>[[figure:1]]<p>b</p>", lesson, "demo");
+  assert.equal(html, "<p>a</p><p>b</p>");
+});
+
+test("expandFigureTokens expands only the first occurrence of a duplicated token", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg",
+    caption: "c", credit: "cr", license: "CC0", licenseUrl: null, sourceUrl: "" }] };
+  const { html } = expandFigureTokens("[[figure:1]]x[[figure:1]]", lesson, "demo");
+  const count = (html.match(/<figure class="lesson-fig">/g) || []).length;
+  assert.equal(count, 1);
+});
+
+test("expandFigureTokens renders a tokenless entry in a trailing Figures block", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg",
+    caption: "Retro caption", credit: "cr", license: "CC0", licenseUrl: null, sourceUrl: "https://x" }] };
+  const { html, figuresBlock } = expandFigureTokens("<p>no tokens here</p>", lesson, "demo");
+  assert.equal(html, "<p>no tokens here</p>");
+  assert.match(figuresBlock, /<section class="card lesson-figures">/);
+  assert.match(figuresBlock, />Figures</);
+  assert.match(figuresBlock, /Retro caption/);
+});
+
+test("expandFigureTokens renders nothing for an unknown figure type", () => {
+  const lesson = { images: [{ n: 1, type: "mermaid", code: "graph TD;", caption: "c" }] };
+  const { html, figuresBlock } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.equal(html, "");
+  assert.equal(figuresBlock, "");
+});
+
+test("expandFigureTokens with no images field leaves promptHtml untouched", () => {
+  const { html, figuresBlock } = expandFigureTokens("<p>A weight <code>w</code>.</p>", SAMPLE_LESSON, "demo");
+  assert.equal(html, "<p>A weight <code>w</code>.</p>");
+  assert.equal(figuresBlock, "");
+});
+
+test("lesson renders an expanded figure from lesson.images at its token position", () => {
+  const lesson = { ...SAMPLE_LESSON, courseId: "demo",
+    promptHtml: "<p>A weight <code>w</code> has gradient.</p>[[figure:1]]",
+    images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg", caption: "See the slope",
+               credit: "cred", license: "CC0", licenseUrl: null, sourceUrl: "https://x" }] };
+  const html = lessonHTML(lesson, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.match(html, /<figure class="lesson-fig">/);
+  assert.match(html, /src="\/api\/courses\/demo\/images\/demo-l1-1\.jpg"/);
+});
+
+test("lesson renders SAMPLE_LESSON (no images field) unaffected by figure expansion", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.doesNotMatch(html, /lesson-fig/);
+});
+
+test("a figure token typed in a chat message is not expanded (chat stays plain esc'd text)", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false,
+    ws: { open: true, tab: "chat", notes: "", chat: [{ role: "user", content: "[[figure:1]] test" }],
+          pending: false, saveStatus: "" } });
+  assert.match(html, /\[\[figure:1\]\] test/);
+  assert.doesNotMatch(html, /<figure class="lesson-fig">/);
 });
 
 test("diagnostic renders all six questions and gates Continue", () => {

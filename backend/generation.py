@@ -4,7 +4,7 @@ import re as _re
 import threading
 from pathlib import Path
 
-from backend import claude_client, courses, fsutil, spine
+from backend import claude_client, courses, fsutil, images, spine
 
 # Single-flight: expensive generations (a lesson is ~110s of Max-plan web search) must
 # never run twice concurrently for the same artifact. The second caller blocks on the
@@ -205,6 +205,25 @@ def valid_check(item):
     return False
 
 
+def valid_images(images_val):
+    """If-present shape check for the raw generator output's images slots
+    ({query, caption} dicts). Absent (None) stays valid — cached lessons
+    without the field, and lessons that legitimately have zero figures, are
+    unaffected. Parameter is NOT named `images` — that name is now the
+    imported backend.images module in this file's global scope."""
+    if images_val is None:
+        return True
+    if not (isinstance(images_val, list) and len(images_val) <= 3):
+        return False
+    for slot in images_val:
+        if not isinstance(slot, dict):
+            return False
+        for field in ("query", "caption"):
+            if not (isinstance(slot.get(field), str) and slot[field].strip()):
+                return False
+    return True
+
+
 def valid_lesson(obj):
     if not (isinstance(obj, dict) and all(k in obj for k in LESSON_KEYS)):
         return False
@@ -217,6 +236,8 @@ def valid_lesson(obj):
     if not valid_check(obj.get("preQuiz")):
         return False
     if not spine.valid_spine_entry(obj.get("spine")):
+        return False
+    if not valid_images(obj.get("images")):
         return False
     return all(valid_check(c) for c in checks)
 
@@ -266,6 +287,24 @@ def spine_block(earlier, spine_lessons):
         'lesson by its quoted title, e.g. As you saw in "<lesson title>", ... '
         "Never refer to lessons by number.\n"
     )
+
+
+_IMAGES_BLOCK = (
+    "\n\nOptionally include real figures — anatomy plates, diagrams, charts — the backend finds, "
+    "license-checks, and caches them automatically; you NEVER provide a URL, only a search query "
+    "and a caption. Add a figure ONLY for spatial, structural, process, or quantitative content "
+    "the text explains — NEVER decorative; when in doubt, omit one (zero images is often correct). "
+    "Prefer a real photo or plate for concrete identification (anatomy, organisms, objects), a "
+    "schematic for a process or abstract relation, and a chart for quantitative data. Every figure "
+    "needs a caption stating what to NOTICE, not a title. Place the figure immediately after the "
+    "paragraph that references it — never grouped at the end — using a bare placement token on its "
+    "own, right after that paragraph: [[figure:1]] for the first figure, [[figure:2]] for the "
+    "second, [[figure:3]] for the third. Budget at most ONE figure per major concept and at most "
+    "THREE per lesson.\n"
+    '  images (optional — omit the key entirely if no figure genuinely helps): a list of 0-3 '
+    '{"query": "<discriminating archive search terms>", "caption": "<one sentence saying what to '
+    'NOTICE>"}, one per [[figure:n]] token you placed, in the same order.\n'
+)
 
 
 def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, position, total,
@@ -398,6 +437,7 @@ def lesson_prompt(*, brief, profile, lesson_id, lesson_title, module_title, posi
         "`sources` with its REAL URL from your search results and a note saying what the video "
         "shows — it is a recommended complement for visual learners, not a citation. If nothing "
         "specific and high-quality turns up, include NO video rather than a loose match."
+        + _IMAGES_BLOCK
         + spine_context + obj_block + directive_line
     )
 
@@ -1147,12 +1187,16 @@ def _reviewed_lesson(lesson, verify_generate, objectives=None):
     if not (isinstance(reviewed, dict) and valid_lesson(reviewed)):
         return lesson
     reviewed["sources"] = original_sources
+    if "images" in lesson:
+        reviewed["images"] = lesson["images"]
+    elif "images" in reviewed:
+        del reviewed["images"]
     return reviewed
 
 
 def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, generate,
                                performance="", directive="", verify_generate=None,
-                               prior_knowledge=""):
+                               prior_knowledge="", resolve_images=None):
     """Generate one lesson, reconcile authoritative fields, sanitize, validate, and
     cache it (overwriting any existing file). Shared by ensure_lesson (cache-miss
     generation) and deepen_lesson (forced regeneration with a depth directive).
@@ -1225,6 +1269,20 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
             pq["choices"] = [sanitize_html(c) if isinstance(c, str) else c for c in pq["choices"]]
     if not valid_lesson(lesson):
         raise claude_client.ClaudeError("generated lesson failed validation")
+    # Image resolution: the ONLY hook point that covers both cache-miss generation
+    # AND deepen (deepen overwrites the lesson file wholesale). Fails open: any
+    # exception here means the lesson ships with zero figures, never a blocked lesson.
+    slots = lesson.pop("images", None)
+    resolver = resolve_images or images.resolve_images
+    resolved = []
+    if isinstance(slots, list) and slots:
+        try:
+            resolved = resolver(course_id, lesson_id, slots, content_dir=content_dir)
+        except Exception:
+            resolved = []
+    lesson["images"] = resolved
+    resolved_ns = {e["n"] for e in resolved if isinstance(e, dict) and isinstance(e.get("n"), int)}
+    lesson["promptHtml"] = images.strip_unresolved_figure_tokens(lesson["promptHtml"], resolved_ns)
     # The spine entry is generation-side state, not lesson content: pop it before
     # caching so lesson files keep their existing shape, then record it for future
     # lessons. The per-course lock serializes concurrent read-modify-writes of
@@ -1238,7 +1296,7 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
 
 
 def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, performance="",
-                  verify_generate=None, prior_knowledge=""):
+                  verify_generate=None, prior_knowledge="", resolve_images=None):
     existing = courses.load_lesson(content_dir, course_id, lesson_id)
     if existing is not None:
         return existing
@@ -1249,7 +1307,7 @@ def ensure_lesson(content_dir, course_id, lesson_id, profile, *, generate, perfo
         return _generate_and_store_lesson(
             content_dir, course_id, lesson_id, profile, generate=generate,
             performance=performance, verify_generate=verify_generate,
-            prior_knowledge=prior_knowledge,
+            prior_knowledge=prior_knowledge, resolve_images=resolve_images,
         )
 
 
@@ -1265,9 +1323,9 @@ _DEEPEN_DIRECTIVE = (
 
 
 def deepen_lesson(content_dir, course_id, lesson_id, profile, *, generate, performance="",
-                  verify_generate=None, prior_knowledge=""):
+                  verify_generate=None, prior_knowledge="", resolve_images=None):
     return _generate_and_store_lesson(
         content_dir, course_id, lesson_id, profile, generate=generate,
         performance=performance, directive=_DEEPEN_DIRECTIVE, verify_generate=verify_generate,
-        prior_knowledge=prior_knowledge,
+        prior_knowledge=prior_knowledge, resolve_images=resolve_images,
     )

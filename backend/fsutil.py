@@ -9,3 +9,13 @@ def write_text_atomic(path, text):
     tmp = path.parent / (path.name + ".tmp")
     tmp.write_text(text)
     os.replace(tmp, path)
+
+
+def write_bytes_atomic(path, data):
+    """Write bytes via a same-directory temp file + os.replace — the byte-safe
+    sibling of write_text_atomic (that one is text-only and would corrupt
+    binary content like a downloaded image)."""
+    path = Path(path)
+    tmp = path.parent / (path.name + ".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)

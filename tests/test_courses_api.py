@@ -1993,3 +1993,56 @@ def test_teach_route_maps_claude_error_to_502(client, tmp_path, monkeypatch):
                        json={"messages": [{"role": "user", "content": "x"}]})
     assert resp.status_code == 502
     assert resp.get_json()["error"] == "could not grade your teaching"
+
+
+def test_course_image_route_serves_file(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    (tmp_path / "demo" / "images").mkdir(parents=True)
+    (tmp_path / "demo" / "images" / "demo-l1-1.jpg").write_bytes(b"\xff\xd8\xffjpegdata")
+    resp = client.get("/api/courses/demo/images/demo-l1-1.jpg")
+    assert resp.status_code == 200
+    assert resp.mimetype == "image/jpeg"
+    assert resp.data == b"\xff\xd8\xffjpegdata"
+
+
+def test_course_image_route_serves_webp(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    (tmp_path / "demo" / "images").mkdir(parents=True)
+    (tmp_path / "demo" / "images" / "demo-l1-2.webp").write_bytes(b"RIFF0000WEBPdata")
+    resp = client.get("/api/courses/demo/images/demo-l1-2.webp")
+    assert resp.status_code == 200
+    assert resp.mimetype == "image/webp"
+
+
+def test_course_image_route_404s_on_bad_extension(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    (tmp_path / "demo" / "images").mkdir(parents=True)
+    (tmp_path / "demo" / "images" / "demo-l1-1.svg").write_bytes(b"<svg></svg>")
+    resp = client.get("/api/courses/demo/images/demo-l1-1.svg")
+    assert resp.status_code == 404
+    assert "error" in resp.get_json()
+
+
+def test_course_image_route_404s_on_uppercase_filename(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    (tmp_path / "demo" / "images").mkdir(parents=True)
+    (tmp_path / "demo" / "images" / "DEMO-L1-1.jpg").write_bytes(b"\xff\xd8\xff")
+    resp = client.get("/api/courses/demo/images/DEMO-L1-1.jpg")
+    assert resp.status_code == 404
+    assert "error" in resp.get_json()
+
+
+def test_course_image_route_404s_on_bad_course_id(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    resp = client.get("/api/courses/UPPER_CASE/images/demo-l1-1.jpg")
+    assert resp.status_code == 404
+
+
+def test_course_image_route_404s_on_path_traversal_attempt(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    # A traversal payload passed as the filename segment either fails routing
+    # entirely (extra path segments) or reaches the view and fails the strict
+    # filename regex — both outcomes are a 404, which is the only property
+    # this test needs to prove (no traversal ever serves a file).
+    resp = client.get("/api/courses/demo/images/..%2f..%2fapp.py")
+    assert resp.status_code == 404

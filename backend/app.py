@@ -6,6 +6,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items, feedback
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
+_IMAGE_FILENAME_RE = _re.compile(r"^[a-z0-9-]+-\d\.(jpg|png|webp)$")
 
 
 def _lesson_concepts(course_id, lesson_id):
@@ -771,6 +772,12 @@ def create_app(db_path=None):
         if written is None:
             return jsonify({"error": "invalid revision"}), 400
         return jsonify({"course": written})
+
+    @app.get("/api/courses/<course_id>/images/<filename>")
+    def course_image(course_id, filename):
+        if not _ID_RE.match(course_id) or not _IMAGE_FILENAME_RE.match(filename):
+            return jsonify({"error": "image not found"}), 404
+        return send_from_directory(str(courses.CONTENT_DIR / course_id / "images"), filename)
 
     frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 

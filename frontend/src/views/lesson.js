@@ -85,6 +85,57 @@ function lessonSourcesHTML(sources) {
   );
 }
 
+const FIGURE_TOKEN_RE = /\[\[figure:(\d+)\]\]/g;
+const FIGURE_FILENAME_RE = /^[a-z0-9-]+-\d\.(jpg|png|webp)$/;
+const SAFE_HREF_RE = /^https?:\/\//i;
+
+function figureHTML(entry, courseId) {
+  const src = `/api/courses/${esc(courseId)}/images/${esc(entry.file)}`;
+  const licenseHref = entry.licenseUrl || entry.sourceUrl || "";
+  // Only render an <a> if the href is a valid http(s) URL; otherwise show text
+  const licenseLink = SAFE_HREF_RE.test(licenseHref)
+    ? `<a href="${esc(licenseHref)}" target="_blank" rel="noopener noreferrer">${esc(entry.license)}</a>`
+    : esc(entry.license);
+  return (
+    `<figure class="lesson-fig"><img src="${src}" alt="${esc(entry.caption)}" loading="lazy">` +
+    `<figcaption>${esc(entry.caption)} <span class="fig-credit">${esc(entry.credit)} ` +
+    `${licenseLink}` +
+    `</span></figcaption></figure>`
+  );
+}
+
+// Pure pre-render transform: expands [[figure:n]] tokens ONLY against this lesson's
+// OWN backend-written images array, and ONLY for type:"web-image" entries (unknown
+// types — e.g. a future slice-2 "mermaid"/"svg" — render nothing here). Returns the
+// expanded promptHtml plus a separate trailing block for entries whose token never
+// appeared in the prose (the retrofit/backfill case).
+export function expandFigureTokens(promptHtml, lesson, courseId) {
+  const entries = Array.isArray(lesson.images) ? lesson.images : [];
+  const byN = new Map();
+  for (const entry of entries) {
+    if (entry && entry.type === "web-image" && typeof entry.n === "number"
+        && typeof entry.file === "string" && FIGURE_FILENAME_RE.test(entry.file)
+        && !byN.has(entry.n)) {
+      byN.set(entry.n, entry);
+    }
+  }
+  const used = new Set();
+  const html = promptHtml.replace(FIGURE_TOKEN_RE, (match, nStr) => {
+    const n = Number(nStr);
+    if (used.has(n) || !byN.has(n)) return "";
+    used.add(n);
+    return figureHTML(byN.get(n), courseId);
+  });
+  const trailing = Array.from(byN.entries())
+    .filter(([n]) => !used.has(n))
+    .map(([, entry]) => figureHTML(entry, courseId))
+    .join("");
+  const figuresBlock = trailing
+    ? `<section class="card lesson-figures"><div class="ls-head">Figures</div>${trailing}</section>`
+    : "";
+  return { html, figuresBlock };
+}
+
 // #6 analogy on tap: a chip row per spine concept term (response-only field from
 // the lesson GET, read live from spine.json — never cached in the lesson file).
 // A tap streams a fresh alternative-angle explanation into the workspace chat.
@@ -230,6 +281,8 @@ export function lessonHTML(lesson, state, nav = {}) {
   const rateBtn = (quality, label) =>
     `<button class="rate-btn${suggested === quality ? " suggested" : ""}" data-quality="${quality}"${locked ? " disabled" : ""}>${label}</button>`;
 
+  const { html: expandedPrompt, figuresBlock } = expandFigureTokens(lesson.promptHtml, lesson, lesson.courseId);
+
   return `
     <div class="lesson-col">
     <div class="lesson-head">
@@ -249,7 +302,7 @@ export function lessonHTML(lesson, state, nav = {}) {
     <div class="lesson-main">
     <section class="card lesson">
       <span class="eyebrow">${lesson.eyebrow}</span>
-      <div class="prompt">${lesson.promptHtml}</div>
+      <div class="prompt">${expandedPrompt}</div>
       ${conceptChipsHTML(lesson, state.ws)}
       <button class="deepen" data-action="deepen-lesson">Rusty on this? Explain it more deeply</button>
       ${state.deepenError ? `<div class="grade grade-soft">${esc(state.deepenError)}</div>` : ""}
@@ -262,6 +315,7 @@ export function lessonHTML(lesson, state, nav = {}) {
       <button class="reveal ${sol}" data-action="reveal-solution">${LOCK}<span style="flex:1">${REVEAL_TEXT[sol]}</span></button>
       ${solutionPanel}
     </section>
+    ${figuresBlock}
     ${state.solutionRevealed
       ? (state.isReview && state.freshPending
           ? '<p class="checks-pending">Preparing fresh review questions…</p>'

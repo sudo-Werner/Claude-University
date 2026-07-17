@@ -167,8 +167,13 @@ def _result_text(stdout):
         return stdout  # tolerate a raw text result
 
 
-def run_structured(prompt, *, model=DEFAULT_MODEL, validate=None, runner=_run_cli):
-    args_for = lambda p: ["-p", p, "--output-format", "json", "--model", model]
+def run_structured(prompt, *, model=DEFAULT_MODEL, validate=None, runner=_run_cli, tools=None):
+    def args_for(p):
+        args = ["-p", p]
+        if tools:
+            args += ["--allowedTools", *tools]  # variadic; terminated by the next --flag below
+        args += ["--output-format", "json", "--model", model]
+        return args
     for attempt in range(2):
         text = _result_text(runner(args_for(prompt)))
         obj = extract_json(text)

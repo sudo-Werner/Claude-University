@@ -289,6 +289,100 @@ def test_ensure_lesson_reconciles_ids_and_step(tmp_path):
     assert out["totalSteps"] == 1
 
 
+def test_ensure_lesson_resolves_images_and_strips_unresolved_tokens(tmp_path):
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    made["promptHtml"] = "<p>Intro.</p>[[figure:1]]<p>More.</p>[[figure:2]]"
+    made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
+    made["images"] = [{"query": "q1", "caption": "c1"}, {"query": "q2", "caption": "c2"}]
+
+    def fake_resolver(course_id, lesson_id, slots, *, content_dir):
+        return [{"n": 1, "type": "web-image", "file": "demo-l1-1.jpg", "caption": "c1",
+                 "credit": "cred", "license": "CC BY 4.0", "licenseUrl": "https://x",
+                 "sourceUrl": "https://y"}]
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made),
+                            resolve_images=fake_resolver)
+    assert out["images"] == [{"n": 1, "type": "web-image", "file": "demo-l1-1.jpg", "caption": "c1",
+                               "credit": "cred", "license": "CC BY 4.0", "licenseUrl": "https://x",
+                               "sourceUrl": "https://y"}]
+    assert "[[figure:1]]" in out["promptHtml"]
+    assert "[[figure:2]]" not in out["promptHtml"]
+
+
+def test_ensure_lesson_resolver_exception_stores_lesson_without_figures(tmp_path):
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    made["promptHtml"] = "<p>Intro.</p>[[figure:1]]"
+    made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
+    made["images"] = [{"query": "q1", "caption": "c1"}]
+
+    def boom(course_id, lesson_id, slots, *, content_dir):
+        raise RuntimeError("archive outage")
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made),
+                            resolve_images=boom)
+    assert out["images"] == []
+    assert "[[figure:1]]" not in out["promptHtml"]
+    assert "<p>Intro.</p>" in out["promptHtml"]
+
+
+def test_ensure_lesson_without_images_slots_never_calls_resolver(tmp_path):
+    root = _course(tmp_path)
+    made = {k: "x" for k in gen.LESSON_KEYS}
+    made["id"] = "demo-l1"
+    made["checks"] = [dict(_OK_CHECK)]
+    made["preQuiz"] = dict(_OK_PREQUIZ)
+    made["spine"] = _ok_spine()
+
+    def boom(*a, **kw):
+        raise AssertionError("resolver should not be called")
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made),
+                            resolve_images=boom)
+    assert out["images"] == []
+
+
+def test_deepen_lesson_re_resolves_images(tmp_path):
+    root = tmp_path / "courses"; root.mkdir()
+    from backend import courses
+    manifest = courses.write_course(root, {"title": "T", "subtitle": "s", "brief": "b",
+                                "modules": [{"title": "M", "lessons": [{"title": "L"}]}]})
+    cid = manifest["id"]; lid = manifest["modules"][0]["lessons"][0]["id"]
+    original = {"id": lid, "courseId": cid, "topic": "t", "step": 1, "totalSteps": 1,
+               "eyebrow": "EXERCISE", "promptHtml": "<p>shallow</p>", "hintHtml": "h",
+               "solutionAns": "a", "solutionNote": "n", "checks": [dict(_OK_CHECK)],
+               "images": [{"n": 1, "type": "web-image", "file": f"{lid}-1.jpg", "caption": "old",
+                           "credit": "c", "license": "CC0", "licenseUrl": None, "sourceUrl": "https://z"}]}
+    path = root / cid / "lessons" / f"{lid}.json"
+    path.write_text(_json.dumps(original))
+
+    calls = []
+    def fake_resolver(course_id, lesson_id, slots, *, content_dir):
+        calls.append(slots)
+        return [{"n": 1, "type": "web-image", "file": f"{lid}-1.jpg", "caption": "new",
+                 "credit": "c2", "license": "CC0", "licenseUrl": None, "sourceUrl": "https://z2"}]
+
+    def fake_generate(prompt):
+        return {"id": "wrong", "courseId": "wrong", "topic": "deeper", "step": 9, "totalSteps": 9,
+                "eyebrow": "EXERCISE", "promptHtml": "<p>deeper</p>[[figure:1]]",
+                "hintHtml": "h2", "solutionAns": "a2", "solutionNote": "n2", "checks": [dict(_OK_CHECK)],
+                "preQuiz": dict(_OK_PREQUIZ), "spine": _ok_spine(),
+                "images": [{"query": "q", "caption": "new"}]}
+
+    lesson = gen.deepen_lesson(root, cid, lid, {}, generate=fake_generate, resolve_images=fake_resolver)
+    assert len(calls) == 1
+    assert lesson["images"][0]["caption"] == "new"
+    on_disk = _json.loads(path.read_text())
+    assert on_disk["images"][0]["caption"] == "new"
+
+
 def test_chat_sse_emits_error_on_claude_failure():
     def failing_stream(prompt):
         raise claude_client.ClaudeError("connection refused")
@@ -669,6 +763,41 @@ def test_lesson_prompt_has_creative_teaching_guidance():
     assert "running concrete scenario" in low or "one running concrete" in low
     assert "visual metaphor" in low
     assert "crowd" in low                   # style never crowds out substance
+
+
+def test_lesson_prompt_includes_images_slot_instructions():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="x-l1", lesson_title="T",
+                          module_title="M", position=1, total=2)
+    assert "[[figure:1]]" in p
+    assert "[[figure:2]]" in p
+    assert "images" in p and "query" in p and "caption" in p
+    assert "NEVER decorative" in p
+    assert "zero images is often correct" in p
+
+
+def test_valid_lesson_images_absent_stays_valid():
+    good = {k: "x" for k in gen.LESSON_KEYS}
+    good["checks"] = [dict(_OK_CHECK)]
+    good["preQuiz"] = dict(_OK_PREQUIZ)
+    good["spine"] = _ok_spine()
+    assert gen.valid_lesson(good) is True  # no "images" key at all
+
+
+def test_valid_lesson_images_shape_when_present():
+    base = {k: "x" for k in gen.LESSON_KEYS}
+    base["checks"] = [dict(_OK_CHECK)]
+    base["preQuiz"] = dict(_OK_PREQUIZ)
+    base["spine"] = _ok_spine()
+    base["images"] = [{"query": "q1", "caption": "c1"}]
+    assert gen.valid_lesson(base) is True
+    base["images"] = [{"query": "q1", "caption": "c1"}] * 4
+    assert gen.valid_lesson(base) is False  # >3
+    base["images"] = [{"query": "", "caption": "c1"}]
+    assert gen.valid_lesson(base) is False  # blank query
+    base["images"] = [{"query": "q1"}]
+    assert gen.valid_lesson(base) is False  # missing caption
+    base["images"] = "not a list"
+    assert gen.valid_lesson(base) is False
 
 
 def test_source_type_from_domain():
@@ -1198,6 +1327,48 @@ def test_verification_preserves_original_sources(tmp_path):
                             verify_generate=_verify_stub(audit, lambda: dict(fixed)))
     assert out["solutionAns"] == "reconciled"
     assert [s["url"] for s in out["sources"]] == ["https://ocw.mit.edu/x"]
+
+
+def test_verification_preserves_original_images(tmp_path):
+    root = _course(tmp_path)
+    images_slot = [{"n": 1, "query": "cells", "caption": "Dividing cells"}]
+    raw = _full_lesson(images=list(images_slot), solutionAns="original")
+    audit = {"ok": False, "issues": ["caption mismatch"]}
+    # a rewrite that omits images (review reply has no images key) must preserve them
+    fixed = _full_lesson(solutionAns="reconciled")  # note: no images key
+
+    def fake_resolve(course_id, lesson_id, slots, *, content_dir):
+        # Return resolved images with the same captions from the slots
+        return [{"n": s["n"], "type": "web-image", "caption": s.get("caption"),
+                "file": f"{lesson_id}-{s['n']}.png"} for s in slots if isinstance(s, dict)]
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(raw),
+                            verify_generate=_verify_stub(audit, lambda: dict(fixed)),
+                            resolve_images=fake_resolve)
+    assert out["solutionAns"] == "reconciled"
+    # images should be preserved: the resolved version should have them with the same captions
+    assert len(out["images"]) == 1
+    assert out["images"][0]["caption"] == "Dividing cells"
+    assert out["images"][0]["n"] == 1
+
+
+def test_verification_does_not_add_images_to_imageless_lesson(tmp_path):
+    root = _course(tmp_path)
+    raw = _full_lesson(solutionAns="original")  # no images key
+    audit = {"ok": False, "issues": ["some issue"]}
+    # a lesson without images should stay without images, even if review reply somehow had them
+    fixed = _full_lesson(images=[{"n": 1, "query": "x"}], solutionAns="reconciled")
+
+    def fake_resolve(course_id, lesson_id, slots, *, content_dir):
+        return [{"n": s["n"], "type": "web-image", "file": f"{lesson_id}-{s['n']}.png"}
+                for s in slots if isinstance(s, dict)]
+
+    out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(raw),
+                            verify_generate=_verify_stub(audit, lambda: dict(fixed)),
+                            resolve_images=fake_resolve)
+    # images must not be added: the original lesson never had them, so even if the
+    # review reply added images, they must be stripped out by _reviewed_lesson
+    assert out["images"] == [], "images must not be added to a lesson that never proposed them"
 
 
 def test_ensure_lesson_skips_verification_when_not_requested(tmp_path):

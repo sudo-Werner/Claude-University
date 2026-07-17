@@ -47,6 +47,44 @@ def test_run_structured_applies_validator():
         cc.run_structured("x", runner=lambda args: good, validate=lambda o: "missing" in o)
 
 
+def test_run_structured_passes_tools_as_allowed_tools():
+    calls = []
+    def runner(args):
+        calls.append(args)
+        return json.dumps({"result": '{"ok": true}'})
+    out = cc.run_structured("x", runner=runner, tools=["Read"])
+    assert out == {"ok": True}
+    assert calls[0][:2] == ["-p", "x"]
+    i = calls[0].index("--allowedTools")
+    assert calls[0][i + 1] == "Read"
+    assert "--output-format" in calls[0]
+
+
+def test_run_structured_without_tools_omits_allowed_tools_flag():
+    calls = []
+    def runner(args):
+        calls.append(args)
+        return json.dumps({"result": '{"ok": true}'})
+    cc.run_structured("x", runner=runner)
+    assert "--allowedTools" not in calls[0]
+
+
+def test_run_structured_retry_carries_same_tools():
+    calls = []
+    outputs = iter([
+        json.dumps({"result": "sorry no json"}),
+        json.dumps({"result": '{"ok": true}'}),
+    ])
+    def runner(args):
+        calls.append(args)
+        return next(outputs)
+    cc.run_structured("x", runner=runner, tools=["Read"])
+    assert len(calls) == 2
+    for c in calls:
+        assert "--allowedTools" in c
+        assert c[c.index("--allowedTools") + 1] == "Read"
+
+
 def test_env_strips_anthropic_credentials(monkeypatch):
     # The Task 0 spike proved a stale ANTHROPIC_API_KEY shadows the Max OAuth and 401s.
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-bad")
