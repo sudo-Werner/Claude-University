@@ -1210,36 +1210,6 @@ def _reviewed_lesson(lesson, verify_generate, objectives=None):
     return reviewed
 
 
-def _process_local_slots(slots):
-    """Split lesson image slots by type (drawn-diagrams slice). Returns
-    (local_entries, web_image_slots): local_entries holds resolved mermaid/svg
-    entries {n, type, code, caption} — mermaid passes `code` through verbatim
-    (already shape-validated by valid_images before this runs); svg runs `code`
-    through figures.sanitize_svg and is DROPPED (not added) on rejection, same
-    fail-open contract as an unresolved web-image slot. web_image_slots is the
-    SAME LENGTH as slots with every non-web-image position set to None."""
-    local_entries = []
-    web_image_slots = []
-    for i, slot in enumerate(slots, start=1):
-        if not isinstance(slot, dict):
-            web_image_slots.append(None)
-            continue
-        kind = slot.get("type", "web-image")
-        if kind == "svg":
-            sanitized = figures.sanitize_svg(slot.get("code", ""))
-            if sanitized is not None:
-                local_entries.append({"n": i, "type": "svg", "code": sanitized,
-                                       "caption": slot.get("caption", "")})
-            web_image_slots.append(None)
-        elif kind == "mermaid":
-            local_entries.append({"n": i, "type": "mermaid", "code": slot.get("code", ""),
-                                   "caption": slot.get("caption", "")})
-            web_image_slots.append(None)
-        else:
-            web_image_slots.append(slot)
-    return local_entries, web_image_slots
-
-
 def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, generate,
                                performance="", directive="", verify_generate=None,
                                prior_knowledge="", resolve_images=None):
@@ -1318,25 +1288,16 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
     # Image resolution: the ONLY hook point that covers both cache-miss generation
     # AND deepen (deepen overwrites the lesson file wholesale). Fails open: any
     # exception here means the lesson ships with zero figures, never a blocked lesson.
-    # Typed slots (drawn-diagrams slice): mermaid/svg are processed locally (svg
-    # sanitized, dropped on rejection; mermaid passed through — already shape-checked
-    # by valid_images); only web-image slots go to the resolver. web_image_slots keeps
-    # the SAME LENGTH as slots with non-web-image positions set to None, so the
-    # resolver's positional enumerate(..., start=1) still assigns each surviving
-    # web-image slot its ORIGINAL 1-based number — no change to resolve_images's
-    # signature is needed (it already skips non-dict slots).
+    # Splitting typed slots by type (svg/mermaid processed locally, only web-image
+    # slots hit the resolver) is shared with the backfill CLI via images.process_slots.
     slots = lesson.pop("images", None)
-    resolver = resolve_images or images.resolve_images
     resolved = []
     if isinstance(slots, list) and slots:
-        local_entries, web_image_slots = _process_local_slots(slots)
-        web_resolved = []
-        if any(s is not None for s in web_image_slots):
-            try:
-                web_resolved = resolver(course_id, lesson_id, web_image_slots, content_dir=content_dir)
-            except Exception:
-                web_resolved = []
-        resolved = sorted(local_entries + web_resolved, key=lambda e: e["n"])
+        try:
+            resolved = images.process_slots(course_id, lesson_id, slots, content_dir=content_dir,
+                                             resolve_images_fn=resolve_images)
+        except Exception:
+            resolved = []
     lesson["images"] = resolved
     resolved_ns = {e["n"] for e in resolved if isinstance(e, dict) and isinstance(e.get("n"), int)}
     lesson["promptHtml"] = images.strip_unresolved_figure_tokens(lesson["promptHtml"], resolved_ns)

@@ -754,3 +754,94 @@ def test_backfill_course_survives_timeout_and_continues_batch(tmp_path):
     on_disk_2 = json.loads(path_2.read_text())
     assert "images" in on_disk_2
     assert on_disk_2["images"] == []
+
+
+def test_process_slots_mixed_types(tmp_path):
+    content_dir = tmp_path / "courses"
+    slots = [
+        {"query": "q", "caption": "c"},
+        {"type": "svg", "code": '<svg viewBox="0 0 800 500"><rect width="10" height="10"/></svg>', "caption": "s"},
+        {"type": "mermaid", "code": "pie", "caption": "m"},
+    ]
+
+    def fake_resolver(course_id, lesson_id, slots_arg, *, content_dir):
+        assert slots_arg[0] == {"query": "q", "caption": "c"}
+        assert slots_arg[1] is None and slots_arg[2] is None
+        return [{"n": 1, "type": "web-image", "file": "demo-l1-1.jpg", "caption": "c",
+                 "credit": "c", "license": "CC0", "licenseUrl": None, "sourceUrl": ""}]
+
+    result = images.process_slots("demo", "demo-l1", slots, content_dir=content_dir,
+                                   resolve_images_fn=fake_resolver)
+    assert [e["n"] for e in result] == [1, 2, 3]
+    assert [e["type"] for e in result] == ["web-image", "svg", "mermaid"]
+
+
+def test_process_slots_never_raises_on_resolver_exception(tmp_path):
+    content_dir = tmp_path / "courses"
+    slots = [{"type": "mermaid", "code": "pie", "caption": "m"}, {"query": "q", "caption": "c"}]
+
+    def boom(*a, **kw):
+        raise RuntimeError("archive outage")
+
+    result = images.process_slots("demo", "demo-l1", slots, content_dir=content_dir, resolve_images_fn=boom)
+    # local mermaid entry survives even though the web-image resolver blew up
+    assert result == [{"n": 1, "type": "mermaid", "code": "pie", "caption": "m"}]
+
+
+def test_valid_images_slots_backfill_accepts_typed_slots():
+    assert images._valid_images_slots([{"type": "mermaid", "code": "pie", "caption": "c"}]) is True
+    assert images._valid_images_slots([{"type": "svg", "code": "<svg></svg>", "caption": "c"}]) is True
+    assert images._valid_images_slots([{"type": "svg", "code": "", "caption": "c"}]) is False
+    assert images._valid_images_slots([{"type": "bogus", "code": "x", "caption": "c"}]) is False
+
+
+def test_backfill_prompt_includes_drawn_figure_guidance():
+    lesson = {"topic": "Cells", "promptHtml": "<p>Cells divide.</p>"}
+    p = images.backfill_prompt(lesson)
+    assert '"type": "mermaid"' in p
+    assert '"type": "svg"' in p
+
+
+def test_backfill_course_mermaid_slot_stores_without_network_call(tmp_path, monkeypatch):
+    content_dir = tmp_path / "courses"
+    lessons_dir = content_dir / "demo" / "lessons"
+    lessons_dir.mkdir(parents=True)
+    lesson_path = lessons_dir / "demo-l1.json"
+    lesson_path.write_text(json.dumps({"id": "demo-l1", "topic": "Cells", "promptHtml": "<p>Cells divide.</p>"}))
+
+    def fake_generate(prompt, validate):
+        obj = {"images": [{"type": "mermaid", "code": "graph TD; A-->B;", "caption": "flow"}],
+               "promptHtml": "<p>Cells divide.</p>[[figure:1]]"}
+        assert validate(obj)
+        return obj
+
+    def boom_http(url):
+        raise AssertionError("no network call should happen for a mermaid-only proposal")
+
+    monkeypatch.setattr(images, "_http_get", boom_http)
+    updated = images.backfill_course(content_dir, "demo", generate=fake_generate)
+    assert updated == 1
+    saved = json.loads(lesson_path.read_text())
+    assert saved["images"] == [{"n": 1, "type": "mermaid", "code": "graph TD; A-->B;", "caption": "flow"}]
+    assert "[[figure:1]]" in saved["promptHtml"]
+
+
+def test_backfill_course_svg_rejection_strips_token_and_continues(tmp_path):
+    content_dir = tmp_path / "courses"
+    lessons_dir = content_dir / "demo" / "lessons"
+    lessons_dir.mkdir(parents=True)
+    lesson_path = lessons_dir / "demo-l1.json"
+    lesson_path.write_text(json.dumps({"id": "demo-l1", "topic": "Cells", "promptHtml": "<p>Cells divide.</p>"}))
+
+    def fake_generate(prompt, validate):
+        obj = {"images": [{"type": "svg", "code": "<svg><rect></svg>", "caption": "bad"}],
+               "promptHtml": "<p>Cells divide.</p>[[figure:1]]"}
+        assert validate(obj)
+        return obj
+
+    updated = images.backfill_course(content_dir, "demo", generate=fake_generate)
+    assert updated == 1
+    saved = json.loads(lesson_path.read_text())
+    assert saved["images"] == []
+    assert "[[figure:1]]" not in saved["promptHtml"]
+    assert "<p>Cells divide.</p>" in saved["promptHtml"]
