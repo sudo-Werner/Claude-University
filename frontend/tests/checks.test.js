@@ -15,6 +15,20 @@ test("gradeCheck fill matches case/space-insensitively", () => {
   assert.equal(gradeCheck(c, "five").correct, false);
 });
 
+test("gradeCheck fill ignores internal spacing and dash/minus variants", () => {
+  const c = { type: "fill", answer: "-70 mV", explanation: "why" };
+  assert.equal(gradeCheck(c, "-70mV").correct, true); // the reported bug: missing space
+  assert.equal(gradeCheck(c, "−70 mV").correct, true); // typographic minus (U+2212)
+  assert.equal(gradeCheck(c, "–70mV").correct, true); // en dash + no space
+  assert.equal(gradeCheck(c, "-70 mv").correct, true); // case
+});
+
+test("gradeCheck fill stays strict about sign and token", () => {
+  const c = { type: "fill", answer: "-70 mV", explanation: "why" };
+  assert.equal(gradeCheck(c, "70 mV").correct, false); // wrong sign is still wrong
+  assert.equal(gradeCheck(c, "-70 mA").correct, false); // wrong unit is still wrong
+});
+
 test("checksHTML renders mcq choices and a fill input", () => {
   const html = checksHTML(
     [{ type: "mcq", prompt: "pick", choices: ["a", "b"], answer: 0, explanation: "e" },
