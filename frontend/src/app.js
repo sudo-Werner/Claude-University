@@ -1064,6 +1064,16 @@ export async function init({ window, fetch }) {
       ui.lessonState.answer = ta.value;
       const btn = view.querySelector('[data-action="check-answer"]');
       if (btn) btn.disabled = !ta.value.trim() || !!ui.lessonState.grading;
+
+      // Keep reveal-solution button appearance in sync with the answer state
+      const revealBtn = view.querySelector('[data-action="reveal-solution"]');
+      if (revealBtn && !ui.lessonState.solutionRevealed) {
+        const REVEAL_TEXT = { locked: "Attempt first to unlock the solution", ready: "Reveal solution", shown: "Solution shown" };
+        const newState = ta.value.trim() ? "ready" : "locked";
+        revealBtn.className = "reveal " + newState;
+        const span = revealBtn.querySelector("span");
+        if (span) span.textContent = REVEAL_TEXT[newState];
+      }
     });
     view.querySelector('[data-action="toggle-hint"]').addEventListener("click", () => {
       ui.lessonState.hintVisible = !ui.lessonState.hintVisible;
