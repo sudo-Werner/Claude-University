@@ -67,6 +67,7 @@ export async function init({ window, fetch }) {
     arcade: null,
     arcadeCourseId: null,
     quizPlay: null,
+    arcadePollTimer: null,
     feedback: { open: false, sending: false, text: "", notice: "" },
   };
 
@@ -691,8 +692,24 @@ export async function init({ window, fetch }) {
   }
 
   // ---- Arcade: surprise-format quiz rounds over completed lessons ----
+
+  // Cleans up any in-flight arcade play state — the rapid-fire countdown interval and
+  // the round-generation poll timeout — so a leaked timer can't fire later and repaint
+  // the shared #view node the user has since navigated off of. Called at the top of
+  // showArcade so every route back through the Arcade grid (from arcade-loading or
+  // arcade-play) tears down its timers. Belt-and-braces: the countdown tick itself
+  // also carries a screen guard (see startCountdown) for exits that bypass showArcade
+  // entirely (home nav, course nav).
+  function resetArcadePlay() {
+    if (ui.quizPlay && ui.quizPlay.countdownTimer) window.clearInterval(ui.quizPlay.countdownTimer);
+    if (ui.arcadePollTimer) window.clearTimeout(ui.arcadePollTimer);
+    ui.arcadePollTimer = null;
+    ui.quizPlay = null;
+  }
+
   async function showArcade() {
     pauseTimer();
+    resetArcadePlay();
     ui.screen = "arcade";
     root.innerHTML = shellHTML({ back: "Courses" });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showHome);
@@ -749,7 +766,7 @@ export async function init({ window, fetch }) {
       view.querySelector('[data-action="arcade-retry"]').addEventListener("click", () => startArcadeRound(courseId));
       return;
     }
-    window.setTimeout(() => pollArcadeRound(courseId, seq, nextElapsed), 3000);
+    ui.arcadePollTimer = window.setTimeout(() => pollArcadeRound(courseId, seq, nextElapsed), 3000);
   }
 
   function beginRound(round) {
@@ -777,9 +794,16 @@ export async function init({ window, fetch }) {
       return;
     }
     if (st.phase === "result") {
-      view.innerHTML = arcadeResultHTML(st);
+      const saveNotice = st.saveFailed
+        ? `<div class="prompt">Score could not be saved.</div>` +
+          `<button class="btn-secondary" data-action="arcade-retry-save" ${st.saving ? "disabled" : ""}>${st.saving ? "Retrying…" : "Retry save"}</button>`
+        : "";
+      view.innerHTML = arcadeResultHTML(st) + saveNotice;
       view.querySelector('[data-action="arcade-play-again"]').addEventListener("click", () => startArcadeRound(ui.arcadeCourseId));
       view.querySelector('[data-action="arcade-back"]').addEventListener("click", showArcade);
+      if (st.saveFailed && !st.saving) {
+        view.querySelector('[data-action="arcade-retry-save"]').addEventListener("click", retrySaveResult);
+      }
       return;
     }
     if (st.round.format === "match_up") {
@@ -813,6 +837,15 @@ export async function init({ window, fetch }) {
     st.countdown = 15;
     clearCountdown();
     st.countdownTimer = window.setInterval(() => {
+      // Belt-and-braces: resetArcadePlay() (called from showArcade) already clears this
+      // interval on every nav-back through the Arcade grid. This guard catches any exit
+      // that bypasses showArcade (home nav, course nav) — without it, a leaked tick would
+      // call answerChoice(null) -> paintArcadePlay() and clobber whatever screen the user
+      // has navigated to since, because paintArcadePlay overwrites the shared #view node.
+      if (ui.screen !== "arcade-play" || ui.quizPlay !== st) {
+        window.clearInterval(st.countdownTimer);
+        return;
+      }
       st.countdown -= 1;
       if (st.countdown <= 0) {
         clearCountdown();
@@ -888,19 +921,38 @@ export async function init({ window, fetch }) {
   async function finishRound() {
     const st = ui.quizPlay;
     st.phase = "result";
+    st.saveFailed = false;
+    st.saving = false;
+    // Fixed at finish time and reused on retry — the backend is idempotent on
+    // client_event_id, so re-posting the same payload after a failure is safe.
+    st.savePayload = {
+      client_event_id: newId("qr-"),
+      session_id: sessionId,
+      round_id: st.round.round_id,
+      format: st.round.format,
+      score: st.score,
+      total: st.total,
+      missed: st.missed,
+    };
     paintArcadePlay();
-    await postQuizResults({
-      fetch, courseId: ui.arcadeCourseId,
-      result: {
-        client_event_id: newId("qr-"),
-        session_id: sessionId,
-        round_id: st.round.round_id,
-        format: st.round.format,
-        score: st.score,
-        total: st.total,
-        missed: st.missed,
-      },
-    });
+    await saveRoundResult(st);
+  }
+
+  // Shared by finishRound and the result screen's "Retry save" button.
+  async function saveRoundResult(st) {
+    const result = await postQuizResults({ fetch, courseId: ui.arcadeCourseId, result: st.savePayload });
+    if (ui.quizPlay !== st) return; // navigated away mid-save
+    st.saving = false;
+    st.saveFailed = !result || !!result.error;
+    if (st.phase === "result") paintArcadePlay();
+  }
+
+  function retrySaveResult() {
+    const st = ui.quizPlay;
+    if (!st || st.phase !== "result" || !st.saveFailed || st.saving) return;
+    st.saving = true;
+    paintArcadePlay();
+    saveRoundResult(st);
   }
 
   // #3b: render a skeleton + cycle the "what Claude is doing" status. The interval
