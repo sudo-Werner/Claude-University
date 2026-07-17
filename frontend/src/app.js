@@ -997,6 +997,16 @@ export async function init({ window, fetch }) {
     return _mermaidPromise;
   }
 
+  // Strict SVG allowlist matching server-side sanitization (backend/figures.py).
+  // Forbids external refs (image, style, href, xlink:href) and unsafe elements.
+  const SVG_SANITIZE_CONFIG = {
+    USE_PROFILES: { svg: true, svgFilters: true },
+    ALLOWED_TAGS: ["svg","g","rect","circle","ellipse","line","polyline","polygon","path","text","tspan","title","defs","marker"],
+    ALLOWED_ATTR: ["viewBox","x","y","x1","y1","x2","y2","cx","cy","r","rx","ry","width","height","d","points","transform","fill","stroke","stroke-width","stroke-dasharray","font-size","font-family","font-weight","text-anchor","dominant-baseline","opacity","fill-opacity","marker-end","marker-start","id","class"],
+    FORBID_TAGS: ["style","image","use","a","foreignObject","script"],
+    FORBID_ATTR: ["href","xlink:href"],
+  };
+
   // Hydrates every svg/mermaid figure placeholder currently painted in `view`. Called
   // once at the end of every paintLesson() repaint. lesson.js never string-interpolates
   // figure code into the template (see its comment on drawnFigurePlaceholderHTML), so
@@ -1017,7 +1027,7 @@ export async function init({ window, fetch }) {
       loadPurify()
         .then((DOMPurify) => {
           if (!stillFresh() || !fig.isConnected) return;
-          const clean = DOMPurify.sanitize(entry.code, { USE_PROFILES: { svg: true, svgFilters: true } });
+          const clean = DOMPurify.sanitize(entry.code, SVG_SANITIZE_CONFIG);
           fig.insertAdjacentHTML("afterbegin", clean);
         })
         .catch(() => {}); // lazy-load/sanitize failure -> the caption already shown is the fallback
@@ -1052,11 +1062,8 @@ export async function init({ window, fetch }) {
     const ta = view.querySelector('[data-field="answer"]');
     ta.addEventListener("input", () => {
       ui.lessonState.answer = ta.value;
-      const sel = ta.selectionStart;
-      paintLesson();
-      const ta2 = root.querySelector('[data-field="answer"]');
-      ta2.focus();
-      ta2.setSelectionRange(sel, sel);
+      const btn = view.querySelector('[data-action="check-answer"]');
+      if (btn) btn.disabled = !ta.value.trim() || !!ui.lessonState.grading;
     });
     view.querySelector('[data-action="toggle-hint"]').addEventListener("click", () => {
       ui.lessonState.hintVisible = !ui.lessonState.hintVisible;
