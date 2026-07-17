@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { shellHTML, feedbackBarHTML } from "../src/views/shell.js";
 import { dashboardHTML } from "../src/views/dashboard.js";
-import { lessonHTML, ratingLocked, suggestedQuality, expandFigureTokens } from "../src/views/lesson.js";
+import { lessonHTML, ratingLocked, suggestedQuality, expandFigureTokens, lessonSideClass } from "../src/views/lesson.js";
 import { diagnosticHTML } from "../src/views/diagnostic.js";
 import { curriculumHTML, lessonStatus, moduleProgress, recommendedStep } from "../src/views/curriculum.js";
 import { capstoneHTML } from "../src/views/capstone.js";
@@ -1280,4 +1280,52 @@ test("video sources render the Video badge in lesson and library views", () => {
   assert.match(lib, /src-badge src-video/);
   assert.match(lib, />Video</);
   assert.match(lib, /rel="noopener noreferrer"/);
+});
+
+// ---- sticky lesson workspace: layout wrapper + narrow-screen drawer toggle ----
+test("lessonSideClass is a pure helper: base class, plus the drawer class when open", () => {
+  assert.equal(lessonSideClass(false), "lesson-side");
+  assert.equal(lessonSideClass(true), "lesson-side ws-drawer-open");
+  assert.equal(lessonSideClass(undefined), "lesson-side"); // falsy/unset behaves like closed
+});
+
+test("lessonHTML wraps the workspace in .lesson-side exactly once (single node, never duplicated)", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  const sideMatches = html.match(/class="lesson-side/g) || [];
+  assert.equal(sideMatches.length, 1);
+  const workspaceMatches = html.match(/class="card workspace"/g) || [];
+  assert.equal(workspaceMatches.length, 1);
+});
+
+test("lessonHTML renders the lesson-side without the drawer class by default", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.match(html, /class="lesson-side">/);
+  assert.doesNotMatch(html, /ws-drawer-open/);
+});
+
+test("lessonHTML adds ws-drawer-open to the same lesson-side node when drawerOpen is true", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false, drawerOpen: true });
+  assert.match(html, /class="lesson-side ws-drawer-open"/);
+  // still exactly one workspace section — restyled, not duplicated
+  const workspaceMatches = html.match(/class="card workspace"/g) || [];
+  assert.equal(workspaceMatches.length, 1);
+});
+
+test("lessonHTML renders the floating Notes & Chat drawer toggle with exact copy, no emojis", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.match(html, /data-action="ws-drawer-toggle"/);
+  assert.match(html, />Notes &amp; Chat<\/button>/);
+  assert.match(html, /aria-expanded="false"/);
+});
+
+test("the drawer toggle reflects aria-expanded when the drawer is open", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false, drawerOpen: true });
+  assert.match(html, /data-action="ws-drawer-toggle"[^>]*aria-expanded="true"/);
+});
+
+test("the drawer toggle is absent during the pre-quiz stage (no workspace to open yet)", () => {
+  const lesson = { ...SAMPLE_LESSON, preQuiz: { type: "mcq", prompt: "Warm-up?", choices: ["a", "b"], answer: 0, explanation: "because" } };
+  const html = lessonHTML(lesson, { stage: "prequiz", answer: "", hintVisible: false, solutionRevealed: false });
+  assert.doesNotMatch(html, /data-action="ws-drawer-toggle"/);
+  assert.doesNotMatch(html, /class="lesson-side/);
 });

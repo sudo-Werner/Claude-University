@@ -249,6 +249,22 @@ function workspaceHTML(ws) {
   return `<section class="card workspace">${head}${tabs}${body}</section>`;
 }
 
+// ---- sticky lesson workspace layout ----
+// >=1100px the .lesson-side wrapper below becomes a sticky right column via CSS alone.
+// Below that, the SAME wrapper (same node, same workspaceHTML() call — never duplicated)
+// can be re-styled as a fixed bottom drawer by adding one class; the floating toggle
+// button flips that class. Pure/testable in node — no DOM, no app.js state read here.
+export function lessonSideClass(drawerOpen) {
+  return `lesson-side${drawerOpen ? " ws-drawer-open" : ""}`;
+}
+
+function wsDrawerToggleHTML(drawerOpen) {
+  return (
+    `<button class="ws-drawer-toggle" data-action="ws-drawer-toggle" aria-expanded="${drawerOpen ? "true" : "false"}">` +
+    `Notes &amp; Chat</button>`
+  );
+}
+
 // Review mode gates the recall rating behind an actual retrieval attempt: the
 // lesson's checks must be re-answered first (testing effect — re-reading alone
 // systematically inflates self-rated recall).
@@ -368,8 +384,9 @@ export function lessonHTML(lesson, state, nav = {}) {
       }
     </div>
     </div>
-    <div class="lesson-side">${workspaceHTML(state.ws)}</div>
+    <div class="${lessonSideClass(!!state.drawerOpen)}">${workspaceHTML(state.ws)}</div>
     </div>
+    ${wsDrawerToggleHTML(!!state.drawerOpen)}
     </div>
   `;
 }
