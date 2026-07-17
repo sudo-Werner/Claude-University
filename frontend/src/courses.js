@@ -280,3 +280,41 @@ export async function submitCapstone({ fetch, courseId, scope, work }) {
   }
   return resp.json();
 }
+
+export async function getQuizRound({ fetch, courseId }) {
+  try {
+    const resp = await fetch(`/api/courses/${courseId}/quiz/round`);
+    if (!resp.ok) return { error: "Couldn't load a quiz round right now." };
+    return await resp.json();
+  } catch (e) {
+    return { error: "Couldn't load a quiz round right now." };
+  }
+}
+
+export async function postQuizResults({ fetch, courseId, result }) {
+  try {
+    const resp = await fetch(`/api/courses/${courseId}/quiz/results`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(result),
+    });
+    if (!resp.ok) {
+      let message = "Couldn't save your result right now.";
+      try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+      return { error: message };
+    }
+    return await resp.json();
+  } catch (e) {
+    return { error: "Couldn't save your result right now." };
+  }
+}
+
+export async function getQuizStats({ fetch, courseId }) {
+  try {
+    const resp = await fetch(`/api/courses/${courseId}/quiz/stats`);
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch (e) {
+    return null;
+  }
+}
