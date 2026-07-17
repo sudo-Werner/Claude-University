@@ -234,3 +234,234 @@ def round_prompt(*, format, course_title, pool_lessons):
         '"host_intro":"<one or two upbeat sentences introducing this round, max 200 chars>",'
         f'"format":"{format}","questions":[<question>, ...]}}'
     )
+
+
+# ---- question pool ----
+
+def question_pool(content_dir, conn, course_id, manifest):
+    """Completed lessons (courses.completed_lesson_ids) intersected with lessons
+    that have a cached lesson file (the grounding source) — decision 3. Returns a
+    list of {"lesson_id","title","summary","concepts"} in manifest order; empty
+    when nothing is groundable yet."""
+    completed = courses.completed_lesson_ids(conn, course_id)
+    spine_data = spine.load_spine(content_dir, course_id)
+    spine_lessons = spine_data.get("lessons", {}) if isinstance(spine_data, dict) else {}
+    pool = []
+    for lesson_meta in courses.flatten_lessons(manifest):
+        lid = lesson_meta["id"]
+        if lid not in completed:
+            continue
+        if courses.load_lesson(content_dir, course_id, lid) is None:
+            continue
+        entry = spine_lessons.get(lid) if isinstance(spine_lessons, dict) else None
+        summary = entry.get("summary", "") if isinstance(entry, dict) else ""
+        concepts = entry.get("concepts") if isinstance(entry, dict) else None
+        pool.append({
+            "lesson_id": lid, "title": lesson_meta["title"], "summary": summary,
+            "concepts": concepts if isinstance(concepts, list) else [],
+        })
+    return pool
+
+
+# ---- bank: file-per-round under content/courses/<id>/quiz-rounds/ ----
+
+def _quiz_dir(content_dir, course_id):
+    return Path(content_dir) / course_id / "quiz-rounds"
+
+
+def _round_path(content_dir, course_id, round_id):
+    return _quiz_dir(content_dir, course_id) / f"{round_id}.json"
+
+
+def save_round(content_dir, course_id, round_):
+    path = _round_path(content_dir, course_id, round_["round_id"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fsutil.write_text_atomic(path, json.dumps(round_, indent=2, ensure_ascii=False))
+
+
+def _load_round_file(path):
+    if not ROUND_FILENAME_RE.match(path.name):
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (ValueError, OSError):
+        return None
+    return data if isinstance(data, dict) and isinstance(data.get("round_id"), str) else None
+
+
+def list_bank(content_dir, course_id):
+    """Every banked (unplayed) round for this course, oldest first by
+    created_at. A corrupt or hand-deleted file is silently skipped."""
+    quiz_dir = _quiz_dir(content_dir, course_id)
+    if not quiz_dir.is_dir():
+        return []
+    rounds = []
+    for f in sorted(quiz_dir.glob("round-*.json")):
+        data = _load_round_file(f)
+        if data is not None:
+            rounds.append(data)
+    rounds.sort(key=lambda r: r.get("created_at", ""))
+    return rounds
+
+
+def bank_count(content_dir, course_id):
+    return len(list_bank(content_dir, course_id))
+
+
+def serve_round(content_dir, course_id):
+    """The oldest banked round, or None when the bank is empty. Does NOT delete
+    the file — the round stays banked until results are submitted
+    (consume_round), so a dropped connection mid-round can resume the same
+    round on the next GET."""
+    rounds = list_bank(content_dir, course_id)
+    return rounds[0] if rounds else None
+
+
+def consume_round(content_dir, course_id, round_id):
+    """Delete a round file. A missing file (already consumed, hand-deleted, or
+    a malformed round_id) is a silent no-op — the quiz_round event is the
+    durable record, per decision 7."""
+    if not (isinstance(round_id, str) and ROUND_ID_RE.match(round_id)):
+        return
+    _round_path(content_dir, course_id, round_id).unlink(missing_ok=True)
+
+
+def _finalize_question(fmt, q):
+    if fmt == "rapid_fire":
+        return {"lesson_id": q["lesson_id"], "prompt": q["prompt"],
+                "choices": list(q["choices"]), "answer": q["answer"], "reveal": q["reveal"]}
+    if fmt == "true_false":
+        return {"lesson_id": q["lesson_id"], "statement": q["statement"],
+                "answer": bool(q["answer"]), "reveal": q["reveal"]}
+    if fmt == "odd_one_out":
+        return {"lesson_id": q["lesson_id"], "items": list(q["items"]),
+                "answer": q["answer"], "reveal": q["reveal"]}
+    if fmt == "spot_the_lie":
+        return {"lesson_id": q["lesson_id"], "statements": list(q["statements"]),
+                "answer": q["answer"], "reveal": q["reveal"]}
+    return {"lesson_id": q["lesson_id"],
+            "pairs": [{"left": p["left"], "right": p["right"]} for p in q["pairs"]],
+            "reveal": q["reveal"]}
+
+
+def finalize_round(obj, course_id):
+    """Explicit-fields-only copy of a validated generator object into the
+    stored round shape (the review_items.finalize_items / exams.finalize_exam
+    idiom — never persist an unknown model key). No sanitizer runs here on
+    purpose: decision 2 is plain-text-only content, esc()'d at render, with no
+    sanitize/markup surface in the Arcade at all — valid_round already
+    enforced every string's type and length before this is ever called."""
+    fmt = obj["format"]
+    return {
+        "round_id": f"round-{uuid.uuid4().hex[:12]}",
+        "course_id": course_id,
+        "format": fmt,
+        "title": obj["title"],
+        "host_intro": obj["host_intro"],
+        "questions": [_finalize_question(fmt, q) for q in obj["questions"]],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ---- format-history query (drives choose_format's recency weighting) ----
+
+def _quiz_round_events(conn, course_id):
+    """Every quiz_round event for this course, oldest first, tolerant of a
+    malformed payload (skipped rather than raised — the events ledger is
+    client-writable elsewhere, so a forged/corrupt row must never crash a
+    read)."""
+    rows = conn.execute(
+        "SELECT occurred_at, payload FROM events "
+        "WHERE event_type = 'quiz_round' AND course_id = ? "
+        "ORDER BY occurred_at ASC, id ASC",
+        (course_id,),
+    ).fetchall()
+    out = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except ValueError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        fmt, score, total = payload.get("format"), payload.get("score"), payload.get("total")
+        if fmt not in FORMATS:
+            continue
+        if isinstance(score, bool) or not isinstance(score, int):
+            continue
+        if isinstance(total, bool) or not isinstance(total, int) or total <= 0:
+            continue
+        out.append({"occurred_at": row["occurred_at"], "format": fmt, "score": score, "total": total})
+    return out
+
+
+def recent_formats(conn, course_id, limit=10):
+    """Formats of this course's last `limit` quiz_round events, most-recent-
+    first — the history parameter choose_format's recency weighting
+    consumes."""
+    evs = _quiz_round_events(conn, course_id)
+    return [e["format"] for e in evs[-limit:]][::-1]
+
+
+# ---- restock: single-flight per course, capped generation ----
+
+_RESTOCK_LOCKS = {}
+_RESTOCK_LOCKS_GUARD = threading.Lock()
+
+
+def _restock_lock(course_id):
+    with _RESTOCK_LOCKS_GUARD:
+        lock = _RESTOCK_LOCKS.get(course_id)
+        if lock is None:
+            lock = _RESTOCK_LOCKS[course_id] = threading.Lock()
+        return lock
+
+
+def _restock_once(content_dir, conn, course_id, *, generate):
+    """Generate rounds until the bank reaches BANK_FLOOR, capped at
+    RESTOCK_CAP new rounds this run. Runs INSIDE the caller's already-acquired
+    restock lock — safe to call directly (no thread) in tests. A
+    generation/validation failure, an empty pool, or a missing course stops
+    the run silently with the bank left as-is (play never errors because a
+    restock failed silently)."""
+    manifest = courses.load_manifest(content_dir, course_id)
+    if manifest is None:
+        return
+    made = 0
+    while bank_count(content_dir, course_id) < BANK_FLOOR and made < RESTOCK_CAP:
+        pool = question_pool(content_dir, conn, course_id, manifest)
+        if not pool:
+            return
+        pool_ids = {l["lesson_id"] for l in pool}
+        history = recent_formats(conn, course_id)
+        fmt = choose_format(history)
+        prompt = round_prompt(format=fmt, course_title=manifest.get("title", ""), pool_lessons=pool)
+        try:
+            obj = generate(prompt, lambda o: valid_round(o, pool=pool_ids))
+        except claude_client.ClaudeError as exc:
+            print(f"quiz restock failed for course {course_id}: {exc}", file=sys.stderr)
+            return
+        save_round(content_dir, course_id, finalize_round(obj, course_id))
+        made += 1
+
+
+def kick_restock(content_dir, db_path, course_id, *, generate, spawn=None):
+    """Fire-and-forget: single-flight per course (a non-blocking try-lock — a
+    second kick while one is already running for this course is a no-op, the
+    caller never waits, per decision 6). `spawn` defaults to a real daemon
+    thread; tests inject a synchronous stand-in so the restock's effect is
+    observable immediately without touching real threads."""
+    lock = _restock_lock(course_id)
+    if not lock.acquire(blocking=False):
+        return
+
+    def run():
+        conn = db.get_connection(db_path)
+        try:
+            _restock_once(content_dir, conn, course_id, generate=generate)
+        finally:
+            conn.close()
+            lock.release()
+
+    spawner = spawn or (lambda target: threading.Thread(target=target, daemon=True).start())
+    spawner(run)
