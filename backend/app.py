@@ -816,7 +816,10 @@ def create_app(db_path=None):
         # kick_restock is idempotent-safe (try-lock + its own floor check), so it
         # is always safe to call here — whether the bank was empty (generating)
         # or just below floor after serving.
-        quiz.kick_restock(courses.CONTENT_DIR, path, course_id, generate=generate)
+        try:
+            quiz.kick_restock(courses.CONTENT_DIR, path, course_id, generate=generate)
+        except Exception:
+            pass  # a spawn failure must not fail a successful round serve
         if round_ is None:
             return jsonify({"status": "generating"})
         return jsonify({"status": "ready", "round": round_})
@@ -834,7 +837,10 @@ def create_app(db_path=None):
         finally:
             conn.close()
         generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
-        quiz.kick_restock(courses.CONTENT_DIR, path, course_id, generate=generate)
+        try:
+            quiz.kick_restock(courses.CONTENT_DIR, path, course_id, generate=generate)
+        except Exception:
+            pass  # a spawn failure must not fail a successful result submission
         return jsonify(result)
 
     @app.get("/api/courses/<course_id>/quiz/stats")

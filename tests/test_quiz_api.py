@@ -189,3 +189,38 @@ def test_events_route_still_works_when_nudge_raises(client, tmp_path, monkeypatc
     }]})
     assert resp.status_code == 200
     assert resp.get_json() == {"accepted": 1, "duplicates": 0}
+
+
+def test_get_round_succeeds_when_kick_restock_raises(client, tmp_path, monkeypatch):
+    # If kick_restock raises (e.g. spawn failure), GET /quiz/round with a
+    # banked round must still return 200 ready.
+    root = _seed_course(monkeypatch, tmp_path)
+    monkeypatch.setattr(quiz, "kick_restock", lambda *a, **k: None)
+    _complete_lesson(client, "c-l1")
+    quiz.save_round(root, "c", {"round_id": "round-000000000001", "course_id": "c",
+                                "format": "rapid_fire", "title": "T", "host_intro": "I",
+                                "questions": [], "created_at": "2026-07-01T00:00:00+00:00"})
+    monkeypatch.setattr(quiz, "kick_restock", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    resp = client.get("/api/courses/c/quiz/round")
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "ready"
+    assert resp.get_json()["round"]["round_id"] == "round-000000000001"
+
+
+def test_post_results_succeeds_when_kick_restock_raises(client, tmp_path, monkeypatch):
+    # If kick_restock raises (e.g. spawn failure), POST /quiz/results whose
+    # real work (inserting event, consuming round) already succeeded must
+    # still return 200 ok.
+    root = _seed_course(monkeypatch, tmp_path)
+    quiz.save_round(root, "c", {"round_id": "round-000000000001", "course_id": "c",
+                                "format": "rapid_fire", "title": "T", "host_intro": "I",
+                                "questions": [], "created_at": "2026-07-01T00:00:00+00:00"})
+    monkeypatch.setattr(quiz, "kick_restock", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    resp = client.post("/api/courses/c/quiz/results", json={
+        "client_event_id": "ce1", "session_id": "s1", "round_id": "round-000000000001",
+        "format": "rapid_fire", "score": 6, "total": 8, "missed": {"c-l1": 1},
+    })
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    # Round was consumed despite the kick_restock failure
+    assert quiz.bank_count(root, "c") == 0

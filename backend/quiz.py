@@ -464,7 +464,11 @@ def kick_restock(content_dir, db_path, course_id, *, generate, spawn=None):
             lock.release()
 
     spawner = spawn or (lambda target: threading.Thread(target=target, daemon=True).start())
-    spawner(run)
+    try:
+        spawner(run)
+    except Exception:
+        lock.release()
+        raise
 
 
 # ---- results ----

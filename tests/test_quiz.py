@@ -503,6 +503,33 @@ def test_kick_restock_single_flight_second_kick_is_noop(tmp_path):
     time.sleep(0.3)
 
 
+def test_kick_restock_releases_lock_on_spawn_failure_and_reraises(tmp_path):
+    # If spawner(run) raises, the lock must be released so a subsequent
+    # kick_restock can acquire it and run successfully.
+    root = _course_dir(tmp_path, completed=("c-l1",), course_id="c-lock-fail")
+    db_path = tmp_path / "t.db"
+    conn0 = db.get_connection(db_path)
+    db.init_db(conn0)
+    _complete(conn0, "c-l1", course_id="c-lock-fail")
+    conn0.close()
+
+    def fake_generate(prompt, validate):
+        return {"format": "rapid_fire", "title": "T", "host_intro": "I",
+                "questions": [dict(_rapid_fire_q("c-l1")) for _ in range(8)]}
+
+    def failing_spawn(target):
+        raise RuntimeError("can't start new thread")
+
+    # First call with failing spawner — the exception propagates
+    with pytest.raises(RuntimeError, match="can't start new thread"):
+        quiz.kick_restock(root, db_path, "c-lock-fail", generate=fake_generate, spawn=failing_spawn)
+
+    # Lock should be released; second call with working spawner succeeds
+    quiz.kick_restock(root, db_path, "c-lock-fail", generate=fake_generate,
+                     spawn=lambda target: target())
+    assert quiz.bank_count(root, "c-lock-fail") == quiz.RESTOCK_CAP
+
+
 # ---- submit_results ----
 
 def _good_results_body(**over):
