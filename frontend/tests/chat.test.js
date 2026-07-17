@@ -11,7 +11,7 @@ function bodyFrom(str) {
 
 test("streamChat posts to a custom endpoint and tolerates a missing onBrief", async () => {
   let url;
-  const fetch = async (u) => { url = u; return { body: bodyFrom("event: delta\ndata: hi\n\nevent: done\ndata: {}\n\n") }; };
+  const fetch = async (u) => { url = u; return { ok: true, body: bodyFrom("event: delta\ndata: hi\n\nevent: done\ndata: {}\n\n") }; };
   let text = "", done = false;
   await streamChat({
     fetch, endpoint: "/api/courses/c/lessons/l1/chat", messages: [],
@@ -26,7 +26,7 @@ test("streamChat merges extra fields into the POST body", async () => {
   let sent;
   const fetch = async (u, opts) => {
     sent = JSON.parse(opts.body);
-    return { body: bodyFrom("event: done\ndata: {}\n\n") };
+    return { ok: true, body: bodyFrom("event: done\ndata: {}\n\n") };
   };
   await streamChat({
     fetch, messages: [{ role: "user", content: "hi" }], endpoint: "/x",
@@ -74,10 +74,23 @@ function fakeFetchSSE(frames) {
   const body = frames.map((f) => `event: ${f.event}\ndata: ${f.data}\n\n`).join("");
   const bytes = new TextEncoder().encode(body);
   return async () => ({
+    ok: true,
     body: { getReader: () => { let done = false;
       return { read: async () => done ? { done: true } : (done = true, { value: bytes, done: false }) }; } },
   });
 }
+
+test("streamChat routes a non-200 response through onError instead of hanging (no onDone)", async () => {
+  const fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: "answer has invalid type" }) });
+  let errorMsg = null, doneCalled = false;
+  await streamChat({
+    fetch, messages: [], endpoint: "/x",
+    onDelta: () => {}, onDone: () => { doneCalled = true; },
+    onError: (e) => { errorMsg = e.message; },
+  });
+  assert.equal(errorMsg, "answer has invalid type");
+  assert.equal(doneCalled, false); // no hang: the SSE path is never entered, onDone never fires
+});
 
 test("streamChat dispatches brief event to onBrief", async () => {
   let brief = null;

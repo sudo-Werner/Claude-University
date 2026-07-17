@@ -24,6 +24,19 @@ export async function streamChat({ fetch, messages, endpoint = "/api/courses/cha
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ messages, ...extra }),
   });
+  // A non-200 response has no SSE body to read — reading it as one finds nothing and
+  // exits without ever calling onDone/onError, leaving the caller's pending/streaming
+  // flag stuck forever (a permanently hung "typing" bubble + disabled input). Route it
+  // through the error callback instead, same shape as an in-stream "error" event.
+  if (!resp.ok) {
+    let message = null;
+    try {
+      const body = await resp.json();
+      message = body && body.error;
+    } catch (e) {}
+    if (onError) onError({ message: message || "Request failed. Please try again." });
+    return;
+  }
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";

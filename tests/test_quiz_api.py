@@ -377,9 +377,10 @@ def test_question_chat_huge_answer_given_string_400(client, tmp_path, monkeypatc
 
 
 def test_question_chat_answer_given_dict_400(client, tmp_path, monkeypatch):
+    # A dict that is NOT the match_up {correct, total} shape still 400s.
     _seed_course(monkeypatch, tmp_path)
     resp = client.post("/api/courses/c/quiz/question-chat", json={
-        "lesson_id": "c-l1", "question": _QC_QUESTION, "answerGiven": {"nested": "dict"}, "messages": []})
+        "lesson_id": "c-l1", "question": _QC_QUESTION, "answerGiven": {"foo": "bar"}, "messages": []})
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "answer has invalid type"
 
@@ -390,6 +391,20 @@ def test_question_chat_valid_string_answer_given_streams(client, tmp_path, monke
     monkeypatch.setattr(claude_client, "stream", lambda prompt, **kw: iter(["response"]))
     resp = client.post("/api/courses/c/quiz/question-chat", json={
         "lesson_id": "c-l1", "question": _QC_QUESTION, "answerGiven": "my answer", "messages": []})
+    assert resp.status_code == 200
+    text = resp.get_data(as_text=True)
+    assert "event: delta" in text and "event: done" in text
+
+
+def test_question_chat_match_up_answer_given_dict_streams(client, tmp_path, monkeypatch):
+    # The frontend's literal match_up payload (quizChatAnswerGiven in app.js sends
+    # {correct, total} — matchUpScore's board score — since match_up has no single
+    # per-question answer). Must be accepted, not 400 (this is the payload-cap bug).
+    from backend import claude_client
+    _seed_course(monkeypatch, tmp_path)
+    monkeypatch.setattr(claude_client, "stream", lambda prompt, **kw: iter(["response"]))
+    resp = client.post("/api/courses/c/quiz/question-chat", json={
+        "lesson_id": "c-l1", "question": _QC_QUESTION, "answerGiven": {"correct": 3, "total": 5}, "messages": []})
     assert resp.status_code == 200
     text = resp.get_data(as_text=True)
     assert "event: delta" in text and "event: done" in text

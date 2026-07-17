@@ -629,7 +629,11 @@ def valid_question_chat_messages(messages):
 def valid_question_chat_payload(question, answer_given):
     """Validate question and answer_given before they reach a paid Claude call.
     `question` must be a dict with serialized size <= 8KB.
-    `answer_given` must be None, bool, int, or str (max 500 chars if str).
+    `answer_given` must be None, bool, int, str (max 500 chars if str), or the
+    match_up score shape the frontend sends for that format: a dict with keys
+    EXACTLY {"correct", "total"} whose values are non-bool ints (quizChatAnswerGiven
+    in app.js — match_up has no single per-question answer, so it sends the
+    board's first-attempt score instead). Any other dict still 400s.
     Returns None if valid, else an error message string suitable for a 400 response."""
     # Validate question
     if not isinstance(question, dict):
@@ -647,7 +651,13 @@ def valid_question_chat_payload(question, answer_given):
         if len(answer_given) <= 500:
             return None
         return "answer too long"
-    # Reject everything else (dict, list, float, etc.)
+    if isinstance(answer_given, dict):
+        if set(answer_given.keys()) == {"correct", "total"} and all(
+            isinstance(v, int) and not isinstance(v, bool) for v in answer_given.values()
+        ):
+            return None
+        return "answer has invalid type"
+    # Reject everything else (list, float, etc.)
     return "answer has invalid type"
 
 
