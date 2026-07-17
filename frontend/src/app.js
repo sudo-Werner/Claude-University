@@ -997,8 +997,14 @@ export async function init({ window, fetch }) {
     return _mermaidPromise;
   }
 
-  // Strict SVG allowlist matching server-side sanitization (backend/figures.py).
-  // Forbids external refs (image, style, href, xlink:href) and unsafe elements.
+  // Client-side SVG sanitization (defense in depth — the server allowlist in
+  // backend/figures.py already ran at generation time; this also guards a hand-edited
+  // cached lesson). DOMPurify's svg profile reassigns ALLOWED_TAGS/ALLOWED_ATTR from
+  // USE_PROFILES, so those explicit lists are advisory intent, not the operative filter;
+  // the FORBID_TAGS/FORBID_ATTR below ARE operative and remove the external-ref elements
+  // (image/style/use/a/foreignObject/script and href/xlink:href) on top of DOMPurify's
+  // core stripping of on* handlers and javascript: URLs. Effective client filter is thus
+  // the hardened svg profile — intentionally broader than the server's strict allowlist.
   const SVG_SANITIZE_CONFIG = {
     USE_PROFILES: { svg: true, svgFilters: true },
     ALLOWED_TAGS: ["svg","g","rect","circle","ellipse","line","polyline","polygon","path","text","tspan","title","defs","marker"],
