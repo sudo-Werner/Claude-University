@@ -1106,7 +1106,9 @@ export async function init({ window, fetch }) {
     // Default: open on wide screens (the notes sit beside the lesson), collapsed on
     // phone. Once the learner toggles it, their saved choice is respected everywhere.
     try { const p = JSON.parse(storage.getItem(WS_PREFS)); if (p) return p; } catch (e) {}
-    return { open: window.innerWidth >= 1200, tab: "notes" };
+    // Matches the sticky two-column breakpoint (styles.css, >=1100px) — below it the
+    // workspace has no dedicated column, so it should default closed.
+    return { open: window.innerWidth >= 1100, tab: "notes" };
   }
   function setWsPrefs(patch) {
     try { storage.setItem(WS_PREFS, JSON.stringify({ ...wsPrefs(), ...patch })); } catch (e) {}
@@ -1485,6 +1487,15 @@ export async function init({ window, fetch }) {
     if (deepenBtn) deepenBtn.addEventListener("click", deepenCurrentLesson);
     view.querySelectorAll('[data-action="analogy-chip"]').forEach((btn) => {
       btn.addEventListener("click", () => startAnalogyChip(Number(btn.getAttribute("data-index"))));
+    });
+    // Narrow-screen floating toggle: re-styles the SAME .lesson-side node (never
+    // duplicated) between its in-flow position and a fixed bottom drawer. Bound here,
+    // not inside bindWorkspace, so it works even in the brief window before
+    // seedWorkspace resolves (the button doesn't depend on ws being seeded).
+    const drawerToggle = view.querySelector('[data-action="ws-drawer-toggle"]');
+    if (drawerToggle) drawerToggle.addEventListener("click", () => {
+      ui.lessonState.drawerOpen = !ui.lessonState.drawerOpen;
+      paintLesson();
     });
     bindWorkspace(view);
   }
