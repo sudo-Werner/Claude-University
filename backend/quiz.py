@@ -438,7 +438,7 @@ def _restock_once(content_dir, conn, course_id, *, generate):
         prompt = round_prompt(format=fmt, course_title=manifest.get("title", ""), pool_lessons=pool)
         try:
             obj = generate(prompt, lambda o: valid_round(o, pool=pool_ids))
-        except claude_client.ClaudeError as exc:
+        except Exception as exc:
             print(f"quiz restock failed for course {course_id}: {exc}", file=sys.stderr)
             return
         save_round(content_dir, course_id, finalize_round(obj, course_id))

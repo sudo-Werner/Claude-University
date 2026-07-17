@@ -419,6 +419,18 @@ def test_restock_stops_silently_on_generation_failure(conn, tmp_path, capsys):
     assert "quiz restock failed" in capsys.readouterr().err
 
 
+def test_restock_swallows_non_claude_error_exceptions(conn, tmp_path, capsys):
+    root = _course_dir(tmp_path, completed=("c-l1",))
+    _complete(conn, "c-l1")
+
+    def failing(prompt, validate):
+        raise RuntimeError("boom")
+
+    quiz._restock_once(root, conn, "c", generate=failing)
+    assert quiz.bank_count(root, "c") == 0
+    assert "quiz restock failed" in capsys.readouterr().err
+
+
 def test_restock_stops_when_pool_empty(conn, tmp_path):
     root = _course_dir(tmp_path, completed=())  # nothing completed
     calls = []
