@@ -156,3 +156,83 @@ def test_fail_then_review_same_day_not_due(conn, tmp_path):
     }])
     due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15))
     assert "demo-l1" not in due
+
+
+def _quiz_round_event(cid, lid, missed_count, when, round_id="round-x"):
+    return {
+        "client_event_id": f"qr-{lid}-{when}", "session_id": "s1",
+        "event_type": "quiz_round", "occurred_at": when,
+        "course_id": cid, "topic_id": round_id,
+        "payload": {"format": "rapid_fire", "score": 1, "total": 1,
+                   "missed": {lid: missed_count} if missed_count else {}},
+    }
+
+
+def test_quiz_miss_makes_unreviewed_lesson_due(conn, tmp_path):
+    root = _fixture(tmp_path)
+    events.insert_events(conn, [_quiz_round_event("demo", "demo-l1", 1, "2026-07-14T10:00:00+00:00")])
+    due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15))
+    assert "demo-l1" in due
+
+
+def test_quiz_miss_never_inserts_lesson_reviewed(conn, tmp_path):
+    root = _fixture(tmp_path)
+    events.insert_events(conn, [_quiz_round_event("demo", "demo-l1", 1, "2026-07-14T10:00:00+00:00")])
+    srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15))
+    reviewed = conn.execute(
+        "SELECT COUNT(*) AS n FROM events WHERE event_type = 'lesson_reviewed'").fetchone()["n"]
+    assert reviewed == 0
+
+
+def test_review_after_quiz_miss_clears_weakness(conn, tmp_path):
+    root = _fixture(tmp_path)
+    events.insert_events(conn, [_quiz_round_event("demo", "demo-l1", 1, "2026-07-10T10:00:00+00:00")])
+    events.insert_events(conn, [{
+        "client_event_id": "r1", "session_id": "s1", "event_type": "lesson_reviewed",
+        "occurred_at": "2026-07-12T10:00:00+00:00", "course_id": "demo",
+        "topic_id": "demo-l1", "payload": {"quality": "good"},
+    }])
+    # SM-2 next_review = 07-13, which is past 07-12, so isolate the weak-spot rule
+    # by checking a today that is still inside the fresh SM-2 interval.
+    due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 12))
+    assert "demo-l1" not in due
+
+
+def test_quiz_miss_after_review_reflags_weak(conn, tmp_path):
+    root = _fixture(tmp_path)
+    events.insert_events(conn, [{
+        "client_event_id": "r1", "session_id": "s1", "event_type": "lesson_reviewed",
+        "occurred_at": "2026-07-10T10:00:00+00:00", "course_id": "demo",
+        "topic_id": "demo-l1", "payload": {"quality": "good"},
+    }])
+    events.insert_events(conn, [_quiz_round_event("demo", "demo-l1", 1, "2026-07-10T11:00:00+00:00")])
+    # today is still INSIDE the fresh SM-2 interval (a first "good" review sets
+    # next_review to the following day) — this isolates the quiz-weak-since-
+    # review rule from the ordinary SM-2 due date, which would otherwise mask it.
+    due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 10))
+    assert "demo-l1" in due
+
+
+def test_quiz_round_with_zero_misses_does_not_flag_weak(conn, tmp_path):
+    root = _fixture(tmp_path)
+    events.insert_events(conn, [_quiz_round_event("demo", "demo-l1", 0, "2026-07-14T10:00:00+00:00")])
+    due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15))
+    assert "demo-l1" not in due
+
+
+def test_quiz_miss_zero_count_key_present_does_not_flag_weak(conn, tmp_path):
+    root = _fixture(tmp_path)
+    events.insert_events(conn, [{
+        "client_event_id": "qr1", "session_id": "s1", "event_type": "quiz_round",
+        "occurred_at": "2026-07-14T10:00:00+00:00", "course_id": "demo", "topic_id": "round-x",
+        "payload": {"format": "rapid_fire", "score": 1, "total": 1, "missed": {"demo-l1": 0}},
+    }])
+    due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15))
+    assert "demo-l1" not in due
+
+
+def test_quiz_miss_on_other_course_does_not_leak(conn, tmp_path):
+    root = _fixture(tmp_path)
+    events.insert_events(conn, [_quiz_round_event("other-course", "demo-l1", 1, "2026-07-14T10:00:00+00:00")])
+    due = srs.due_lesson_ids(conn, root, "demo", today=D(2026, 7, 15))
+    assert "demo-l1" not in due
