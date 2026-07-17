@@ -41,6 +41,16 @@ class HTTPError(Exception):
         super().__init__(f"HTTP {code}")
 
 
+def _safe_url(value):
+    """Validate that a URL is a safe http(s) URL. Returns the URL if valid, None
+    otherwise. Rejects javascript:, data:, and other dangerous schemes."""
+    if not isinstance(value, str) or not value:
+        return None
+    if value.startswith(("http://", "https://")):
+        return value
+    return None
+
+
 def _http_get(url):
     """Real network fetch used by search and downloads alike: urllib.request with
     the mandatory descriptive User-Agent and a 10s timeout on EVERY request.
@@ -107,8 +117,8 @@ def commons_search(query, *, http_get):
             "title": page.get("title") or "",
             "artistHtml": _mv("Artist") or "",
             "licenseShort": _mv("LicenseShortName") or "",
-            "licenseUrl": _mv("LicenseUrl"),
-            "sourceUrl": info.get("descriptionurl") or "",
+            "licenseUrl": _safe_url(_mv("LicenseUrl")),
+            "sourceUrl": _safe_url(info.get("descriptionurl")) or "",
             "attributionRequired": str(_mv("AttributionRequired") or "").strip().lower() == "true",
         })
     return candidates
@@ -139,8 +149,8 @@ def openverse_search(query, *, http_get):
             "title": r.get("title") or "",
             "creator": r.get("creator") or "",
             "licenseShort": r.get("license") or "",
-            "licenseUrl": r.get("license_url"),
-            "sourceUrl": r.get("foreign_landing_url") or "",
+            "licenseUrl": _safe_url(r.get("license_url")),
+            "sourceUrl": _safe_url(r.get("foreign_landing_url")) or "",
             "attributionRequired": True,
         })
     return candidates

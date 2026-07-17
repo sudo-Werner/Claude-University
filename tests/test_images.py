@@ -12,6 +12,38 @@ _SVG_BYTES = b"<svg xmlns='http://www.w3.org/2000/svg'></svg>"
 # ---- write_bytes_atomic already covered in tests/test_fsutil.py ----
 
 
+# ---- _safe_url: reject non-http(s) URLs (XSS prevention) ----
+
+def test_safe_url_accepts_https():
+    assert images._safe_url("https://creativecommons.org/licenses/by-sa/4.0") == \
+        "https://creativecommons.org/licenses/by-sa/4.0"
+
+
+def test_safe_url_accepts_http():
+    assert images._safe_url("http://commons.wikimedia.org/wiki/File:X") == \
+        "http://commons.wikimedia.org/wiki/File:X"
+
+
+def test_safe_url_rejects_javascript_url():
+    assert images._safe_url("javascript:alert(1)") is None
+
+
+def test_safe_url_rejects_data_url():
+    assert images._safe_url("data:text/html,<script>alert(1)</script>") is None
+
+
+def test_safe_url_rejects_none():
+    assert images._safe_url(None) is None
+
+
+def test_safe_url_rejects_empty_string():
+    assert images._safe_url("") is None
+
+
+def test_safe_url_rejects_non_string():
+    assert images._safe_url(123) is None
+
+
 # ---- license_allowed: fail-closed allowlist edge cases ----
 
 def test_license_allowed_commons_edge_cases():
@@ -215,6 +247,67 @@ def test_commons_search_parses_candidates():
     assert photo["licenseShort"] == "CC BY-NC-SA 4.0"  # normalized, NOT filtered here — filtering is the caller's job
 
 
+def test_commons_search_rejects_malicious_license_and_source_urls():
+    """XSS prevention: javascript: and data: URLs in metadata are rejected."""
+    fixture = {
+        "query": {
+            "pages": {
+                "111": {
+                    "title": "File:Malicious.png",
+                    "imageinfo": [{
+                        "thumburl": "https://upload.wikimedia.org/thumb/mal.png/800px-mal.png",
+                        "url": "https://upload.wikimedia.org/mal.svg",
+                        "descriptionurl": "javascript:alert(1)",
+                        "extmetadata": {
+                            "LicenseShortName": {"value": "CC0"},
+                            "LicenseUrl": {"value": "data:text/html,<script>alert(1)</script>"},
+                            "Artist": {"value": "Attacker"},
+                            "AttributionRequired": {"value": "false"},
+                        },
+                    }],
+                },
+            },
+        },
+    }
+    def fake_http_get(url):
+        return json.dumps(fixture).encode()
+    candidates = images.commons_search("q", http_get=fake_http_get)
+    assert len(candidates) == 1
+    c = candidates[0]
+    assert c["licenseUrl"] is None  # malicious LicenseUrl rejected
+    assert c["sourceUrl"] is None or c["sourceUrl"] == ""  # malicious descriptionurl rejected
+
+
+def test_commons_search_accepts_valid_urls():
+    """Legitimate https URLs pass through unchanged."""
+    fixture = {
+        "query": {
+            "pages": {
+                "111": {
+                    "title": "File:Good.png",
+                    "imageinfo": [{
+                        "thumburl": "https://upload.wikimedia.org/thumb/good.png/800px-good.png",
+                        "descriptionurl": "https://commons.wikimedia.org/wiki/File:Good.png",
+                        "extmetadata": {
+                            "LicenseShortName": {"value": "CC BY 4.0"},
+                            "LicenseUrl": {"value": "https://creativecommons.org/licenses/by/4.0"},
+                            "Artist": {"value": "Jane"},
+                            "AttributionRequired": {"value": "true"},
+                        },
+                    }],
+                },
+            },
+        },
+    }
+    def fake_http_get(url):
+        return json.dumps(fixture).encode()
+    candidates = images.commons_search("q", http_get=fake_http_get)
+    assert len(candidates) == 1
+    c = candidates[0]
+    assert c["licenseUrl"] == "https://creativecommons.org/licenses/by/4.0"
+    assert c["sourceUrl"] == "https://commons.wikimedia.org/wiki/File:Good.png"
+
+
 def test_commons_search_returns_empty_on_http_error():
     def boom(url):
         raise images.HTTPError(503)
@@ -254,6 +347,35 @@ def test_openverse_search_parses_candidates():
     assert c["creator"] == "Cara"
     assert c["licenseShort"] == "by"
     assert c["sourceUrl"] == "https://flickr.com/x"
+
+
+def test_openverse_search_rejects_malicious_license_and_source_urls():
+    """XSS prevention: javascript: and data: URLs are rejected."""
+    fixture = {"results": [
+        {"title": "Malicious photo", "creator": "Attacker",
+         "thumbnail": "https://api.openverse.org/thumb/mal",
+         "license": "by", "license_url": "javascript:alert(1)",
+         "foreign_landing_url": "data:text/html,<script>alert(1)</script>"},
+    ]}
+    candidates = images.openverse_search("q", http_get=lambda url: json.dumps(fixture).encode())
+    assert len(candidates) == 1
+    c = candidates[0]
+    assert c["licenseUrl"] is None  # malicious license_url rejected
+    assert c["sourceUrl"] is None or c["sourceUrl"] == ""  # malicious foreign_landing_url rejected
+
+
+def test_openverse_search_accepts_valid_urls():
+    """Legitimate https URLs pass through unchanged."""
+    fixture = {"results": [
+        {"title": "Good photo", "creator": "Jane", "thumbnail": "https://api.openverse.org/thumb/x",
+         "license": "by", "license_url": "https://creativecommons.org/licenses/by/4.0/",
+         "foreign_landing_url": "https://flickr.com/photos/jane/123"},
+    ]}
+    candidates = images.openverse_search("q", http_get=lambda url: json.dumps(fixture).encode())
+    assert len(candidates) == 1
+    c = candidates[0]
+    assert c["licenseUrl"] == "https://creativecommons.org/licenses/by/4.0/"
+    assert c["sourceUrl"] == "https://flickr.com/photos/jane/123"
 
 
 def test_openverse_search_returns_empty_on_429():

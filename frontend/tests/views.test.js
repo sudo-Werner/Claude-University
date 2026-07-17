@@ -299,6 +299,35 @@ test("expandFigureTokens escapes caption, credit, and license text (no raw HTML)
   assert.match(html, /&lt;\/a&gt;&lt;b&gt;x&lt;\/b&gt;/);
 });
 
+test("expandFigureTokens rejects javascript: URLs in licenseUrl and renders text only", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg",
+    caption: "c", credit: "cr", license: "CC0",
+    licenseUrl: "javascript:alert(1)", sourceUrl: "" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.doesNotMatch(html, /<a[^>]*href/);  // NO <a> tag with href
+  assert.match(html, /CC0/);  // license text is still there
+  assert.doesNotMatch(html, /javascript:/);  // malicious URL stripped
+});
+
+test("expandFigureTokens rejects data: URLs in sourceUrl and renders text only", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg",
+    caption: "c", credit: "cr", license: "CC0",
+    licenseUrl: null, sourceUrl: "data:text/html,<script>alert(1)</script>" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.doesNotMatch(html, /<a[^>]*href/);  // NO <a> tag with href
+  assert.match(html, /CC0/);  // license text still rendered
+  assert.doesNotMatch(html, /data:/);  // malicious URL stripped
+});
+
+test("expandFigureTokens renders normal https URLs as clickable links", () => {
+  const lesson = { images: [{ n: 1, type: "web-image", file: "demo-l1-1.jpg",
+    caption: "c", credit: "cr", license: "CC BY 4.0",
+    licenseUrl: "https://creativecommons.org/licenses/by/4.0", sourceUrl: "" }] };
+  const { html } = expandFigureTokens("[[figure:1]]", lesson, "demo");
+  assert.match(html, /<a[^>]*href="[^"]*https:\/\/creativecommons/);
+  assert.match(html, /CC BY 4\.0<\/a>/);  // text inside the link
+});
+
 test("expandFigureTokens skips an entry whose filename fails the client-side regex", () => {
   const lesson = { images: [{ n: 1, type: "web-image", file: "../evil.jpg",
     caption: "c", credit: "c", license: "CC0", licenseUrl: null, sourceUrl: "" }] };

@@ -87,14 +87,19 @@ function lessonSourcesHTML(sources) {
 
 const FIGURE_TOKEN_RE = /\[\[figure:(\d+)\]\]/g;
 const FIGURE_FILENAME_RE = /^[a-z0-9-]+-\d\.(jpg|png|webp)$/;
+const SAFE_HREF_RE = /^https?:\/\//i;
 
 function figureHTML(entry, courseId) {
   const src = `/api/courses/${esc(courseId)}/images/${esc(entry.file)}`;
   const licenseHref = entry.licenseUrl || entry.sourceUrl || "";
+  // Only render an <a> if the href is a valid http(s) URL; otherwise show text
+  const licenseLink = SAFE_HREF_RE.test(licenseHref)
+    ? `<a href="${esc(licenseHref)}" target="_blank" rel="noopener noreferrer">${esc(entry.license)}</a>`
+    : esc(entry.license);
   return (
     `<figure class="lesson-fig"><img src="${src}" alt="${esc(entry.caption)}" loading="lazy">` +
     `<figcaption>${esc(entry.caption)} <span class="fig-credit">${esc(entry.credit)} ` +
-    `<a href="${esc(licenseHref)}" target="_blank" rel="noopener noreferrer">${esc(entry.license)}</a>` +
+    `${licenseLink}` +
     `</span></figcaption></figure>`
   );
 }
