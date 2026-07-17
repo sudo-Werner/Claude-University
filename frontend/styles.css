@@ -29,10 +29,15 @@
 }
 
 *{box-sizing:border-box}
-body{margin:0; background:#f1e7d6}
+/* overflow-x lives on body (propagates to the real viewport per the CSS root-element
+   rule), not on .page below: `overflow` set to anything but `visible` on an ordinary
+   div makes IT a scroll container even if it never actually scrolls, which silently
+   breaks `position:sticky` on every descendant (the lesson workspace's sticky column
+   depends on this — .page previously had `overflow:hidden` and broke it). */
+body{margin:0; background:#f1e7d6; overflow-x:hidden}
 
 /* ---- page shell + ambient light (the glass refracts these blobs) ---- */
-.page{position:relative; min-height:100vh; display:flex; justify-content:center; overflow:hidden;
+.page{position:relative; min-height:100vh; display:flex; justify-content:center;
   padding:26px 18px 52px; color:var(--text); font-family:var(--ui);
   /* warm cream base + ambient colored light the glass refracts (baked into the page bg) */
   background:
@@ -323,17 +328,45 @@ textarea::placeholder{color:#b3a994}
   .diag-col{max-width:640px; margin:0 auto; width:100%}
 }
 
-/* =================  WIDE DESKTOP: notes beside the lesson (>=1200px)  =================
+/* =================  NARROW: floating "Notes & Chat" toggle + bottom drawer  =================
+   Below 1100px the workspace still sits inline at the bottom of the lesson (unchanged
+   from before), but it's a long scroll away in a long lesson. This floating button
+   re-styles the SAME .lesson-side node (the one workspaceHTML() call above — never a
+   second copy) as a fixed bottom drawer, so it's reachable without scrolling. Hidden
+   again once the sticky column takes over at 1100px (see below). Button z-index sits
+   above the drawer's so it stays clickable (to close) even once the drawer is open. */
+.ws-drawer-toggle{position:fixed; right:18px; bottom:18px; z-index:41;
+  background:var(--grad); color:#fff; border:none; border-radius:999px; cursor:pointer;
+  padding:13px 22px; font:600 14px/1 inherit; box-shadow:var(--sh-cta)}
+.lesson-side.ws-drawer-open{position:fixed; left:0; right:0; bottom:0; z-index:39;
+  max-height:60vh; overflow-y:auto;
+  background:var(--glass-card-2); backdrop-filter:blur(26px) saturate(1.6); -webkit-backdrop-filter:blur(26px) saturate(1.6);
+  border:1px solid var(--border-glass); border-bottom:none;
+  border-radius:var(--r-xl) var(--r-xl) 0 0; box-shadow:var(--sh-card);
+  /* extra bottom padding clears the floating toggle button (which sits on top, fixed,
+     so it stays reachable to close the drawer) so it never covers the Send button */
+  padding:14px 16px calc(70px + env(safe-area-inset-bottom, 0px))}
+.lesson-side.ws-drawer-open .workspace{margin:0}
+
+/* =================  WIDE DESKTOP: notes beside the lesson (>=1100px)  =================
    The lesson prose keeps its comfortable ~680px measure; the workspace becomes a
    sticky right-hand column instead of sitting below. Falls back to stacked below
-   1200px (phone/tablet/narrow laptop). Uses :has() to widen only the lesson screen. */
-@media (min-width:1200px){
+   1100px (phone/tablet/narrow laptop — the floating toggle + drawer above take over
+   instead). Uses :has() to widen only the lesson screen. The sticky column is height-
+   capped with its own scroll so a long chat never pushes it (or its close point) off
+   the bottom of the viewport. */
+@media (min-width:1100px){
   .app:has(.lesson-col){max-width:1160px}
   .lesson-col{max-width:none; margin:0}          /* head spans full width above the two panes */
   .lesson-body{flex-direction:row; align-items:flex-start; gap:28px}
   .lesson-main{flex:1 1 0}                         /* equal-width panes */
-  .lesson-side{flex:1 1 0; min-width:0; position:sticky; top:24px; align-self:flex-start}
+  .lesson-side{flex:1 1 0; min-width:0; position:sticky; top:24px; align-self:flex-start;
+    max-height:calc(100vh - 48px); overflow-y:auto}     /* 24px top offset + 24px breathing room */
   .lesson-side .workspace{margin:0}
+  /* A stale drawerOpen flag left over from a narrow->wide resize must not pin the
+     panel as a fixed drawer once the sticky column is available — re-assert sticky. */
+  .lesson-side.ws-drawer-open{position:sticky; max-height:calc(100vh - 48px)}
+  .ws-drawer-toggle{display:none}                  /* sticky column already keeps it in view */
 }
 
 /* =================  UNIVERSITY HOME (course grid)  ================= */
@@ -651,3 +684,16 @@ textarea::placeholder{color:#b3a994}
 .arcade-match-item.solved{border-color:#25b478; background:rgba(37,180,120,.14); color:#0f7a4f; cursor:default}
 .arcade-result{text-align:center}
 .arcade-score-note{color:var(--text-mut); margin:6px 0 18px}
+
+/* ---- Arcade: post-answer "Ask about this question" chat ---- */
+.qc-toggle{margin-top:14px}
+.qc-chat{display:flex; flex-direction:column; gap:10px; margin-top:14px; text-align:left}
+.qc-thread{display:flex; flex-direction:column; gap:8px; max-height:220px; overflow-y:auto}
+.qc-msg{font-size:14px; line-height:1.5; padding:9px 12px; border-radius:12px; white-space:pre-wrap; word-break:break-word}
+.qc-you{background:rgba(124,106,255,.12); color:var(--text-2); align-self:flex-end; max-width:85%}
+.qc-ai{background:var(--glass-inner); color:var(--read); align-self:flex-start; max-width:90%}
+.qc-typing{color:var(--text-mut)}
+.qc-compose{display:flex; gap:8px; align-items:flex-end}
+.qc-compose textarea{flex:1; min-height:44px; resize:vertical}
+.qc-send{padding:10px 14px; border:none; border-radius:var(--r-sm); cursor:pointer; font:600 13px/1 inherit; color:#fff; background:var(--grad)}
+.qc-send:disabled{opacity:.5; cursor:default}

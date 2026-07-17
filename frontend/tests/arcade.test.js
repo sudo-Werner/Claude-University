@@ -4,7 +4,7 @@ import {
   arcadeHTML, arcadeGeneratingHTML, arcadeLockedHTML, arcadeTimeoutHTML,
   hostIntroHTML, questionHTML, gradeChoice, matchBoardHTML,
   matchUpInit, matchUpSelectLeft, matchUpSelectRight, matchUpComplete, matchUpScore,
-  arcadeResultHTML,
+  arcadeResultHTML, quizChatHTML,
 } from "../src/views/arcade.js";
 
 // ---- arcadeHTML: course cards ----
@@ -198,4 +198,84 @@ test("arcadeResultHTML shows the rounded percentage and score", () => {
   assert.ok(html.includes("6 / 8"));
   assert.ok(html.includes('data-action="arcade-play-again"'));
   assert.ok(html.includes('data-action="arcade-back"'));
+});
+
+// ---- post-answer "Ask about this question" chat (design: 2026-07-17) ----
+
+test("questionHTML shows no quiz-chat affordance while a question is still open", () => {
+  const round = { format: "rapid_fire", questions: [
+    { lesson_id: "l1", prompt: "P", choices: ["a", "b", "c"], answer: 1, reveal: "R" },
+  ] };
+  const html = questionHTML(round, 0, { answered: false, selected: null });
+  assert.ok(!html.includes("Ask about this question"));
+  assert.ok(!html.includes('data-action="quiz-chat-open"'));
+});
+
+test("questionHTML shows the Ask about this question button once answered, closed by default", () => {
+  const round = { format: "rapid_fire", questions: [
+    { lesson_id: "l1", prompt: "P", choices: ["a", "b", "c"], answer: 1, reveal: "R" },
+  ] };
+  const html = questionHTML(round, 0, { answered: true, selected: 1 });
+  assert.ok(html.includes("Ask about this question"));
+  assert.ok(html.includes('data-action="quiz-chat-open"'));
+  assert.ok(!html.includes('data-action="quiz-chat-send"'));
+});
+
+test("questionHTML renders the open qchat panel with exact placeholder copy and no emojis", () => {
+  const round = { format: "rapid_fire", questions: [
+    { lesson_id: "l1", prompt: "P", choices: ["a", "b", "c"], answer: 1, reveal: "R" },
+  ] };
+  const qchat = { open: true, messages: [], streaming: false };
+  const html = questionHTML(round, 0, { answered: true, selected: 1, qchat });
+  assert.ok(html.includes("Ask why the answer is what it is..."));
+  assert.ok(html.includes('data-action="quiz-chat-send"'));
+  assert.ok(!html.includes('data-action="quiz-chat-open"'));
+  assert.ok(!/\p{Emoji_Presentation}/u.test(html));
+});
+
+test("matchBoardHTML shows no quiz-chat affordance until the board is complete", () => {
+  const round = { format: "match_up", questions: [
+    { lesson_id: "l1", pairs: [
+      { left: "A", right: "1" }, { left: "B", right: "2" }, { left: "C", right: "3" },
+      { left: "D", right: "4" }, { left: "E", right: "5" },
+    ], reveal: "Because." },
+  ] };
+  const state = matchUpInit(round.questions[0], (arr) => arr);
+  const html = matchBoardHTML(round, 0, state, null);
+  assert.ok(!html.includes("Ask about this question"));
+});
+
+test("matchBoardHTML shows the Ask about this question button once the board is complete", () => {
+  const round = { format: "match_up", questions: [
+    { lesson_id: "l1", pairs: [{ left: "A", right: "1" }, { left: "B", right: "2" }], reveal: "r" },
+  ] };
+  let state = matchUpInit(round.questions[0], (arr) => arr);
+  state = matchUpSelectRight(matchUpSelectLeft(state, 0), round.questions[0], 0);
+  state = matchUpSelectRight(matchUpSelectLeft(state, 1), round.questions[0], 1);
+  const html = matchBoardHTML(round, 0, state, null);
+  assert.ok(html.includes("Ask about this question"));
+  assert.ok(html.includes('data-action="quiz-chat-open"'));
+});
+
+test("quizChatHTML escapes learner and assistant bubbles (XSS case)", () => {
+  const qchat = { open: true, streaming: false, messages: [
+    { role: "user", content: "<script>alert(1)</script>" },
+    { role: "assistant", content: "<b>answer</b>" },
+  ] };
+  const html = quizChatHTML(qchat);
+  assert.ok(!html.includes("<script>"));
+  assert.ok(html.includes("&lt;script&gt;"));
+  assert.ok(!html.includes("<b>answer</b>"));
+  assert.ok(html.includes("&lt;b&gt;answer&lt;/b&gt;"));
+});
+
+test("quizChatHTML disables input and send while streaming", () => {
+  const html = quizChatHTML({ open: true, streaming: true, messages: [] });
+  assert.ok(/data-field="qc-input"[^>]*disabled/.test(html));
+  assert.ok(/data-action="quiz-chat-send"[^>]*disabled/.test(html));
+});
+
+test("quizChatHTML renders the toggle button when qchat is null or unopened", () => {
+  assert.ok(quizChatHTML(null).includes('data-action="quiz-chat-open"'));
+  assert.ok(quizChatHTML({ open: false }).includes('data-action="quiz-chat-open"'));
 });
