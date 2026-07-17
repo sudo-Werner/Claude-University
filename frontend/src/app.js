@@ -966,10 +966,82 @@ export async function init({ window, fetch }) {
     if (onScreen()) paintLesson();
   }
 
+  // ---- drawn diagrams (slice 2): lazy-loaded vendored renderers, cached for the
+  // session so a lesson with no drawn figures never pays the cost.
+  let _purifyPromise = null;
+  let _mermaidPromise = null;
+
+  function loadScript(src, globalName) {
+    if (window[globalName]) return Promise.resolve(window[globalName]);
+    return new Promise((resolve, reject) => {
+      const el = doc.createElement("script");
+      el.src = src;
+      el.onload = () => resolve(window[globalName]);
+      el.onerror = () => reject(new Error(`failed to load ${src}`));
+      doc.head.appendChild(el);
+    });
+  }
+
+  function loadPurify() {
+    if (!_purifyPromise) _purifyPromise = loadScript("/vendor/purify.min.js", "DOMPurify");
+    return _purifyPromise;
+  }
+
+  function loadMermaidLib() {
+    if (!_mermaidPromise) {
+      _mermaidPromise = loadScript("/vendor/mermaid.min.js", "mermaid").then((m) => {
+        m.initialize({ startOnLoad: false, securityLevel: "strict" });
+        return m;
+      });
+    }
+    return _mermaidPromise;
+  }
+
+  // Hydrates every svg/mermaid figure placeholder currently painted in `view`. Called
+  // once at the end of every paintLesson() repaint. lesson.js never string-interpolates
+  // figure code into the template (see its comment on drawnFigurePlaceholderHTML), so
+  // this is the ONLY place svg code is sanitized-again (DOMPurify, defense in depth over
+  // the server-side allowlist) and mermaid code is rendered. `lesson` is captured by
+  // value so a slow lazy-load that resolves after the learner has navigated away can
+  // never inject into a detached node (mirrors the onScreen staleness guard used by
+  // seedWorkspace/explain-grade elsewhere in this file) — repaints rebuild placeholders
+  // from scratch, so a fresh hydration on a fresh node is naturally idempotent.
+  function hydrateFigures(view, lesson) {
+    const entries = Array.isArray(lesson.images) ? lesson.images : [];
+    const byN = new Map(entries.map((e) => [e.n, e]));
+    const stillFresh = () => ui.screen === "lesson" && ui.lesson === lesson;
+
+    view.querySelectorAll("[data-fig-svg]").forEach((fig) => {
+      const entry = byN.get(Number(fig.dataset.figSvg));
+      if (!entry || typeof entry.code !== "string") return;
+      loadPurify()
+        .then((DOMPurify) => {
+          if (!stillFresh() || !fig.isConnected) return;
+          const clean = DOMPurify.sanitize(entry.code, { USE_PROFILES: { svg: true, svgFilters: true } });
+          fig.insertAdjacentHTML("afterbegin", clean);
+        })
+        .catch(() => {}); // lazy-load/sanitize failure -> the caption already shown is the fallback
+    });
+
+    view.querySelectorAll("[data-fig-mermaid]").forEach((fig) => {
+      const entry = byN.get(Number(fig.dataset.figMermaid));
+      if (!entry || typeof entry.code !== "string") return;
+      const renderId = `mermaid-fig-${entry.n}-${Math.random().toString(36).slice(2)}`;
+      loadMermaidLib()
+        .then((mermaid) => mermaid.render(renderId, entry.code))
+        .then(({ svg }) => {
+          if (!stillFresh() || !fig.isConnected) return;
+          fig.insertAdjacentHTML("afterbegin", svg);
+        })
+        .catch(() => {}); // parse/render failure -> caption-as-text fallback (nothing injected)
+    });
+  }
+
   function paintLesson() {
     const view = root.querySelector("#view");
     const nav = { hasPrev: !!adjacentLesson(-1), hasNext: !!adjacentLesson(1) };
     view.innerHTML = lessonHTML(ui.lesson, ui.lessonState, nav);
+    hydrateFigures(view, ui.lesson);
     const curBtn = view.querySelector('[data-action="curriculum"]');
     if (curBtn) curBtn.addEventListener("click", showCurriculum);
     const prevBtn = view.querySelector('[data-action="prev-lesson"]');
