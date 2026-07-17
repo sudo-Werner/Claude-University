@@ -551,6 +551,13 @@ def test_submit_results_rejects_malformed_body(conn, tmp_path, bad):
     assert conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"] == 0
 
 
+def test_submit_results_rejects_non_object_body(conn, tmp_path):
+    root = tmp_path / "courses"
+    with pytest.raises(ValueError):
+        quiz.submit_results(root, conn, "c", [1, 2, 3])
+    assert conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"] == 0
+
+
 def test_submit_results_clamps_missed_counts_and_drops_bad_entries(conn, tmp_path):
     root = tmp_path / "courses"
     body = _good_results_body(missed={"c-l1": -3, "c-l2": 2, "7": None, "c-l3": "bad", "c-l4": True})

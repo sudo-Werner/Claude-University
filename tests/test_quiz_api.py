@@ -111,6 +111,13 @@ def test_post_results_400_on_malformed_body(client, tmp_path, monkeypatch):
     assert "error" in resp.get_json()
 
 
+def test_post_results_400_on_non_object_body(client, tmp_path, monkeypatch):
+    _seed_course(monkeypatch, tmp_path)
+    resp = client.post("/api/courses/c/quiz/results", json=[1, 2, 3])
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
 def test_post_results_bad_course_id_404(client):
     resp = client.post("/api/courses/Bad_Id/quiz/results", json={})
     assert resp.status_code == 404

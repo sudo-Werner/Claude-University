@@ -492,6 +492,8 @@ def submit_results(content_dir, conn, course_id, body):
     delete the round file (consume_round is itself a no-op if it's already
     gone). Raises ValueError on a malformed body; the route maps that to 400
     without touching the DB or the bank."""
+    if not isinstance(body, dict):
+        raise ValueError("results body must be a JSON object")
     client_event_id = body.get("client_event_id")
     session_id = body.get("session_id")
     round_id = body.get("round_id")
