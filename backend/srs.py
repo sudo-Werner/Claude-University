@@ -107,6 +107,48 @@ def _weak_since_review(lesson_id, module_id, latest_results, last_review_at):
     return False
 
 
+def _quiz_misses_by_lesson(conn, course_id):
+    """Latest occurred_at of a quiz_round event that recorded >=1 miss for each
+    lesson, across this course's quiz history. Mirrors _latest_exam_results'
+    per-key latest-timestamp shape, scoped to lesson id instead of exam key."""
+    rows = conn.execute(
+        "SELECT occurred_at, payload FROM events "
+        "WHERE event_type = 'quiz_round' AND course_id = ? "
+        "ORDER BY occurred_at ASC, id ASC",
+        (course_id,),
+    ).fetchall()
+    latest = {}
+    for row in rows:
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except ValueError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        missed = payload.get("missed")
+        if not isinstance(missed, dict):
+            continue
+        for lesson_id, count in missed.items():
+            if not isinstance(lesson_id, str) or not lesson_id:
+                continue
+            if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+                continue
+            latest[lesson_id] = row["occurred_at"]  # rows are ASC, so the last write wins = latest
+    return latest
+
+
+def _quiz_weak_since_review(lesson_id, quiz_misses, last_review_at):
+    """A lesson with a quiz miss recorded after its last review (or never
+    reviewed) is weak — mirrors _weak_since_review's exam-result rule, but the
+    signal is a missed quiz question instead of a failed exam's weakSpots.
+    Deliberately never inserts lesson_reviewed — playing a game is not a
+    review session."""
+    at = quiz_misses.get(lesson_id)
+    if at is None:
+        return False
+    return last_review_at is None or at > last_review_at
+
+
 def due_lesson_ids(conn, content_dir, course_id, today=None):
     today = today or datetime.date.today()
     manifest = courses.load_manifest(content_dir, course_id)
@@ -114,6 +156,7 @@ def due_lesson_ids(conn, content_dir, course_id, today=None):
         return []
     by_lesson = reviews_by_lesson(conn, course_id)
     latest_results = _latest_exam_results(conn, course_id)
+    quiz_misses = _quiz_misses_by_lesson(conn, course_id)
     due = []
     for module in manifest.get("modules", []):
         for lesson in module.get("lessons", []):
@@ -125,6 +168,9 @@ def due_lesson_ids(conn, content_dir, course_id, today=None):
                 continue
             last_at = revs[-1]["at"] if revs else None
             if _weak_since_review(lid, module.get("id"), latest_results, last_at):
+                due.append(lid)
+                continue
+            if _quiz_weak_since_review(lid, quiz_misses, last_at):
                 due.append(lid)
     return due
 

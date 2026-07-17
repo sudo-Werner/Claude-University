@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, getQuizRound, postQuizResults, getQuizStats } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -316,4 +316,44 @@ test("gradeTeaching surfaces the server error message", async () => {
   const fetch = async () => ({ ok: false, json: async () => ({ error: "teach something first" }) });
   const out = await gradeTeaching({ fetch, courseId: "c1", lessonId: "c1-l1", messages: [] });
   assert.equal(out.error, "teach something first");
+});
+
+test("getQuizRound fetches the round endpoint and returns the parsed body", async () => {
+  let url;
+  const fetch = async (u) => { url = u; return { ok: true, json: async () => ({ status: "ready", round: { round_id: "round-x" } }) }; };
+  const data = await getQuizRound({ fetch, courseId: "c" });
+  assert.equal(url, "/api/courses/c/quiz/round");
+  assert.equal(data.status, "ready");
+});
+
+test("getQuizRound returns an error shape on non-ok or network failure", async () => {
+  const notOk = async () => ({ ok: false, status: 500 });
+  assert.ok((await getQuizRound({ fetch: notOk, courseId: "c" })).error);
+  const rejecting = async () => { throw new Error("down"); };
+  assert.ok((await getQuizRound({ fetch: rejecting, courseId: "c" })).error);
+});
+
+test("postQuizResults posts the result payload and returns the body", async () => {
+  let sent = null;
+  const fetch = async (url, opts) => { sent = { url, body: JSON.parse(opts.body) }; return { ok: true, json: async () => ({ ok: true }) }; };
+  const result = { client_event_id: "ce1", session_id: "s1", round_id: "round-x", format: "rapid_fire", score: 6, total: 8, missed: {} };
+  const out = await postQuizResults({ fetch, courseId: "c", result });
+  assert.equal(sent.url, "/api/courses/c/quiz/results");
+  assert.deepEqual(sent.body, result);
+  assert.deepEqual(out, { ok: true });
+});
+
+test("postQuizResults returns an error shape on failure", async () => {
+  const fetch = async () => ({ ok: false, json: async () => ({ error: "boom" }) });
+  const out = await postQuizResults({ fetch, courseId: "c", result: {} });
+  assert.equal(out.error, "boom");
+});
+
+test("getQuizStats fetches the stats endpoint and returns the body, or null on failure", async () => {
+  let url;
+  const ok = async (u) => { url = u; return { ok: true, json: async () => ({ roundsPlayed: 3 }) }; };
+  const stats = await getQuizStats({ fetch: ok, courseId: "c" });
+  assert.equal(url, "/api/courses/c/quiz/stats");
+  assert.equal(stats.roundsPlayed, 3);
+  assert.equal(await getQuizStats({ fetch: async () => ({ ok: false }), courseId: "c" }), null);
 });

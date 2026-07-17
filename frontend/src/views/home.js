@@ -36,6 +36,7 @@ export function homeHTML(courses) {
       </button>
     </div>
     <div class="home-links">
+    <button class="btn-secondary arcade-link" data-action="arcade">Arcade</button>
     <button class="btn-secondary activity-link" data-action="activity">Recent activity</button>
     <button class="btn-secondary transcript-link" data-action="transcript">Transcript</button>
     </div>
