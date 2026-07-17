@@ -150,3 +150,60 @@ def test_valid_round_rejects_non_dict():
     assert not quiz.valid_round(None, pool={"c-l1"})
     assert not quiz.valid_round("not a dict", pool={"c-l1"})
     assert not quiz.valid_round(["also", "not"], pool={"c-l1"})
+
+
+# ---- format weighting + round prompt ----
+
+def test_format_weights_never_played_all_equal():
+    weights = quiz.format_weights([])
+    assert len(set(weights.values())) == 1
+    assert weights["rapid_fire"] == 1.0
+
+
+def test_format_weights_recently_played_gets_lighter():
+    weights = quiz.format_weights(["rapid_fire", "rapid_fire", "true_false"])
+    assert weights["rapid_fire"] == pytest.approx(1 / 3)
+    assert weights["true_false"] == pytest.approx(1 / 2)
+    assert weights["odd_one_out"] == 1.0
+
+
+def test_format_weights_ignores_unknown_format_strings():
+    weights = quiz.format_weights(["not-a-real-format", "rapid_fire"])
+    assert weights["rapid_fire"] == pytest.approx(1 / 2)
+
+
+def test_choose_format_rand_zero_picks_first_format():
+    assert quiz.choose_format([], rand=0.0) == quiz.FORMATS[0]
+
+
+def test_choose_format_rand_near_one_picks_last_format():
+    assert quiz.choose_format([], rand=0.999999) == quiz.FORMATS[-1]
+
+
+def test_choose_format_stays_reachable_after_heavy_play():
+    # every format keeps weight > 0 even after being played 50 times, so a
+    # rand value in its slice can still pick it.
+    history = ["rapid_fire"] * 50
+    weights = quiz.format_weights(history)
+    assert weights["rapid_fire"] > 0
+
+
+def test_round_prompt_mentions_format_and_pool_lesson_ids():
+    pool = [{"lesson_id": "c-l1", "title": "Intro", "summary": "Basics.",
+             "concepts": [{"term": "gradient", "definition": "slope"}]}]
+    p = quiz.round_prompt(format="true_false", course_title="ML", pool_lessons=pool)
+    assert "true_false" in p and "c-l1" in p and "gradient = slope" in p
+    assert "PLAIN TEXT" in p
+
+
+def test_round_prompt_excludes_lessons_outside_pool():
+    pool = [{"lesson_id": "c-l1", "title": "Intro", "summary": "", "concepts": []}]
+    p = quiz.round_prompt(format="rapid_fire", course_title="ML", pool_lessons=pool)
+    assert "c-l2" not in p
+
+
+def test_round_prompt_covers_every_format_instruction():
+    pool = [{"lesson_id": "c-l1", "title": "Intro", "summary": "S", "concepts": []}]
+    for fmt in quiz.FORMATS:
+        p = quiz.round_prompt(format=fmt, course_title="ML", pool_lessons=pool)
+        assert fmt in p

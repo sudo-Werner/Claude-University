@@ -140,3 +140,97 @@ def valid_round(obj, *, pool):
         return False
     validator = _QUESTION_VALIDATORS[fmt]
     return all(validator(q, pool) for q in questions)
+
+
+# ---- format weighting + round prompt builder ----
+
+def format_weights(history):
+    """history: an iterable of format strings (the course's last 10 quiz_round
+    events). weight = 1 / (1 + times that format appears) — recently played
+    formats get rarer, every format stays possible."""
+    counts = Counter(f for f in history if f in FORMATS)
+    return {f: 1.0 / (1 + counts.get(f, 0)) for f in FORMATS}
+
+
+def choose_format(history, *, rand=None):
+    """Weighted-random format pick. `rand` is a float in [0, 1); defaults to
+    random.random() but tests inject a fixed value for determinism. FORMATS'
+    fixed iteration order makes the mapping from `rand` to a format
+    deterministic given a fixed `rand`."""
+    if rand is None:
+        rand = random.random()
+    weights = format_weights(history)
+    total = sum(weights.values())
+    target = rand * total
+    upto = 0.0
+    for f in FORMATS:
+        upto += weights[f]
+        if target < upto:
+            return f
+    return FORMATS[-1]
+
+
+_FORMAT_INSTRUCTIONS = {
+    "rapid_fire": (
+        'rapid_fire: write 8 to 12 questions. Each question is exactly '
+        '{"lesson_id":"<id from the pool below>","prompt":"<question, plain text, max 300 chars>",'
+        '"choices":["<3 to 5 short plain-text options, max 120 chars each>"],'
+        '"answer":<0-based index of the correct choice>,'
+        '"reveal":"<one plain-text sentence, max 300 chars, shown after answering>"}'
+    ),
+    "true_false": (
+        'true_false: write 10 to 14 questions. Each question is exactly '
+        '{"lesson_id":"<id from the pool below>","statement":"<plain-text claim, max 300 chars>",'
+        '"answer":<true or false>,"reveal":"<one plain-text sentence, max 300 chars>"}'
+    ),
+    "odd_one_out": (
+        'odd_one_out: write 6 to 8 questions. Each question is exactly '
+        '{"lesson_id":"<id from the pool below>","items":["<exactly 4 short plain-text items, max 120 chars each>"],'
+        '"answer":<0-based index of the item that does not belong>,'
+        '"reveal":"<one plain-text sentence, max 300 chars, explaining why>"}'
+    ),
+    "spot_the_lie": (
+        'spot_the_lie: write 6 to 8 questions. Each question is exactly '
+        '{"lesson_id":"<id from the pool below>","statements":["<exactly 3 short plain-text statements, max 300 chars each>"],'
+        '"answer":<0-based index of the false statement>,'
+        '"reveal":"<one plain-text sentence, max 300 chars, explaining why>"}'
+    ),
+    "match_up": (
+        'match_up: write 2 or 3 boards. Each board is exactly '
+        '{"lesson_id":"<id from the pool below>","pairs":[{"left":"<short plain-text term, max 120 chars>",'
+        '"right":"<short plain-text matching definition or example, max 120 chars>"}] '
+        '(exactly 5 pairs),"reveal":"<one plain-text sentence, max 300 chars>"}'
+    ),
+}
+
+
+def round_prompt(*, format, course_title, pool_lessons):
+    """`pool_lessons`: the list of dicts question_pool() returns — the ONLY
+    grounding material for the round (decision 11: no learner free text ever
+    enters this prompt, just cached lesson content, spine entries, and the
+    manifest title)."""
+    lines = []
+    for l in pool_lessons:
+        concepts = "; ".join(
+            f"{c.get('term', '')} = {c.get('definition', '')}"
+            for c in l.get("concepts", []) if isinstance(c, dict)
+        )
+        lines.append(f'- id={l["lesson_id"]} "{l["title"]}": {l.get("summary", "")}'
+                     + (f" (concepts: {concepts})" if concepts else ""))
+    lessons_block = "\n".join(lines)
+    return (
+        f'You are writing one round of a playful pop-quiz game called the Arcade for a '
+        f'learner studying the course "{course_title}" on a personal learning platform. This '
+        f'round tests ONLY material from the lessons listed below — never invent facts '
+        f'outside them, and never reference material the learner has not yet studied.\n\n'
+        f'Lessons available for this round (use ONLY these lesson_id values):\n{lessons_block}\n\n'
+        f'Write a "{format}" round: {_FORMAT_INSTRUCTIONS[format]}\n\n'
+        'Every prompt/statement/item/pair/reveal is PLAIN TEXT — no HTML, no markdown, no '
+        'fenced code. Spread questions across DIFFERENT lessons from the list where possible '
+        'rather than repeating one lesson. Keep the tone playful and encouraging, like a fun '
+        'game show host, never like a test.\n'
+        'Reply with ONLY a JSON object, no prose, no fence:\n'
+        '{"title":"<a short playful round title, max 80 chars>",'
+        '"host_intro":"<one or two upbeat sentences introducing this round, max 200 chars>",'
+        f'"format":"{format}","questions":[<question>, ...]}}'
+    )
