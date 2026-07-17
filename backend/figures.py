@@ -7,6 +7,7 @@ this function is not the only defense, but it must never let anything hostile th
 on its own.
 """
 
+import re
 import xml.etree.ElementTree as ET
 
 MAX_INPUT_BYTES = 8 * 1024
@@ -62,13 +63,15 @@ def _local_name(tag):
     return tag, None
 
 
-def _check_element(el):
+def _check_element(el, is_root=False):
     """Recursively validate one element and its subtree against the allowlists.
     Returns True if the whole subtree is clean, False on the first violation
     (short-circuits — the caller drops the whole figure on any False)."""
     local, uri = _local_name(el.tag)
     if uri is not None and uri != _SVG_NS:
         return False
+    if local == "svg" and not is_root:
+        return False  # nested svg elements not allowed
     if local not in ALLOWED_ELEMENTS:
         return False
     for attr_name in el.attrib:
@@ -81,8 +84,15 @@ def _check_element(el):
             return False
         if attr_local not in ALLOWED_ATTRS:
             return False
+        # Validate url() values in paint and reference attributes
+        if attr_local in ("fill", "stroke", "marker-start", "marker-end"):
+            attr_value = el.attrib[attr_name]
+            if "url(" in attr_value.lower():
+                # Must be a same-document fragment reference: url(#...)
+                if not re.match(r'^\s*url\s*\(\s*#[\w-]+\s*\)\s*$', attr_value, re.IGNORECASE):
+                    return False
     for child in el:
-        if not _check_element(child):
+        if not _check_element(child):  # is_root=False for children
             return False
     return True
 
@@ -110,6 +120,10 @@ def sanitize_svg(code):
         return None
     if len(code.encode("utf-8")) > MAX_INPUT_BYTES:
         return None
+    # Entity-expansion (billion laughs) guard: we never need DTDs/entities in a figure.
+    lowered = code.lower()
+    if "<!doctype" in lowered or "<!entity" in lowered:
+        return None
     try:
         root = ET.fromstring(code)
     except ET.ParseError:
@@ -126,7 +140,7 @@ def sanitize_svg(code):
     # explicitly, before the generic walk below would otherwise let them through.
     if "width" in root.attrib or "height" in root.attrib:
         return None
-    if not _check_element(root):
+    if not _check_element(root, is_root=True):
         return None
     _strip_namespace(root)
     return ET.tostring(root, encoding="unicode")
