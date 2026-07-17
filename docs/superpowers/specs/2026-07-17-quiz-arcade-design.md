@@ -40,8 +40,8 @@ round actually played plus one per completed lesson. Zero calls during play.
    never reach the SRS), plus a one-line `reveal` shown after answering:
    - `rapid_fire`: 8–12 × `{lesson_id, prompt, choices: [3–5 str], answer: <index>,
      reveal}`; client shows a 15 s per-question countdown, timeout counts as a miss.
-   - `true_false`: 10–14 × `{lesson_id, statement, answer: <bool>, reveal}`; running
-     in-round streak counter.
+   - `true_false`: 10–14 × `{lesson_id, statement, answer: <bool>, reveal}`. (An in-round
+     streak counter was considered here; v1 shipped without it — revisit on demand.)
    - `odd_one_out`: 6–8 × `{lesson_id, items: [4 str], answer: <index>, reveal}` (reveal
      explains why it doesn't belong).
    - `spot_the_lie`: 6–8 × `{lesson_id, statements: [3 str], answer: <index of the lie>,
