@@ -357,3 +357,39 @@ def test_question_chat_learner_text_never_raw_interpolated(client, tmp_path, mon
         "messages": [{"role": "user", "content": hostile}]})
     resp.get_data(as_text=True)
     assert json.dumps({"speaker": "learner", "text": hostile}, ensure_ascii=False) in calls[0]
+
+
+def test_question_chat_oversized_question_400(client, tmp_path, monkeypatch):
+    _seed_course(monkeypatch, tmp_path)
+    large_question = {**_QC_QUESTION, "description": "x" * 9000}
+    resp = client.post("/api/courses/c/quiz/question-chat", json={
+        "lesson_id": "c-l1", "question": large_question, "answerGiven": 1, "messages": []})
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "question too large"
+
+
+def test_question_chat_huge_answer_given_string_400(client, tmp_path, monkeypatch):
+    _seed_course(monkeypatch, tmp_path)
+    resp = client.post("/api/courses/c/quiz/question-chat", json={
+        "lesson_id": "c-l1", "question": _QC_QUESTION, "answerGiven": "x" * 3000000, "messages": []})
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "answer too long"
+
+
+def test_question_chat_answer_given_dict_400(client, tmp_path, monkeypatch):
+    _seed_course(monkeypatch, tmp_path)
+    resp = client.post("/api/courses/c/quiz/question-chat", json={
+        "lesson_id": "c-l1", "question": _QC_QUESTION, "answerGiven": {"nested": "dict"}, "messages": []})
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "answer has invalid type"
+
+
+def test_question_chat_valid_string_answer_given_streams(client, tmp_path, monkeypatch):
+    from backend import claude_client
+    _seed_course(monkeypatch, tmp_path)
+    monkeypatch.setattr(claude_client, "stream", lambda prompt, **kw: iter(["response"]))
+    resp = client.post("/api/courses/c/quiz/question-chat", json={
+        "lesson_id": "c-l1", "question": _QC_QUESTION, "answerGiven": "my answer", "messages": []})
+    assert resp.status_code == 200
+    text = resp.get_data(as_text=True)
+    assert "event: delta" in text and "event: done" in text

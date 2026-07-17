@@ -874,6 +874,9 @@ def create_app(db_path=None):
         messages = body.get("messages")
         if not quiz.valid_question_chat_messages(messages):
             return jsonify({"error": "invalid messages"}), 400
+        payload_error = quiz.valid_question_chat_payload(body.get("question"), body.get("answerGiven"))
+        if payload_error:
+            return jsonify({"error": payload_error}), 400
         # Fail-open grounding: a lesson not yet generated (None) still gets a chat,
         # just without lesson content in the prompt (quiz_question_chat_prompt handles it).
         lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)

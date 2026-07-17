@@ -626,6 +626,31 @@ def valid_question_chat_messages(messages):
     return True
 
 
+def valid_question_chat_payload(question, answer_given):
+    """Validate question and answer_given before they reach a paid Claude call.
+    `question` must be a dict with serialized size <= 8KB.
+    `answer_given` must be None, bool, int, or str (max 500 chars if str).
+    Returns None if valid, else an error message string suitable for a 400 response."""
+    # Validate question
+    if not isinstance(question, dict):
+        return "question must be an object"
+    try:
+        question_json = json.dumps(question)
+    except (TypeError, ValueError):
+        return "question is not JSON-serializable"
+    if len(question_json) > 8000:
+        return "question too large"
+    # Validate answer_given
+    if answer_given is None or isinstance(answer_given, bool) or isinstance(answer_given, int):
+        return None
+    if isinstance(answer_given, str):
+        if len(answer_given) <= 500:
+            return None
+        return "answer too long"
+    # Reject everything else (dict, list, float, etc.)
+    return "answer has invalid type"
+
+
 def quiz_question_chat_prompt(lesson, question, answer_given, messages):
     """`lesson` is the cached lesson dict for grounding, or None when it has not been
     generated yet (fail-open — decision 4: the chat still works, just without lesson
