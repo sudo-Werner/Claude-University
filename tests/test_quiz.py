@@ -625,3 +625,9 @@ def test_quiz_stats_isolated_per_course(conn):
     _play(conn, "true_false", occurred="2026-07-01T00:00:00+00:00", course_id="c2")
     assert quiz.quiz_stats(conn, "c1")["roundsPlayed"] == 1
     assert "true_false" not in quiz.quiz_stats(conn, "c1")["perFormat"]
+
+
+def test_quiz_stats_clamps_best_pct_at_100(conn):
+    _play(conn, "rapid_fire", score=999, total=10, occurred="2026-07-01T00:00:00+00:00")
+    stats = quiz.quiz_stats(conn, "c")
+    assert stats["bestPct"] == 100

@@ -528,7 +528,7 @@ def submit_results(content_dir, conn, course_id, body):
 # ---- stats: computed live from quiz_round events, no stored aggregates ----
 
 def _pct(score, total):
-    return round(score / total * 100) if total else 0
+    return min(100, round(score / total * 100)) if total else 0
 
 
 def _quiz_streak_days(conn, course_id, today=None):
