@@ -15,7 +15,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from backend import claude_client, courses, db, events, fsutil, spine
+from backend import courses, db, events, fsutil, spine
 
 FORMATS = ("rapid_fire", "true_false", "odd_one_out", "spot_the_lie", "match_up")
 

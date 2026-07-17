@@ -941,7 +941,7 @@ export async function init({ window, fetch }) {
   // Shared by finishRound and the result screen's "Retry save" button.
   async function saveRoundResult(st) {
     const result = await postQuizResults({ fetch, courseId: ui.arcadeCourseId, result: st.savePayload });
-    if (ui.quizPlay !== st) return; // navigated away mid-save
+    if (ui.quizPlay !== st || ui.screen !== "arcade-play") return; // navigated away mid-save
     st.saving = false;
     st.saveFailed = !result || !!result.error;
     if (st.phase === "result") paintArcadePlay();
