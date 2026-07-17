@@ -684,3 +684,16 @@ textarea::placeholder{color:#b3a994}
 .arcade-match-item.solved{border-color:#25b478; background:rgba(37,180,120,.14); color:#0f7a4f; cursor:default}
 .arcade-result{text-align:center}
 .arcade-score-note{color:var(--text-mut); margin:6px 0 18px}
+
+/* ---- Arcade: post-answer "Ask about this question" chat ---- */
+.qc-toggle{margin-top:14px}
+.qc-chat{display:flex; flex-direction:column; gap:10px; margin-top:14px; text-align:left}
+.qc-thread{display:flex; flex-direction:column; gap:8px; max-height:220px; overflow-y:auto}
+.qc-msg{font-size:14px; line-height:1.5; padding:9px 12px; border-radius:12px; white-space:pre-wrap; word-break:break-word}
+.qc-you{background:rgba(124,106,255,.12); color:var(--text-2); align-self:flex-end; max-width:85%}
+.qc-ai{background:var(--glass-inner); color:var(--read); align-self:flex-start; max-width:90%}
+.qc-typing{color:var(--text-mut)}
+.qc-compose{display:flex; gap:8px; align-items:flex-end}
+.qc-compose textarea{flex:1; min-height:44px; resize:vertical}
+.qc-send{padding:10px 14px; border:none; border-radius:var(--r-sm); cursor:pointer; font:600 13px/1 inherit; color:#fff; background:var(--grad)}
+.qc-send:disabled{opacity:.5; cursor:default}

@@ -118,6 +118,9 @@ function choiceQuestionHTML(index, total, state, choices, promptLabel, correctIn
   const countdown = state.countdown != null
     ? `<div class="arcade-countdown">${state.countdown}s</div>` : "";
   const revealBlock = answered ? `<div class="arcade-reveal">${esc(reveal)}</div>` : "";
+  // Post-answer only (design decision 1): the "Ask about this question" affordance
+  // never exists while the question is open — it only enters the DOM once `answered`.
+  const qchatBlock = answered ? quizChatHTML(state.qchat) : "";
   const next = answered ? `<button class="btn-primary" data-action="arcade-next">Next</button>` : "";
   return `
     <div class="arcade-question card">
@@ -125,7 +128,7 @@ function choiceQuestionHTML(index, total, state, choices, promptLabel, correctIn
       ${countdown}
       <div class="arcade-prompt">${esc(promptLabel)}</div>
       <div class="arcade-choices">${choiceButtons}</div>
-      ${revealBlock}${next}
+      ${revealBlock}${qchatBlock}${next}
     </div>`;
 }
 
@@ -203,7 +206,7 @@ export function matchUpScore(state, board) {
   return { correct, total: board.pairs.length };
 }
 
-export function matchBoardHTML(round, boardIndex, state) {
+export function matchBoardHTML(round, boardIndex, state, qchat) {
   const board = round.questions[boardIndex];
   const total = round.questions.length;
   const leftItems = board.pairs.map((p, i) => {
@@ -221,6 +224,9 @@ export function matchBoardHTML(round, boardIndex, state) {
   }).join("");
   const complete = matchUpComplete(state, board);
   const revealBlock = complete ? `<div class="arcade-reveal">${esc(board.reveal)}</div>` : "";
+  // Post-answer only (design decision 1): a match-up board only offers the chat once
+  // every pair is solved — same gate as the reveal block above.
+  const qchatBlock = complete ? quizChatHTML(qchat) : "";
   const next = complete ? `<button class="btn-primary" data-action="arcade-next">Next</button>` : "";
   return `
     <div class="arcade-question arcade-match card">
@@ -229,7 +235,31 @@ export function matchBoardHTML(round, boardIndex, state) {
         <div class="arcade-match-col">${leftItems}</div>
         <div class="arcade-match-col">${rightItems}</div>
       </div>
-      ${revealBlock}${next}
+      ${revealBlock}${qchatBlock}${next}
+    </div>`;
+}
+
+// ---- post-answer "Ask about this question" chat ----
+// Pure render only (design: 2026-07-17-quiz-question-chat) — app.js owns
+// ui.quizPlay.qchat state ({open, messages, streaming}) and wires the DOM events
+// below (data-action="quiz-chat-open"/"quiz-chat-send", data-field="qc-input").
+// Ephemeral: cleared on question-advance and resetArcadePlay, never persisted.
+export function quizChatHTML(qchat) {
+  if (!qchat || !qchat.open) {
+    return `<button class="btn-secondary qc-toggle" data-action="quiz-chat-open">Ask about this question</button>`;
+  }
+  const thread = (qchat.messages || [])
+    .map((m) => `<div class="qc-msg qc-${m.role === "user" ? "you" : "ai"}">${esc(m.content)}</div>`)
+    .join("");
+  const typing = qchat.streaming ? `<div class="qc-msg qc-ai qc-typing">…</div>` : "";
+  const disabled = qchat.streaming ? " disabled" : "";
+  return `
+    <div class="qc-chat">
+      <div class="qc-thread">${thread}${typing}</div>
+      <div class="qc-compose">
+        <textarea data-field="qc-input" placeholder="Ask why the answer is what it is..."${disabled}></textarea>
+        <button class="qc-send" data-action="quiz-chat-send"${disabled}>Send</button>
+      </div>
     </div>`;
 }
 

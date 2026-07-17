@@ -700,6 +700,8 @@ export async function init({ window, fetch }) {
   // arcade-play) tears down its timers. Belt-and-braces: the countdown tick itself
   // also carries a screen guard (see startCountdown) for exits that bypass showArcade
   // entirely (home nav, course nav).
+  // ui.quizPlay = null also discards any open qchat thread with it (design decision 2:
+  // ephemeral, cleared on resetArcadePlay) — nothing further to do for that here.
   function resetArcadePlay() {
     if (ui.quizPlay && ui.quizPlay.countdownTimer) window.clearInterval(ui.quizPlay.countdownTimer);
     if (ui.arcadePollTimer) window.clearTimeout(ui.arcadePollTimer);
@@ -777,6 +779,7 @@ export async function init({ window, fetch }) {
       round, phase: "intro", index: 0, score: 0, total: 0, missed: {},
       answered: false, selected: null, countdown: null, countdownTimer: null,
       matchState: round.format === "match_up" ? matchUpInit(round.questions[0]) : null,
+      qchat: null, // post-answer "Ask about this question" thread — ephemeral (design decision 2)
     };
     paintArcadePlay();
   }
@@ -807,7 +810,7 @@ export async function init({ window, fetch }) {
       return;
     }
     if (st.round.format === "match_up") {
-      view.innerHTML = matchBoardHTML(st.round, st.index, st.matchState);
+      view.innerHTML = matchBoardHTML(st.round, st.index, st.matchState, st.qchat);
       view.querySelectorAll("[data-match-left]").forEach((b) => {
         b.addEventListener("click", () => tapMatchLeft(Number(b.getAttribute("data-match-left"))));
       });
@@ -816,6 +819,7 @@ export async function init({ window, fetch }) {
       });
       const next = view.querySelector('[data-action="arcade-next"]');
       if (next) next.addEventListener("click", advanceMatchBoard);
+      bindQuizChat(view);
       return;
     }
     view.innerHTML = questionHTML(st.round, st.index, st);
@@ -824,6 +828,104 @@ export async function init({ window, fetch }) {
     });
     const next = view.querySelector('[data-action="arcade-next"]');
     if (next) next.addEventListener("click", advanceQuestion);
+    bindQuizChat(view);
+  }
+
+  // ---- post-answer "Ask about this question" chat (design: 2026-07-17) ----
+  // Ephemeral, stateless thread on ui.quizPlay.qchat — never persisted, no events.
+  // The "Ask about this question" button/panel is only ever painted post-answer
+  // (reveal phase) or after a completed match-up board — see arcade.js's gating.
+
+  function bindQuizChat(view) {
+    const st = ui.quizPlay;
+    const openBtn = view.querySelector('[data-action="quiz-chat-open"]');
+    if (openBtn) openBtn.addEventListener("click", () => {
+      if (st.qchat) return; // already open — the toggle button isn't even painted once open
+      st.qchat = { open: true, messages: [], streaming: false };
+      paintArcadePlay();
+    });
+    const sendBtn = view.querySelector('[data-action="quiz-chat-send"]');
+    if (sendBtn) sendBtn.addEventListener("click", sendQuizChat);
+    const thread = view.querySelector(".qc-thread");
+    if (thread) thread.scrollTop = thread.scrollHeight;
+  }
+
+  // Shapes the learner's answer to match how `question.answer` itself is represented
+  // for that format, so the prompt never has to reverse-engineer a UI-only index:
+  // true_false's answer is a boolean (the True/False buttons are index 0/1 only in the
+  // DOM), match_up has no single answer at all — send its first-attempt score instead —
+  // and the remaining choice formats already use a plain index, same as their own
+  // `answer` field, so the raw selection passes through untouched.
+  function quizChatAnswerGiven(st, q) {
+    if (st.round.format === "match_up") {
+      const { correct, total } = matchUpScore(st.matchState, q);
+      return { correct, total };
+    }
+    if (st.round.format === "true_false") {
+      return st.selected === null || st.selected === undefined ? null : st.selected === 0;
+    }
+    return st.selected;
+  }
+
+  // question.format isn't on the per-question object itself (it's a property of the
+  // whole round) — merge it in so the chat prompt always knows which format it's
+  // explaining, per the design doc's question shape.
+  function quizChatQuestion(st, q) {
+    return { format: st.round.format, ...q };
+  }
+
+  function sendQuizChat() {
+    const st = ui.quizPlay;
+    const qchat = st && st.qchat;
+    if (!qchat || qchat.streaming) return; // guards a double-fire while a reply streams
+    const ta = root.querySelector('[data-field="qc-input"]');
+    const text = ta ? ta.value.trim() : "";
+    if (!text) return;
+    qchat.messages.push({ role: "user", content: text });
+    streamQuizChatReply(st, qchat);
+  }
+
+  async function streamQuizChatReply(st, qchat) {
+    qchat.streaming = true;
+    const reply = { role: "assistant", content: "" };
+    // Captures BOTH the play state and the specific qchat thread object: advanceQuestion/
+    // advanceMatchBoard/resetArcadePlay all clear qchat (set it to null or a fresh object)
+    // rather than replacing ui.quizPlay itself, so a late chunk after advancing to the next
+    // question must be dropped even though `ui.quizPlay === st` is still true.
+    const onScreen = () => ui.quizPlay === st && st.qchat === qchat && ui.screen === "arcade-play";
+    paintArcadePlay();
+    const q = st.round.questions[st.index];
+    await streamChat({
+      fetch,
+      endpoint: `/api/courses/${ui.arcadeCourseId}/quiz/question-chat`,
+      messages: qchat.messages.map((m) => ({ role: m.role, content: m.content })),
+      extra: { lesson_id: q.lesson_id, question: quizChatQuestion(st, q), answerGiven: quizChatAnswerGiven(st, q) },
+      onDelta: (d) => {
+        reply.content += d;
+        if (!onScreen()) return;
+        const thread = root.querySelector(".qc-thread");
+        if (thread) {
+          const typing = thread.querySelector(".qc-typing");
+          if (typing) typing.remove();
+          let live = thread.querySelector(".qc-live");
+          if (!live) { live = doc.createElement("div"); live.className = "qc-msg qc-ai qc-live"; thread.appendChild(live); }
+          live.textContent = reply.content;
+          thread.scrollTop = thread.scrollHeight;
+        }
+      },
+      onDone: () => {
+        qchat.streaming = false;
+        if (reply.content.trim()) qchat.messages.push(reply);
+        if (onScreen()) paintArcadePlay();
+      },
+      onError: (e) => {
+        // Plain-text error line, no emoji (spec copy rule) — unlike the lesson
+        // workspace chat's "⚠️ " prefix, this feature's copy is emoji-free throughout.
+        qchat.streaming = false;
+        qchat.messages.push({ role: "assistant", content: (e && e.message) || "Claude is unavailable right now." });
+        if (onScreen()) paintArcadePlay();
+      },
+    });
   }
 
   function clearCountdown() {
@@ -880,6 +982,7 @@ export async function init({ window, fetch }) {
     st.answered = false;
     st.selected = null;
     st.countdown = null;
+    st.qchat = null; // ephemeral — discarded on advance (design decision 1/2)
     if (st.index >= st.round.questions.length) {
       finishRound();
       return;
@@ -909,6 +1012,7 @@ export async function init({ window, fetch }) {
     st.total += total;
     const missCount = total - correct;
     if (missCount > 0) st.missed[board.lesson_id] = (st.missed[board.lesson_id] || 0) + missCount;
+    st.qchat = null; // ephemeral — discarded on advance (design decision 1/2)
     st.index += 1;
     if (st.index >= st.round.questions.length) {
       finishRound();
