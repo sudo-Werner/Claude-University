@@ -4,8 +4,9 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback, getQuizRound, postQuizResults, getQuizStats } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
+import { arcadeHTML, arcadeGeneratingHTML, arcadeLockedHTML, arcadeTimeoutHTML, hostIntroHTML, questionHTML, gradeChoice, matchBoardHTML, matchUpInit, matchUpSelectLeft, matchUpSelectRight, matchUpScore, arcadeResultHTML } from "./views/arcade.js";
 import { shellHTML, feedbackBarHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
@@ -63,6 +64,9 @@ export async function init({ window, fetch }) {
     chat: null,
     reviewQueue: [],
     stats: null,
+    arcade: null,
+    arcadeCourseId: null,
+    quizPlay: null,
     feedback: { open: false, sending: false, text: "", notice: "" },
   };
 
@@ -184,6 +188,8 @@ export async function init({ window, fetch }) {
     if (act) act.addEventListener("click", showActivity);
     const tr = view.querySelector('[data-action="transcript"]');
     if (tr) tr.addEventListener("click", showTranscript);
+    const arc = view.querySelector('[data-action="arcade"]');
+    if (arc) arc.addEventListener("click", showArcade);
   }
 
   // ---- activity log ----
@@ -682,6 +688,219 @@ export async function init({ window, fetch }) {
     const data = await loadTranscript({ fetch });
     if (ui.screen !== "transcript") return; // navigated away mid-load
     view.innerHTML = transcriptHTML(data || { courses: [] });
+  }
+
+  // ---- Arcade: surprise-format quiz rounds over completed lessons ----
+  async function showArcade() {
+    pauseTimer();
+    ui.screen = "arcade";
+    root.innerHTML = shellHTML({ back: "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showHome);
+    const view = root.querySelector("#view");
+    view.innerHTML = `<div class="card"><div class="prompt">Loading the Arcade…</div></div>`;
+    const courseList = await listCourses({ fetch, endpoint: COURSES_ENDPOINT });
+    if (ui.screen !== "arcade") return; // navigated away mid-load
+    const statsByCourseId = {};
+    await Promise.all(
+      courseList
+        .filter((c) => c.progress && c.progress.done > 0)
+        .map(async (c) => { statsByCourseId[c.id] = await getQuizStats({ fetch, courseId: c.id }); }),
+    );
+    if (ui.screen !== "arcade") return; // navigated away mid-load
+    ui.arcade = { courses: courseList, statsByCourseId };
+    paintArcade();
+  }
+
+  function paintArcade() {
+    const view = root.querySelector("#view");
+    view.innerHTML = arcadeHTML(ui.arcade.courses, ui.arcade.statsByCourseId);
+    view.querySelectorAll("[data-arcade-play]").forEach((btn) => {
+      btn.addEventListener("click", () => startArcadeRound(btn.getAttribute("data-arcade-play")));
+    });
+  }
+
+  async function startArcadeRound(courseId) {
+    ui.loadSeq = (ui.loadSeq || 0) + 1;
+    const seq = ui.loadSeq;
+    ui.screen = "arcade-loading";
+    ui.arcadeCourseId = courseId;
+    root.innerHTML = shellHTML({ back: "Arcade" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showArcade);
+    const view = root.querySelector("#view");
+    view.innerHTML = arcadeGeneratingHTML();
+    pollArcadeRound(courseId, seq, 0);
+  }
+
+  async function pollArcadeRound(courseId, seq, elapsedMs) {
+    const data = await getQuizRound({ fetch, courseId });
+    if (ui.screen !== "arcade-loading" || ui.loadSeq !== seq) return; // navigated away mid-poll
+    if (data.status === "locked") {
+      root.querySelector("#view").innerHTML = arcadeLockedHTML();
+      return;
+    }
+    if (data.status === "ready" && data.round) {
+      beginRound(data.round);
+      return;
+    }
+    const nextElapsed = elapsedMs + 3000;
+    if (nextElapsed >= 90000) {
+      const view = root.querySelector("#view");
+      view.innerHTML = arcadeTimeoutHTML();
+      view.querySelector('[data-action="arcade-retry"]').addEventListener("click", () => startArcadeRound(courseId));
+      return;
+    }
+    window.setTimeout(() => pollArcadeRound(courseId, seq, nextElapsed), 3000);
+  }
+
+  function beginRound(round) {
+    ui.screen = "arcade-play";
+    root.innerHTML = shellHTML({ back: "Arcade" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showArcade);
+    ui.quizPlay = {
+      round, phase: "intro", index: 0, score: 0, total: 0, missed: {},
+      answered: false, selected: null, countdown: null, countdownTimer: null,
+      matchState: round.format === "match_up" ? matchUpInit(round.questions[0]) : null,
+    };
+    paintArcadePlay();
+  }
+
+  function paintArcadePlay() {
+    const st = ui.quizPlay;
+    const view = root.querySelector("#view");
+    if (st.phase === "intro") {
+      view.innerHTML = hostIntroHTML(st.round);
+      view.querySelector('[data-action="arcade-begin"]').addEventListener("click", () => {
+        st.phase = "playing";
+        if (st.round.format === "rapid_fire") startCountdown();
+        paintArcadePlay();
+      });
+      return;
+    }
+    if (st.phase === "result") {
+      view.innerHTML = arcadeResultHTML(st);
+      view.querySelector('[data-action="arcade-play-again"]').addEventListener("click", () => startArcadeRound(ui.arcadeCourseId));
+      view.querySelector('[data-action="arcade-back"]').addEventListener("click", showArcade);
+      return;
+    }
+    if (st.round.format === "match_up") {
+      view.innerHTML = matchBoardHTML(st.round, st.index, st.matchState);
+      view.querySelectorAll("[data-match-left]").forEach((b) => {
+        b.addEventListener("click", () => tapMatchLeft(Number(b.getAttribute("data-match-left"))));
+      });
+      view.querySelectorAll("[data-match-right]").forEach((b) => {
+        b.addEventListener("click", () => tapMatchRight(Number(b.getAttribute("data-match-right"))));
+      });
+      const next = view.querySelector('[data-action="arcade-next"]');
+      if (next) next.addEventListener("click", advanceMatchBoard);
+      return;
+    }
+    view.innerHTML = questionHTML(st.round, st.index, st);
+    view.querySelectorAll("[data-arcade-choice]").forEach((b) => {
+      b.addEventListener("click", () => answerChoice(Number(b.getAttribute("data-arcade-choice"))));
+    });
+    const next = view.querySelector('[data-action="arcade-next"]');
+    if (next) next.addEventListener("click", advanceQuestion);
+  }
+
+  function clearCountdown() {
+    const st = ui.quizPlay;
+    if (st.countdownTimer) window.clearInterval(st.countdownTimer);
+    st.countdownTimer = null;
+  }
+
+  function startCountdown() {
+    const st = ui.quizPlay;
+    st.countdown = 15;
+    clearCountdown();
+    st.countdownTimer = window.setInterval(() => {
+      st.countdown -= 1;
+      if (st.countdown <= 0) {
+        clearCountdown();
+        if (!st.answered) answerChoice(null); // timeout — no selection made, always a miss
+        return;
+      }
+      const el = root.querySelector(".arcade-countdown");
+      if (el) el.textContent = `${st.countdown}s`;
+    }, 1000);
+  }
+
+  function answerChoice(selected) {
+    const st = ui.quizPlay;
+    if (st.answered) return;
+    clearCountdown();
+    const correct = gradeChoice(st.round, st.index, selected);
+    st.answered = true;
+    st.selected = selected;
+    st.total += 1;
+    if (correct) {
+      st.score += 1;
+    } else {
+      const lessonId = st.round.questions[st.index].lesson_id;
+      st.missed[lessonId] = (st.missed[lessonId] || 0) + 1;
+    }
+    paintArcadePlay();
+  }
+
+  function advanceQuestion() {
+    const st = ui.quizPlay;
+    st.index += 1;
+    st.answered = false;
+    st.selected = null;
+    st.countdown = null;
+    if (st.index >= st.round.questions.length) {
+      finishRound();
+      return;
+    }
+    if (st.round.format === "rapid_fire") startCountdown();
+    paintArcadePlay();
+  }
+
+  function tapMatchLeft(leftIndex) {
+    const st = ui.quizPlay;
+    st.matchState = matchUpSelectLeft(st.matchState, leftIndex);
+    paintArcadePlay();
+  }
+
+  function tapMatchRight(rightPairIndex) {
+    const st = ui.quizPlay;
+    const board = st.round.questions[st.index];
+    st.matchState = matchUpSelectRight(st.matchState, board, rightPairIndex);
+    paintArcadePlay();
+  }
+
+  function advanceMatchBoard() {
+    const st = ui.quizPlay;
+    const board = st.round.questions[st.index];
+    const { correct, total } = matchUpScore(st.matchState, board);
+    st.score += correct;
+    st.total += total;
+    const missCount = total - correct;
+    if (missCount > 0) st.missed[board.lesson_id] = (st.missed[board.lesson_id] || 0) + missCount;
+    st.index += 1;
+    if (st.index >= st.round.questions.length) {
+      finishRound();
+      return;
+    }
+    st.matchState = matchUpInit(st.round.questions[st.index]);
+    paintArcadePlay();
+  }
+
+  async function finishRound() {
+    const st = ui.quizPlay;
+    st.phase = "result";
+    paintArcadePlay();
+    await postQuizResults({
+      fetch, courseId: ui.arcadeCourseId,
+      result: {
+        client_event_id: newId("qr-"),
+        session_id: sessionId,
+        round_id: st.round.round_id,
+        format: st.round.format,
+        score: st.score,
+        total: st.total,
+        missed: st.missed,
+      },
+    });
   }
 
   // #3b: render a skeleton + cycle the "what Claude is doing" status. The interval

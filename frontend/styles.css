@@ -624,3 +624,30 @@ textarea::placeholder{color:#b3a994}
 .cap-evidence { font-size: 13px; font-style: italic; color: var(--text-dim, #8a7d6d); margin-top: 4px; }
 .cap-summary { font-family: var(--serif); font-size: 14px; line-height: 1.55; margin-top: 12px; }
 .syl-builds { font-size: 12px; color: var(--text-dim, #8a7d6d); margin-top: 2px; }
+
+/* ---- Arcade ---- */
+.arcade-grid{display:grid; gap:14px}
+.arcade-card.locked{opacity:.65}
+.arcade-title{font-size:16px; font-weight:700; margin-bottom:6px}
+.arcade-locked-note{font-size:13px; color:var(--text-mut)}
+.arcade-stats{margin:10px 0 14px}
+.as-row{display:flex; gap:14px; flex-wrap:wrap; margin-bottom:8px}
+.as-item{font-size:13px; color:var(--text-mut)}
+.af-row{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px}
+.af-item{font-size:12px; color:var(--text-mut)}
+.ah-list{list-style:none; margin:0; padding:0; font-size:12px; color:var(--text-mut)}
+.ah-list li{padding:2px 0}
+.arcade-intro{text-align:center}
+.arcade-host{margin:10px 0 18px; color:var(--text-mut)}
+.arcade-progress{font-size:12px; font-weight:700; letter-spacing:.05em; color:var(--purple); margin-bottom:10px}
+.arcade-countdown{font-size:13px; font-weight:700; color:var(--blue-text); margin-bottom:8px}
+.arcade-prompt{font-size:16px; margin-bottom:14px}
+.arcade-choices{display:flex; flex-direction:column; gap:8px}
+.arcade-reveal{margin-top:14px; padding:11px 14px; border-radius:var(--r-sm); background:rgba(124,106,255,.10); color:var(--purple-deep)}
+.arcade-match-cols{display:flex; gap:14px}
+.arcade-match-col{flex:1; display:flex; flex-direction:column; gap:8px}
+.arcade-match-item{text-align:left; padding:10px 12px; border:1px solid var(--border-field); border-radius:var(--r-sm); cursor:pointer; background:none; font:inherit}
+.arcade-match-item.selected{border-color:var(--purple); background:rgba(124,106,255,.14)}
+.arcade-match-item.solved{border-color:#25b478; background:rgba(37,180,120,.14); color:#0f7a4f; cursor:default}
+.arcade-result{text-align:center}
+.arcade-score-note{color:var(--text-mut); margin:6px 0 18px}
