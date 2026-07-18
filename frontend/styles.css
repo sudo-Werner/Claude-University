@@ -178,6 +178,7 @@ code,.mono{font-family:var(--mono); color:var(--blue-text)}
 .highlight-btn{position:fixed; z-index:50;
   background:var(--grad); color:#fff; border:none; border-radius:999px; cursor:pointer;
   padding:7px 14px; font:600 12.5px/1 var(--ui); box-shadow:var(--sh-cta)}
+mark.highlight{background:rgba(255,196,64,.45); color:inherit; border-radius:3px; padding:0 1px; cursor:pointer}
 
 /* Lesson images — real figures resolved by backend/images.py */
 .lesson-fig{margin:0 0 14px}

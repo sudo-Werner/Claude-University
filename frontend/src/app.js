@@ -28,7 +28,7 @@ import { transcriptHTML } from "./views/transcript.js";
 import { streamChat } from "./chat.js";
 import { loadWorkspace, saveWorkspace } from "./notes.js";
 import { autoGrowTextarea } from "./autogrow.js";
-import { countOccurrencesBefore, flattenTextNodes, applyHighlight } from "./highlights.js";
+import { countOccurrencesBefore, flattenTextNodes, applyHighlight, applyHighlights, removeHighlightMarks } from "./highlights.js";
 
 const EVENTS_ENDPOINT = "/api/events";
 const PROFILE_ENDPOINT = "/api/profile";
@@ -154,6 +154,8 @@ export async function init({ window, fetch }) {
   }
 
   root.addEventListener("click", (e) => {
+    const mark = e.target.closest("mark.highlight");
+    if (mark) { removeHighlightAt(mark); return; }
     const fbToggle = e.target.closest('[data-action="feedback-toggle"]');
     if (fbToggle) {
       // Navigation repaints the shell with an empty slot without touching
@@ -269,6 +271,18 @@ export async function init({ window, fetch }) {
     const highlight = { id: newId("hl-"), text, occurrence };
     ws.highlights = [...(ws.highlights || []), highlight];
     applyHighlight(container, highlight);
+    saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+  }
+  // Tapping any <mark> removes just that highlight: drop its id from the stored list,
+  // unwrap its mark(s) back into plain text (no re-render needed -- this mutates the
+  // live DOM directly), and save immediately (same non-debounced trigger as creation).
+  function removeHighlightAt(mark) {
+    const container = promptContainer();
+    const id = mark.dataset.highlightId;
+    const ws = ui.lessonState.ws;
+    if (!container || !id || !ws) return;
+    ws.highlights = (ws.highlights || []).filter((h) => h.id !== id);
+    removeHighlightMarks(container, id);
     saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
   }
 
@@ -1556,10 +1570,13 @@ export async function init({ window, fetch }) {
   }
 
   function paintLesson() {
+    hideHighlightBtn(); // the DOM this button points at is about to be rebuilt
     const view = root.querySelector("#view");
     const nav = { hasPrev: !!adjacentLesson(-1), hasNext: !!adjacentLesson(1) };
     view.innerHTML = lessonHTML(ui.lesson, ui.lessonState, nav);
     hydrateFigures(view, ui.lesson);
+    const promptEl = view.querySelector(".prompt");
+    if (promptEl && ui.lessonState.ws) applyHighlights(promptEl, ui.lessonState.ws.highlights);
     const curBtn = view.querySelector('[data-action="curriculum"]');
     if (curBtn) curBtn.addEventListener("click", showCurriculum);
     const prevBtn = view.querySelector('[data-action="prev-lesson"]');
