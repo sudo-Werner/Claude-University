@@ -15,10 +15,10 @@ test("autoGrowTextarea sets height to the element's scrollHeight", () => {
 });
 
 test("autoGrowTextarea resets height to auto BEFORE reading scrollHeight", () => {
-  // In a real browser, scrollHeight only shrinks back down after a stale
-  // taller inline height is cleared first — reading it too early (or skipping
-  // the reset) would freeze the box at its tallest-ever size. Spy on every
-  // assignment to prove the order: "auto" is set before the final value.
+  // This proves only the CALL ORDER: "auto" is written before the final value.
+  // It does NOT prove the real-browser shrink behavior that order exists for —
+  // this mock's scrollHeight is a fixed constant, not reactive to style writes
+  // the way a real layout engine's is, so that part needs live verification.
   const heights = [];
   const el = {
     style: {

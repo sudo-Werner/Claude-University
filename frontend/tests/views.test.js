@@ -87,10 +87,13 @@ test("lesson renders a second feedback entry point below the workspace", () => {
   const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
   assert.match(html, /data-action="feedback-toggle" data-fb-toggle="lesson"/);
   assert.match(html, /data-fb-slot="lesson"/);
-  // It lives inside the .lesson-side wrapper, after the workspace panel.
+  // It lives inside the .lesson-side wrapper, AFTER the workspace panel's own
+  // content — not merely somewhere inside the wrapper (which "class=\"lesson-side"
+  // alone wouldn't distinguish from before the panel).
   const sideStart = html.indexOf('class="lesson-side');
+  const workspaceEnd = html.indexOf("Notes &amp; side-chat"); // the workspace's own toggle head
   const entryIdx = html.indexOf('data-fb-toggle="lesson"');
-  assert.ok(sideStart !== -1 && entryIdx > sideStart);
+  assert.ok(sideStart !== -1 && workspaceEnd !== -1 && entryIdx > workspaceEnd);
 });
 
 test("lesson makes the solution revealable once answered", () => {

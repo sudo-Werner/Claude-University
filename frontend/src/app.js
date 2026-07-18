@@ -62,8 +62,20 @@ export async function init({ window, fetch }) {
     if (e.target.tagName === "TEXTAREA") autoGrowTextarea(e.target);
   });
   if (typeof window.MutationObserver === "function") {
+    // A streamed chat reply repaints its thread once PER CHUNK — dozens of
+    // mutations a second on a fast stream. Coalesce to at most once per
+    // animation frame instead of re-measuring every textarea on every chunk.
+    let growPending = false;
+    const rAF = typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window)
+      : (fn) => window.setTimeout(fn, 16);
     new window.MutationObserver(() => {
-      root.querySelectorAll("textarea").forEach(autoGrowTextarea);
+      if (growPending) return;
+      growPending = true;
+      rAF(() => {
+        growPending = false;
+        root.querySelectorAll("textarea").forEach(autoGrowTextarea);
+      });
     }).observe(root, { childList: true, subtree: true });
   }
 
@@ -83,7 +95,7 @@ export async function init({ window, fetch }) {
     arcadeCourseId: null,
     quizPlay: null,
     arcadePollTimer: null,
-    feedback: { open: false, sending: false, text: "", notice: "" },
+    feedback: { open: false, sending: false, text: "", notice: "", activeWhere: "top" },
   };
 
   // ---- feedback bar (global; delegated on root so it survives every shell repaint) ----
@@ -94,6 +106,15 @@ export async function init({ window, fetch }) {
     root.querySelectorAll("[data-fb-slot]").forEach((slot) => {
       slot.innerHTML = feedbackBarHTML(ui.feedback);
     });
+  }
+
+  // Focuses the input in a SPECIFIC entry point (falls back to the first found)
+  // so a lesson-side toggle/send doesn't yank focus up to a possibly-offscreen
+  // topbar box — used both when opening and after a failed send.
+  function focusFbInput(where) {
+    const scoped = where && root.querySelector(`[data-fb-slot="${where}"] [data-field="fb-text"]`);
+    const inp = scoped || root.querySelector('[data-field="fb-text"]');
+    if (inp) inp.focus();
   }
 
   async function submitFeedback() {
@@ -114,8 +135,7 @@ export async function init({ window, fetch }) {
     if (result && result.error) {
       fb.notice = "error";
       paintFeedbackBar();
-      const inp = root.querySelector('[data-field="fb-text"]');
-      if (inp) inp.focus();
+      focusFbInput(fb.activeWhere);
       return;
     }
     fb.text = "";
@@ -146,16 +166,11 @@ export async function init({ window, fetch }) {
       if (visiblyOpen && ui.feedback.sending) return; // never hide an in-flight send
       ui.feedback.open = !visiblyOpen;
       ui.feedback.notice = "";
+      // Remember which entry point the learner is using — reused by both this
+      // open-focus and a later failed-send's refocus.
+      ui.feedback.activeWhere = fbToggle.dataset.fbToggle || "top";
       paintFeedbackBar();
-      if (ui.feedback.open) {
-        // Focus the input in the SAME entry point the learner just clicked —
-        // not always the topbar's, which may be scrolled out of view (that
-        // would silently defeat a lesson-side toggle's whole purpose).
-        const where = fbToggle.dataset.fbToggle;
-        const scoped = where && root.querySelector(`[data-fb-slot="${where}"] [data-field="fb-text"]`);
-        const inp = scoped || root.querySelector('[data-field="fb-text"]');
-        if (inp) inp.focus();
-      }
+      if (ui.feedback.open) focusFbInput(ui.feedback.activeWhere);
       return;
     }
     if (e.target.closest('[data-action="feedback-send"]')) submitFeedback();
@@ -168,6 +183,8 @@ export async function init({ window, fetch }) {
       // OTHER instance's input (never the one being typed in — that would
       // steal the caret) so both stay visually consistent.
       ui.feedback.text = e.target.value;
+      const ownSlot = e.target.closest("[data-fb-slot]");
+      if (ownSlot) ui.feedback.activeWhere = ownSlot.getAttribute("data-fb-slot");
       root.querySelectorAll('[data-action="feedback-send"]').forEach((btn) => {
         btn.disabled = ui.feedback.sending || !e.target.value.trim();
       });
