@@ -32,3 +32,22 @@ test("findNthOccurrence and countOccurrencesBefore agree with each other", () =>
   const [start] = findNthOccurrence(text, "aa", 2);
   assert.equal(countOccurrencesBefore(text, "aa", start), 2);
 });
+
+test("findNthOccurrence is case-insensitive (CSS text-transform regression)", () => {
+  // Confirmed live: a heading styled with CSS text-transform:uppercase makes
+  // Selection.toString() return uppercase text while the underlying DOM nodeValue
+  // stays mixed-case -- a highlight created inside such a heading must still match.
+  const text = "Worked example: body temperature rises here";
+  assert.deepEqual(findNthOccurrence(text, "TEMPERATURE", 0), [21, 32]);
+  assert.deepEqual(findNthOccurrence(text, "temperature", 0), [21, 32]);
+  assert.deepEqual(findNthOccurrence(text, "TeMpErAtUrE", 0), [21, 32]);
+});
+
+test("countOccurrencesBefore is case-insensitive and stays consistent with findNthOccurrence", () => {
+  const text = "The Cat sat near the cat bowl and the CAT slept";
+  // Three occurrences of "cat" regardless of case: "Cat"(4), "cat"(22), "CAT"(39).
+  const [firstStart] = findNthOccurrence(text, "cat", 0);
+  const [secondStart] = findNthOccurrence(text, "CAT", 1);
+  assert.equal(countOccurrencesBefore(text, "cat", firstStart), 0);
+  assert.equal(countOccurrencesBefore(text, "CAT", secondStart), 1);
+});

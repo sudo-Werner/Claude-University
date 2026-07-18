@@ -6,17 +6,28 @@
 // a highlight either lands on the exact right sentence or doesn't show at all — never
 // on the wrong one (unlike a stale character offset, which always lands on SOMETHING).
 
+// Case-insensitive: some lesson headings render via CSS text-transform:uppercase, and
+// Selection.toString() reflects that RENDERED case, not the underlying DOM nodeValue's
+// actual case — so a highlight created inside such a heading would otherwise never
+// match (confirmed live: selecting text in an uppercase-styled <h3> produced a stored
+// highlight that could never apply, not even immediately after creation). Comparing
+// lowercased strings fixes this; returned offsets are still valid against the ORIGINAL
+// (non-lowercased) haystack because toLowerCase() is length- and position-preserving
+// for the prose this app renders.
+
 // Returns the [start, end) character range of the `occurrence`-th (0-based)
 // non-overlapping match of `needle` in `haystack`, or null if there is no such match
 // (fewer than occurrence+1 occurrences exist, or needle is empty).
 export function findNthOccurrence(haystack, needle, occurrence) {
   if (!needle || occurrence < 0) return null;
+  const h = haystack.toLowerCase();
+  const n = needle.toLowerCase();
   let from = 0;
   for (let i = 0; i <= occurrence; i++) {
-    const idx = haystack.indexOf(needle, from);
+    const idx = h.indexOf(n, from);
     if (idx === -1) return null;
-    if (i === occurrence) return [idx, idx + needle.length];
-    from = idx + needle.length;
+    if (i === occurrence) return [idx, idx + n.length];
+    from = idx + n.length;
   }
   return null;
 }
@@ -26,13 +37,15 @@ export function findNthOccurrence(haystack, needle, occurrence) {
 // index for a freshly-selected span, given its start offset in the flattened text.
 export function countOccurrencesBefore(haystack, needle, beforeIndex) {
   if (!needle) return 0;
+  const h = haystack.toLowerCase();
+  const n = needle.toLowerCase();
   let count = 0;
   let from = 0;
   for (;;) {
-    const idx = haystack.indexOf(needle, from);
+    const idx = h.indexOf(n, from);
     if (idx === -1 || idx >= beforeIndex) return count;
     count++;
-    from = idx + needle.length;
+    from = idx + n.length;
   }
 }
 
