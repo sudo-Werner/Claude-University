@@ -209,6 +209,7 @@ export async function init({ window, fetch }) {
     if (highlightBtn) { highlightBtn.remove(); highlightBtn = null; }
   }
   function promptContainer() {
+    if (ui.screen !== "lesson") return null;
     const view = root.querySelector("#view");
     return view ? view.querySelector(".prompt") : null;
   }
