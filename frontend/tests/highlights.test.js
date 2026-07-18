@@ -51,3 +51,15 @@ test("countOccurrencesBefore is case-insensitive and stays consistent with findN
   assert.equal(countOccurrencesBefore(text, "cat", firstStart), 0);
   assert.equal(countOccurrencesBefore(text, "CAT", secondStart), 1);
 });
+
+test("findNthOccurrence never corrupts offsets on the one length-changing lowercase case", () => {
+  // U+0130 (Turkish capital dotted I) is the sole Unicode code point where
+  // toLowerCase() changes a string's length ("İ" -> "i" + combining dot, 1->2 chars).
+  // Falls back to an exact-case match rather than risk offsets computed against a
+  // longer lowercased string being applied to the original (shorter) text.
+  const text = "before İstanbul after";
+  assert.deepEqual(findNthOccurrence(text, "İstanbul", 0), [7, 15]);
+  // The exact-case fallback means a differently-cased search for this one substring
+  // legitimately won't match -- an accepted, documented trade-off, not a silent bug.
+  assert.equal(findNthOccurrence(text, "istanbul", 0), null);
+});
