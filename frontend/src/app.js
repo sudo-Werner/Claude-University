@@ -28,6 +28,7 @@ import { transcriptHTML } from "./views/transcript.js";
 import { streamChat } from "./chat.js";
 import { loadWorkspace, saveWorkspace } from "./notes.js";
 import { autoGrowTextarea } from "./autogrow.js";
+import { countOccurrencesBefore, flattenTextNodes, applyHighlight, applyHighlights, removeHighlightMarks } from "./highlights.js";
 
 const EVENTS_ENDPOINT = "/api/events";
 const PROFILE_ENDPOINT = "/api/profile";
@@ -153,6 +154,8 @@ export async function init({ window, fetch }) {
   }
 
   root.addEventListener("click", (e) => {
+    const mark = e.target.closest("mark.highlight");
+    if (mark) { removeHighlightAt(mark); return; }
     const fbToggle = e.target.closest('[data-action="feedback-toggle"]');
     if (fbToggle) {
       // Navigation repaints the shell with an empty slot without touching
@@ -198,6 +201,90 @@ export async function init({ window, fetch }) {
       submitFeedback();
     }
   });
+
+  // ---- lesson prose highlights: selection capture + "Highlight" button ----
+  // Scoped ONLY to the lesson's own prose (.prompt inside #view) -- never the
+  // exercise/solution/checks sections or the side chat/notes workspace. Purely
+  // visual: nothing here reads or reacts to what's highlighted.
+  let highlightBtn = null; // the floating button, created once and repositioned/reused
+  function hideHighlightBtn() {
+    if (highlightBtn) { highlightBtn.remove(); highlightBtn = null; }
+  }
+  function promptContainer() {
+    if (ui.screen !== "lesson") return null;
+    const view = root.querySelector("#view");
+    return view ? view.querySelector(".prompt") : null;
+  }
+  function showHighlightBtn(range) {
+    if (!highlightBtn) {
+      highlightBtn = doc.createElement("button");
+      highlightBtn.type = "button";
+      highlightBtn.className = "highlight-btn";
+      highlightBtn.textContent = "Highlight";
+      // Stop the button's own mousedown from collapsing the selection it needs to read.
+      highlightBtn.addEventListener("mousedown", (e) => e.preventDefault());
+      highlightBtn.addEventListener("click", addHighlightFromSelection);
+      doc.body.appendChild(highlightBtn);
+    }
+    const rect = range.getBoundingClientRect();
+    highlightBtn.style.top = `${Math.max(8, rect.top - 40)}px`;
+    highlightBtn.style.left = `${rect.left}px`;
+  }
+  // Fires on every selectionchange -- covers both desktop click-drag and mobile
+  // long-press-drag with one listener. Shows the button only when the selection is
+  // non-collapsed AND fully contained within .prompt (the scope rule) -- a selection
+  // touching the exercise, checks, or side-chat area never shows it.
+  function captureSelectionForHighlight() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) { hideHighlightBtn(); return; }
+    const container = promptContainer();
+    if (!container) { hideHighlightBtn(); return; }
+    const range = sel.getRangeAt(0);
+    if (!container.contains(range.startContainer) || !container.contains(range.endContainer)) {
+      hideHighlightBtn();
+      return;
+    }
+    showHighlightBtn(range);
+  }
+  doc.addEventListener("selectionchange", captureSelectionForHighlight);
+
+  // Tapping the floating button: reads the live selection, computes `occurrence`
+  // (which match of the exact selected text this is, counted across the container's
+  // flattened text at THIS moment -- the anchoring rule), saves it, and applies the
+  // mark immediately.
+  function addHighlightFromSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) { hideHighlightBtn(); return; }
+    const container = promptContainer();
+    if (!container) { hideHighlightBtn(); return; }
+    const range = sel.getRangeAt(0);
+    const text = sel.toString();
+    const { text: fullText, nodes } = flattenTextNodes(container);
+    const startEntry = nodes.find((n) => n.node === range.startContainer);
+    hideHighlightBtn();
+    sel.removeAllRanges();
+    if (!text.trim() || !startEntry) return; // can't anchor it -> no-op, never guess
+    const ws = ui.lessonState.ws;
+    if (!ws) return;
+    const startOffset = startEntry.start + range.startOffset;
+    const occurrence = countOccurrencesBefore(fullText, text, startOffset);
+    const highlight = { id: newId("hl-"), text, occurrence };
+    ws.highlights = [...(ws.highlights || []), highlight];
+    applyHighlight(container, highlight);
+    saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+  }
+  // Tapping any <mark> removes just that highlight: drop its id from the stored list,
+  // unwrap its mark(s) back into plain text (no re-render needed -- this mutates the
+  // live DOM directly), and save immediately (same non-debounced trigger as creation).
+  function removeHighlightAt(mark) {
+    const container = promptContainer();
+    const id = mark.dataset.highlightId;
+    const ws = ui.lessonState.ws;
+    if (!container || !id || !ws) return;
+    ws.highlights = (ws.highlights || []).filter((h) => h.id !== id);
+    removeHighlightMarks(container, id);
+    saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+  }
 
   // ---- diagnostic (unchanged flow, now lands on the home) ----
   function showDiagnostic() {
@@ -1274,7 +1361,8 @@ export async function init({ window, fetch }) {
     const wsData = await loadWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: lesson.id });
     if (ui.lessonState !== lessonState) return; // navigated away while loading
     lessonState.ws = { open: !!prefs.open, tab: prefs.tab || "notes",
-                       notes: wsData.notes || "", chat: wsData.chat || [], pending: false, saveStatus: "" };
+                       notes: wsData.notes || "", chat: wsData.chat || [], highlights: wsData.highlights || [],
+                       pending: false, saveStatus: "" };
     if (ui.screen === "lesson") paintLesson();
   }
   let wsSaveTimer = null;
@@ -1482,10 +1570,13 @@ export async function init({ window, fetch }) {
   }
 
   function paintLesson() {
+    hideHighlightBtn(); // the DOM this button points at is about to be rebuilt
     const view = root.querySelector("#view");
     const nav = { hasPrev: !!adjacentLesson(-1), hasNext: !!adjacentLesson(1) };
     view.innerHTML = lessonHTML(ui.lesson, ui.lessonState, nav);
     hydrateFigures(view, ui.lesson);
+    const promptEl = view.querySelector(".prompt");
+    if (promptEl && ui.lessonState.ws) applyHighlights(promptEl, ui.lessonState.ws.highlights);
     const curBtn = view.querySelector('[data-action="curriculum"]');
     if (curBtn) curBtn.addEventListener("click", showCurriculum);
     const prevBtn = view.querySelector('[data-action="prev-lesson"]');
