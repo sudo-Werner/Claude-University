@@ -540,6 +540,46 @@ def test_workspace_rejects_bad_ids(client):
     assert client.get("/api/courses/Bad_Id/lessons/l1/workspace").status_code == 404
 
 
+def test_workspace_put_roundtrips_highlights(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    hl = [{"id": "h1", "text": "a phrase", "occurrence": 0}]
+    r = client.put(f"/api/courses/{cid}/lessons/{lesson_id}/workspace",
+                   json={"notes": "n", "chat": [], "highlights": hl})
+    assert r.status_code == 200 and r.get_json()["updatedAt"]
+    got = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/workspace").get_json()
+    assert got["highlights"] == hl
+
+
+def test_workspace_put_rejects_bad_highlights(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    r = client.put(f"/api/courses/{cid}/lessons/{lesson_id}/workspace",
+                   json={"notes": "n", "chat": [], "highlights": [{"id": "h1", "text": "x", "occurrence": -1}]})
+    assert r.status_code == 400
+
+
+def test_workspace_put_without_highlights_key_still_works(client, tmp_path, monkeypatch):
+    # Regression: an OLD client that never sends "highlights" at all must behave
+    # exactly as before -- notes/chat unaffected, highlights silently defaults to [].
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    r = client.put(f"/api/courses/{cid}/lessons/{lesson_id}/workspace",
+                   json={"notes": "n", "chat": [{"role": "user", "content": "hi"}]})
+    assert r.status_code == 200
+    got = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/workspace").get_json()
+    assert got["notes"] == "n" and got["chat"][0]["content"] == "hi" and got["highlights"] == []
+
+
 def test_lesson_chat_route_streams(client, tmp_path, monkeypatch):
     from backend import courses, claude_client
     root = tmp_path / "courses"; root.mkdir()

@@ -606,7 +606,7 @@ def create_app(db_path=None):
         try:
             record = notes.save_workspace(
                 courses.CONTENT_DIR, course_id, lesson_id,
-                body.get("notes", ""), body.get("chat", []),
+                body.get("notes", ""), body.get("chat", []), body.get("highlights", []),
             )
         except notes.WorkspaceTooLarge:
             return jsonify({"error": "notes too large"}), 413
