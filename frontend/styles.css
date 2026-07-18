@@ -173,6 +173,12 @@ code,.mono{font-family:var(--mono); color:var(--blue-text)}
 .prompt .box{background:var(--glass-inner); border:1px solid var(--border-field);
   border-radius:10px; padding:11px 13px; margin:0 0 12px; font-size:14px; line-height:1.55; color:var(--read)}
 
+/* Lesson text highlights — persistent, purely visual (free-form selection inside
+   .prompt only; never reads/reacts to what's highlighted). */
+.highlight-btn{position:fixed; z-index:50;
+  background:var(--grad); color:#fff; border:none; border-radius:999px; cursor:pointer;
+  padding:7px 14px; font:600 12.5px/1 var(--ui); box-shadow:var(--sh-cta)}
+
 /* Lesson images — real figures resolved by backend/images.py */
 .lesson-fig{margin:0 0 14px}
 .lesson-fig img{display:block; width:100%; max-width:100%; border-radius:12px; margin:0 0 6px}
