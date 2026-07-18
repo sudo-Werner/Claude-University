@@ -69,6 +69,8 @@ body{margin:0; background:#f1e7d6; overflow-x:hidden}
 .fb-send:disabled{opacity:.5; cursor:not-allowed}
 .fb-done{font-size:13px; font-weight:600; color:var(--purple)}
 .fb-err{font-size:12px; color:var(--warn, #b26a00)}
+.fb-entry-lesson{margin-top:10px}
+.fb-entry-lesson .feedback-bar{margin-top:8px}
 
 /* ---- card / glass surfaces ---- */
 .card{background:var(--glass-card-2); backdrop-filter:blur(26px) saturate(1.6); -webkit-backdrop-filter:blur(26px) saturate(1.6);
@@ -203,7 +205,10 @@ code,.mono{font-family:var(--mono); color:var(--blue-text)}
 .feedback.ok{background:rgba(37,180,120,.13); border:1px solid rgba(37,180,120,.34); color:#1c7a52}
 .feedback.err{background:rgba(214,85,126,.12); border:1px solid rgba(214,85,126,.34); color:#b04068}
 
-textarea{width:100%; resize:vertical; background:var(--glass-field); border:1px solid var(--border-field);
+/* resize:none — app.js auto-grows every textarea to fit its content as you type
+   (see autogrow.js); overflow-y:auto + max-height caps a huge paste instead of
+   letting the box grow without bound. */
+textarea{width:100%; resize:none; overflow-y:auto; max-height:320px; background:var(--glass-field); border:1px solid var(--border-field);
   border-radius:13px; padding:12px; color:var(--text); outline:none; font:14px/1.5 var(--mono)}
 textarea.serif{font:15px/1.6 var(--serif); padding:14px; border-radius:14px}
 textarea:focus{border-color:var(--purple)}
@@ -402,7 +407,7 @@ textarea::placeholder{color:#b3a994}
 /* composer: roomy multi-line input, Send below it on the right */
 .chat-input{display:flex; flex-direction:column; gap:10px}
 .chat-input textarea{
-  width:100%; min-height:96px; resize:vertical;
+  width:100%; min-height:96px;
   background:var(--glass-field); border:1px solid var(--border-field); border-radius:var(--r-md);
   padding:13px 15px; font:15px/1.5 inherit; color:var(--text);
 }
@@ -562,7 +567,7 @@ textarea::placeholder{color:#b3a994}
 .ws-tabs{display:flex; gap:6px; margin:12px 0 10px}
 .ws-tab{flex:1; padding:8px; border-radius:var(--r-sm); cursor:pointer; font:600 13px/1 inherit; border:1px solid var(--border-field); background:var(--glass-field); color:var(--text-dim)}
 .ws-tab.on{background:rgba(124,106,255,.14); color:var(--purple); border-color:rgba(124,106,255,.3)}
-.ws-notes textarea{width:100%; min-height:120px; resize:vertical}
+.ws-notes textarea{width:100%; min-height:120px}
 .ws-status{font-size:11px; color:var(--text-faint); margin-top:6px; text-align:right}
 .ws-chat{display:flex; flex-direction:column; gap:10px}
 .ws-thread{display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto}
@@ -571,7 +576,7 @@ textarea::placeholder{color:#b3a994}
 .ws-ai{background:var(--glass-inner); color:var(--read); align-self:flex-start; max-width:90%}
 .ws-typing{color:var(--text-mut)}
 .ws-compose{display:flex; gap:8px; align-items:flex-end}
-.ws-compose textarea{flex:1; min-height:44px; resize:vertical}
+.ws-compose textarea{flex:1; min-height:44px}
 .ws-send{padding:10px 14px; border:none; border-radius:var(--r-sm); cursor:pointer; font:600 13px/1 inherit; color:#fff; background:var(--grad)}
 .ws-send:disabled{opacity:.5; cursor:default}
 .ws-socratic{display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:var(--r-sm);
@@ -694,6 +699,6 @@ textarea::placeholder{color:#b3a994}
 .qc-ai{background:var(--glass-inner); color:var(--read); align-self:flex-start; max-width:90%}
 .qc-typing{color:var(--text-mut)}
 .qc-compose{display:flex; gap:8px; align-items:flex-end}
-.qc-compose textarea{flex:1; min-height:44px; resize:vertical}
+.qc-compose textarea{flex:1; min-height:44px}
 .qc-send{padding:10px 14px; border:none; border-radius:var(--r-sm); cursor:pointer; font:600 13px/1 inherit; color:#fff; background:var(--grad)}
 .qc-send:disabled{opacity:.5; cursor:default}
