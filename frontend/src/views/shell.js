@@ -22,6 +22,18 @@ export function feedbackBarHTML(fb) {
   `;
 }
 
+// A toggle+slot pair is one feedback "entry point". Several can be on screen at
+// once (the topbar's, always present, plus e.g. the lesson screen's second one
+// below the workspace) — they share ui.feedback as their one source of truth
+// (app.js paints every [data-fb-slot] found); `where` only distinguishes which
+// pair a click/focus belongs to, it never forks the state itself.
+export function feedbackEntryHTML(where, label) {
+  return (
+    `<button class="fb-toggle" data-action="feedback-toggle" data-fb-toggle="${esc(where)}">${esc(label)}</button>` +
+    `<div data-fb-slot="${esc(where)}"></div>`
+  );
+}
+
 export function shellHTML({ back = null }) {
   const backBtn = back
     ? `<button class="nav-back-top" data-action="nav-back">← ${esc(back)}</button>`
@@ -29,9 +41,9 @@ export function shellHTML({ back = null }) {
   return `
     <header class="topbar">
       <div class="brand"><span class="logo">U</span>Claude University</div>
-      <button class="fb-toggle" data-action="feedback-toggle">Feedback</button>
+      <button class="fb-toggle" data-action="feedback-toggle" data-fb-toggle="top">Feedback</button>
     </header>
-    <div data-fb-slot></div>
+    <div data-fb-slot="top"></div>
     ${backBtn}
     <div id="view"></div>
   `;

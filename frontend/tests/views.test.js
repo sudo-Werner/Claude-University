@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { shellHTML, feedbackBarHTML } from "../src/views/shell.js";
+import { shellHTML, feedbackBarHTML, feedbackEntryHTML } from "../src/views/shell.js";
 import { dashboardHTML } from "../src/views/dashboard.js";
 import { lessonHTML, ratingLocked, suggestedQuality, expandFigureTokens, lessonSideClass } from "../src/views/lesson.js";
 import { diagnosticHTML } from "../src/views/diagnostic.js";
@@ -43,6 +43,25 @@ test("shell shows back control only when given", () => {
   assert.match(inCourse, /Courses/);
 });
 
+test("shell's topbar feedback entry point is tagged 'top'", () => {
+  const html = shellHTML({});
+  assert.match(html, /data-action="feedback-toggle" data-fb-toggle="top"/);
+  assert.match(html, /data-fb-slot="top"/);
+});
+
+test("feedbackEntryHTML renders a toggle+slot pair for the given entry point", () => {
+  const html = feedbackEntryHTML("lesson", "Feedback");
+  assert.match(html, /data-action="feedback-toggle" data-fb-toggle="lesson"/);
+  assert.match(html, /data-fb-slot="lesson"/);
+  assert.match(html, />Feedback<\/button>/);
+});
+
+test("feedbackEntryHTML escapes its label and where value", () => {
+  const html = feedbackEntryHTML('"><script>', "<b>hi</b>");
+  assert.doesNotMatch(html, /<script>/);
+  assert.doesNotMatch(html, /<b>hi<\/b>/);
+});
+
 test("dashboard renders the seeded session and stats", () => {
   const html = dashboardHTML(DASHBOARD_SEED, idleTimer);
   assert.match(html, /Backpropagation, intuitively/);
@@ -62,6 +81,16 @@ test("lesson locks the solution with an empty answer", () => {
   assert.doesNotMatch(html, /class="solution"/); // panel hidden
   assert.doesNotMatch(html, /<div class="hint"/); // hint panel hidden (not the toggle)
   assert.match(html, /data-field="answer"/);
+});
+
+test("lesson renders a second feedback entry point below the workspace", () => {
+  const html = lessonHTML(SAMPLE_LESSON, { answer: "", hintVisible: false, solutionRevealed: false });
+  assert.match(html, /data-action="feedback-toggle" data-fb-toggle="lesson"/);
+  assert.match(html, /data-fb-slot="lesson"/);
+  // It lives inside the .lesson-side wrapper, after the workspace panel.
+  const sideStart = html.indexOf('class="lesson-side');
+  const entryIdx = html.indexOf('data-fb-toggle="lesson"');
+  assert.ok(sideStart !== -1 && entryIdx > sideStart);
 });
 
 test("lesson makes the solution revealable once answered", () => {

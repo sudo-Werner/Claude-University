@@ -27,6 +27,7 @@ import { remediationHTML, flatPractice } from "./views/remediation.js";
 import { transcriptHTML } from "./views/transcript.js";
 import { streamChat } from "./chat.js";
 import { loadWorkspace, saveWorkspace } from "./notes.js";
+import { autoGrowTextarea } from "./autogrow.js";
 
 const EVENTS_ENDPOINT = "/api/events";
 const PROFILE_ENDPOINT = "/api/profile";
@@ -52,6 +53,20 @@ export async function init({ window, fetch }) {
 
   const root = doc.getElementById("app");
 
+  // ---- auto-growing textareas (every chat/notes/answer box in the app) ----
+  // Grows while typing (input listener) AND when a screen paints with a textarea
+  // already holding content — e.g. reopening a lesson with saved notes, or an
+  // in-progress exam answer — via a MutationObserver on every root repaint, so
+  // no individual paint function needs to remember to call this itself.
+  root.addEventListener("input", (e) => {
+    if (e.target.tagName === "TEXTAREA") autoGrowTextarea(e.target);
+  });
+  if (typeof window.MutationObserver === "function") {
+    new window.MutationObserver(() => {
+      root.querySelectorAll("textarea").forEach(autoGrowTextarea);
+    }).observe(root, { childList: true, subtree: true });
+  }
+
   const ui = {
     screen: "home",
     courseId: null,
@@ -72,9 +87,13 @@ export async function init({ window, fetch }) {
   };
 
   // ---- feedback bar (global; delegated on root so it survives every shell repaint) ----
+  // Two slots can exist at once (the topbar's, always present, plus the lesson
+  // screen's second slot below the workspace panel) — both share the one
+  // ui.feedback state and are kept in sync by painting into every slot found.
   function paintFeedbackBar() {
-    const slot = root.querySelector("[data-fb-slot]");
-    if (slot) slot.innerHTML = feedbackBarHTML(ui.feedback);
+    root.querySelectorAll("[data-fb-slot]").forEach((slot) => {
+      slot.innerHTML = feedbackBarHTML(ui.feedback);
+    });
   }
 
   async function submitFeedback() {
@@ -114,11 +133,14 @@ export async function init({ window, fetch }) {
   }
 
   root.addEventListener("click", (e) => {
-    if (e.target.closest('[data-action="feedback-toggle"]')) {
+    const fbToggle = e.target.closest('[data-action="feedback-toggle"]');
+    if (fbToggle) {
       // Navigation repaints the shell with an empty slot without touching
       // ui.feedback.open, so the DOM — not the flag — is the truth for
       // whether the bar is currently showing. Toggling off the flag alone
-      // would make the first tap after navigating do nothing.
+      // would make the first tap after navigating do nothing. Any slot
+      // reflects the same shared state, so checking one is representative
+      // even when a second entry point (e.g. the lesson screen's) exists.
       const slot = root.querySelector("[data-fb-slot]");
       const visiblyOpen = !!(slot && slot.firstElementChild);
       if (visiblyOpen && ui.feedback.sending) return; // never hide an in-flight send
@@ -126,7 +148,12 @@ export async function init({ window, fetch }) {
       ui.feedback.notice = "";
       paintFeedbackBar();
       if (ui.feedback.open) {
-        const inp = root.querySelector('[data-field="fb-text"]');
+        // Focus the input in the SAME entry point the learner just clicked —
+        // not always the topbar's, which may be scrolled out of view (that
+        // would silently defeat a lesson-side toggle's whole purpose).
+        const where = fbToggle.dataset.fbToggle;
+        const scoped = where && root.querySelector(`[data-fb-slot="${where}"] [data-field="fb-text"]`);
+        const inp = scoped || root.querySelector('[data-field="fb-text"]');
         if (inp) inp.focus();
       }
       return;
@@ -135,11 +162,18 @@ export async function init({ window, fetch }) {
   });
   root.addEventListener("input", (e) => {
     if (e.target.matches && e.target.matches('[data-field="fb-text"]')) {
-      // Update state without a repaint (focus-steal rule); flip only the
-      // Send button's disabled property directly.
+      // Update state without a repaint (focus-steal rule). Two feedback-bar
+      // instances can be on screen at once (topbar + lesson-side); sync every
+      // Send button's disabled state, and mirror the typed value into any
+      // OTHER instance's input (never the one being typed in — that would
+      // steal the caret) so both stay visually consistent.
       ui.feedback.text = e.target.value;
-      const btn = root.querySelector('[data-action="feedback-send"]');
-      if (btn) btn.disabled = ui.feedback.sending || !e.target.value.trim();
+      root.querySelectorAll('[data-action="feedback-send"]').forEach((btn) => {
+        btn.disabled = ui.feedback.sending || !e.target.value.trim();
+      });
+      root.querySelectorAll('[data-field="fb-text"]').forEach((inp) => {
+        if (inp !== e.target) inp.value = e.target.value;
+      });
     }
   });
   root.addEventListener("keydown", (e) => {
