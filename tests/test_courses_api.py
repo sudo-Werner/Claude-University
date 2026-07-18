@@ -516,7 +516,7 @@ def test_workspace_get_default_and_put_roundtrip(client, tmp_path, monkeypatch):
     manifest, lesson_id = _fixture_course(courses, root)
     cid = manifest["id"]
     assert client.get(f"/api/courses/{cid}/lessons/{lesson_id}/workspace").get_json() == {
-        "notes": "", "chat": [], "updatedAt": None}
+        "notes": "", "chat": [], "highlights": [], "updatedAt": None}
     r = client.put(f"/api/courses/{cid}/lessons/{lesson_id}/workspace",
                    json={"notes": "n", "chat": [{"role": "user", "content": "hi"}]})
     assert r.status_code == 200 and r.get_json()["updatedAt"]
