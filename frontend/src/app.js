@@ -97,6 +97,7 @@ export async function init({ window, fetch }) {
     quizPlay: null,
     arcadePollTimer: null,
     feedback: { open: false, sending: false, text: "", notice: "", activeWhere: "top" },
+    profile: null,
   };
 
   // ---- feedback bar (global; delegated on root so it survives every shell repaint) ----
@@ -365,6 +366,7 @@ export async function init({ window, fetch }) {
       const profile = buildProfile(ui.diagnostic);
       log("diagnostic_completed", { payload: profile });
       await saveProfile({ fetch, endpoint: PROFILE_ENDPOINT, profile });
+      ui.profile = profile;
       await doFlush();
       showHome();
     });
@@ -464,6 +466,7 @@ export async function init({ window, fetch }) {
         skills: ui.manifest.skills || [],
       } : null,
       streakDays: (ui.stats && ui.stats.streakDays) || 0,
+      streakCadence: (ui.stats && ui.stats.streakCadence) || "daily",
       heatmap: ui.stats && ui.stats.heatmap,
     };
   }
@@ -479,6 +482,26 @@ export async function init({ window, fetch }) {
     if (lib) lib.addEventListener("click", showLibrary);
     const ref = view.querySelector('[data-action="refine"]');
     if (ref) ref.addEventListener("click", startRefine);
+    const cadenceBtn = view.querySelector('[data-action="streak-cadence"]');
+    if (cadenceBtn) cadenceBtn.addEventListener("click", toggleStreakCadence);
+  }
+
+  // Flips the streak cadence setting (daily <-> weekly, charter Tier 1 #4) and
+  // persists it via the SAME profile blob the onboarding diagnostic writes —
+  // POST /api/profile replaces the whole record, so this always sends the full
+  // merged object, never just the one changed key (would silently drop the
+  // diagnostic answers otherwise). Re-fetches stats so the streak number itself
+  // reflects the new cadence immediately, not just its label.
+  async function toggleStreakCadence() {
+    const btn = root.querySelector('[data-action="streak-cadence"]');
+    if (btn) btn.disabled = true;
+    const current = (ui.stats && ui.stats.streakCadence) || "daily";
+    const next = current === "weekly" ? "daily" : "weekly";
+    const merged = { ...(ui.profile || {}), streakCadence: next };
+    await saveProfile({ fetch, endpoint: PROFILE_ENDPOINT, profile: merged });
+    ui.profile = merged;
+    ui.stats = (await loadStats({ fetch })) || ui.stats;
+    if (ui.screen === "course") paintCourse();
   }
 
   // ---- refine course flow ----
@@ -2151,6 +2174,7 @@ export async function init({ window, fetch }) {
     root.querySelector('[data-action="retry"]').addEventListener("click", () => window.location.reload());
     return;
   }
+  ui.profile = profile;
   if (profile) showHome();
   else showDiagnostic();
 }

@@ -991,6 +991,29 @@ test("dashboard streak uses singular day and a nudge at zero", () => {
   assert.match(zero, /Study today to start one/);
 });
 
+test("dashboard streak defaults to daily wording and offers a switch-to-weekly toggle", () => {
+  const html = dashboardHTML({ ...DASHBOARD_SEED, streakDays: 4 }, idleTimer);
+  assert.match(html, /days/);
+  assert.doesNotMatch(html, /weeks/);
+  assert.match(html, /data-action="streak-cadence"/);
+  assert.match(html, />Switch to weekly</);
+});
+
+test("dashboard streak in weekly cadence uses week wording and offers a switch-to-daily toggle", () => {
+  const html = dashboardHTML({ ...DASHBOARD_SEED, streakDays: 3, streakCadence: "weekly" }, idleTimer);
+  assert.match(html, /weeks/);
+  assert.doesNotMatch(html, /\bdays\b/);
+  assert.match(html, />Switch to daily</);
+});
+
+test("dashboard streak weekly singular/zero wording matches the daily pattern", () => {
+  const one = dashboardHTML({ ...DASHBOARD_SEED, streakDays: 1, streakCadence: "weekly" }, idleTimer);
+  assert.match(one, /week</);
+  assert.doesNotMatch(one, /weeks</);
+  const zero = dashboardHTML({ ...DASHBOARD_SEED, streakDays: 0, streakCadence: "weekly" }, idleTimer);
+  assert.match(zero, /Study once this week to start one/);
+});
+
 test("dashboard renders the study heatmap when heatmap data is present", () => {
   const html = dashboardHTML(
     { ...DASHBOARD_SEED, heatmap: { past: { "2026-07-15": 2 }, forecast: {} } }, idleTimer);

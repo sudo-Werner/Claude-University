@@ -62,6 +62,37 @@ def test_stats_streak_from_study_events(client):
     assert resp.status_code == 200
     body = resp.get_json()
     assert isinstance(body["streakDays"], int)
+    assert body["streakCadence"] == "daily"   # default with no profile set
+
+
+def test_stats_streak_defaults_to_daily_with_no_profile(client):
+    resp = client.get("/api/stats")
+    assert resp.get_json()["streakCadence"] == "daily"
+
+
+def test_stats_streak_switches_to_weekly_cadence_from_profile(client):
+    client.post("/api/profile", json={"analogies": True, "streakCadence": "weekly"})
+    client.post("/api/events", json={"events": [{
+        "client_event_id": "st2", "session_id": "s1",
+        "event_type": "lesson_view", "occurred_at": "2026-06-21T10:00:00+00:00",
+    }]})
+    resp = client.get("/api/stats")
+    body = resp.get_json()
+    assert body["streakCadence"] == "weekly"
+    assert isinstance(body["streakDays"], int)
+
+
+def test_stats_streak_ignores_invalid_cadence_value(client):
+    client.post("/api/profile", json={"streakCadence": "monthly"})
+    resp = client.get("/api/stats")
+    assert resp.get_json()["streakCadence"] == "daily"
+
+
+def test_stats_streak_tolerates_non_dict_profile_data(client):
+    client.post("/api/profile", json=["not", "a", "dict"])
+    resp = client.get("/api/stats")  # must not 500
+    assert resp.status_code == 200
+    assert resp.get_json()["streakCadence"] == "daily"
 
 
 def test_stats_includes_heatmap_past_and_forecast(client, tmp_path, monkeypatch):

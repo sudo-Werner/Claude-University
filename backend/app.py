@@ -135,11 +135,17 @@ def create_app(db_path=None):
     def get_stats():
         conn = db.get_connection(path)
         try:
-            streak = stats.streak_days(conn)
+            prof = profile.latest_profile(conn)
+            prof_data = (prof or {}).get("data")
+            cadence = prof_data.get("streakCadence") if isinstance(prof_data, dict) else None
+            if cadence != "weekly":
+                cadence = "daily"  # default, and the fallback for any forged/unknown value
+            streak = (stats.weekly_streak_weeks(conn) if cadence == "weekly"
+                     else stats.streak_days(conn))
             heatmap = stats.heatmap(conn, courses.CONTENT_DIR)
         finally:
             conn.close()
-        return jsonify({"streakDays": streak, "heatmap": heatmap})
+        return jsonify({"streakDays": streak, "streakCadence": cadence, "heatmap": heatmap})
 
     @app.get("/api/activity")
     def get_activity():

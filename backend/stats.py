@@ -24,13 +24,8 @@ def _utc_today():
     return datetime.datetime.now(datetime.timezone.utc).date()
 
 
-def streak_days(conn, today=None):
-    """Consecutive UTC days with study activity, anchored at today or yesterday.
-
-    The streak survives until a full day is missed: studying yesterday but not
-    yet today keeps it alive. Returns 0 when the last study day is 2+ days ago.
-    """
-    today = today or _utc_today()
+def _study_days(conn):
+    """Distinct UTC calendar days with study activity, newest first."""
     placeholders = ",".join("?" * len(STUDY_EVENTS))
     rows = conn.execute(
         f"SELECT DISTINCT substr(occurred_at, 1, 10) AS day FROM events "
@@ -43,11 +38,49 @@ def streak_days(conn, today=None):
             days.append(datetime.date.fromisoformat(r["day"]))
         except ValueError:
             continue  # malformed timestamp — skip rather than crash the dashboard
+    return days
+
+
+def streak_days(conn, today=None):
+    """Consecutive UTC days with study activity, anchored at today or yesterday.
+
+    The streak survives until a full day is missed: studying yesterday but not
+    yet today keeps it alive. Returns 0 when the last study day is 2+ days ago.
+    """
+    today = today or _utc_today()
+    days = _study_days(conn)
     if not days or days[0] < today - datetime.timedelta(days=1):
         return 0
     streak = 1
     for prev, cur in zip(days, days[1:]):
         if prev - cur != datetime.timedelta(days=1):
+            break
+        streak += 1
+    return streak
+
+
+def _week_start(d):
+    return d - datetime.timedelta(days=d.weekday())  # Monday-anchored
+
+
+def weekly_streak_weeks(conn, today=None):
+    """Consecutive Mon-Sun weeks with >=1 study day, anchored at the current week
+    or the immediately preceding one — the same one-unit tolerance as streak_days,
+    one level up (a week with zero study days breaks it; the current week not yet
+    having one doesn't, as long as last week did).
+    """
+    today = today or _utc_today()
+    days = _study_days(conn)
+    if not days:
+        return 0
+    weeks = sorted({_week_start(d) for d in days}, reverse=True)
+    this_week = _week_start(today)
+    last_week = this_week - datetime.timedelta(days=7)
+    if weeks[0] < last_week:
+        return 0
+    streak = 1
+    for prev, cur in zip(weeks, weeks[1:]):
+        if prev - cur != datetime.timedelta(days=7):
             break
         streak += 1
     return streak

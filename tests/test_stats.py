@@ -307,6 +307,62 @@ def test_heatmap_forecast_ignores_deleted_courses(conn, tmp_path):
     assert result["forecast"] == {}
 
 
+def test_weekly_streak_zero_with_no_events(conn):
+    assert stats.weekly_streak_weeks(conn, today=TODAY) == 0
+
+
+def test_weekly_streak_one_for_study_this_week(conn):
+    events.insert_events(conn, [_ev(1, "lesson_view", "2026-07-14T09:00:00+00:00")])
+    assert stats.weekly_streak_weeks(conn, today=TODAY) == 1
+
+
+def test_weekly_streak_alive_if_last_study_was_last_week(conn):
+    events.insert_events(conn, [_ev(1, "lesson_view", "2026-07-06T09:00:00+00:00")])
+    assert stats.weekly_streak_weeks(conn, today=TODAY) == 1
+
+
+def test_weekly_streak_dead_if_last_study_two_weeks_ago(conn):
+    events.insert_events(conn, [_ev(1, "lesson_view", "2026-06-29T09:00:00+00:00")])
+    assert stats.weekly_streak_weeks(conn, today=TODAY) == 0
+
+
+def test_weekly_streak_counts_consecutive_weeks(conn):
+    events.insert_events(conn, [
+        _ev(1, "lesson_view", "2026-06-29T09:00:00+00:00"),
+        _ev(2, "lesson_view", "2026-07-06T09:00:00+00:00"),
+        _ev(3, "lesson_view", "2026-07-15T09:00:00+00:00"),
+    ])
+    assert stats.weekly_streak_weeks(conn, today=TODAY) == 3
+
+
+def test_weekly_streak_stops_at_gap_week(conn):
+    events.insert_events(conn, [
+        _ev(1, "lesson_view", "2026-06-22T09:00:00+00:00"),
+        _ev(2, "lesson_view", "2026-06-29T09:00:00+00:00"),
+        # week of 2026-07-06 missed
+        _ev(3, "lesson_view", "2026-07-15T09:00:00+00:00"),
+    ])
+    assert stats.weekly_streak_weeks(conn, today=TODAY) == 1
+
+
+def test_weekly_streak_multiple_events_same_week_count_once(conn):
+    events.insert_events(conn, [
+        _ev(1, "lesson_view", "2026-07-13T09:00:00+00:00"),   # Monday, week start
+        _ev(2, "lesson_reviewed", "2026-07-15T09:00:00+00:00"),
+        _ev(3, "lesson_view", "2026-07-19T09:00:00+00:00"),   # Sunday, week end
+    ])
+    assert stats.weekly_streak_weeks(conn, today=TODAY) == 1
+
+
+def test_weekly_streak_rollover_counts_adjacent_days_in_different_weeks_as_two(conn):
+    monday = datetime.date(2026, 7, 20)
+    events.insert_events(conn, [
+        _ev(1, "lesson_view", "2026-07-19T22:00:00+00:00"),   # Sunday, prior week
+        _ev(2, "lesson_view", "2026-07-20T08:00:00+00:00"),   # Monday, this week
+    ])
+    assert stats.weekly_streak_weeks(conn, today=monday) == 2
+
+
 def test_heatmap_forecast_excludes_dates_beyond_the_horizon(conn, tmp_path):
     content = _write_course(tmp_path)
     # three "good" reviews push the interval well past a 30-day forecast horizon
