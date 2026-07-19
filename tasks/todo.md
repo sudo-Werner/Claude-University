@@ -8,7 +8,7 @@ Mark items done here with date + merge commit as they land.
 
 ## Tier 1 — approved, build in this order
 
-- [ ] **1. Lesson-chat guardrails audit + hardening** [R: PNAS RCT — unguarded chat = −17%
+- [x] **1. Lesson-chat guardrails audit + hardening** [R: PNAS RCT — unguarded chat = −17%
   on unassisted exams; hint-only guardrails eliminated the harm]
   The default lesson side-chat (`backend/generation.py:lesson_chat_prompt`) and the quiz
   question-chat must, whenever an exercise/check/exam item is ACTIVE (unrevealed): coach via
@@ -115,6 +115,11 @@ Mark items done here with date + merge commit as they land.
 
 - 2026-07-19: Audit quick-wins batch (arcade streak counting, missed-lesson result chips,
   cache-first lesson open) — merged `d36e442`, deployed, live-verified, ledgered. [S]
+- 2026-07-19: Tier 1 item 1 — lesson-chat guardrails audit + hardening. `LESSON_CHAT_SYSTEM`
+  no longer hands over the exercise answer after a second ask; `ANALOGY_SYSTEM` guarded
+  against the same pivot. Socratic/teach/quiz-question-chat already compliant. Merged
+  `99d90cf`, deployed, live-verified on Pi with real Claude calls (declines + hints while
+  unrevealed, discusses freely once revealed), ledgered in `.superpowers/sdd/progress.md`.
 
 ## Handoff notes
 
