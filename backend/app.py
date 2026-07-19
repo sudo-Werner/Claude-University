@@ -942,4 +942,20 @@ def create_app(db_path=None):
     def styles():
         return send_from_directory(frontend_dir, "styles.css")
 
+    @app.get("/manifest.json")
+    def manifest():
+        return send_from_directory(frontend_dir, "manifest.json")
+
+    @app.get("/sw.js")
+    def service_worker():
+        # Served from the root (not /src/) so its default scope covers the whole
+        # app — a service worker can only control paths at or below its own URL.
+        return send_from_directory(frontend_dir, "sw.js")
+
+    @app.get("/icons/<filename>")
+    def icon_files(filename):
+        if filename not in ("icon-192.png", "icon-512.png"):
+            return jsonify({"error": "not found"}), 404
+        return send_from_directory(frontend_dir / "icons", filename)
+
     return app
