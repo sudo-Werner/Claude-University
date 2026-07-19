@@ -477,6 +477,35 @@ def valid_explain(obj):
     return isinstance(follow, str) and bool(follow.strip())
 
 
+_RUBRIC_SCORE_FIELDS = ("accuracy", "clarity", "completeness", "understanding")
+
+
+def _extract_rubric(obj):
+    """Best-effort parse of the rubric fields from an ALREADY-validated grader
+    response (valid_grade/valid_explain has already passed by the time this is
+    called). Never raises; returns None if the shape can't be salvaged. This
+    can only affect whether a misconception gets persisted — it can never
+    affect whether the learner's grade succeeds."""
+    if not isinstance(obj, dict):
+        return None
+    scores = {}
+    for field in _RUBRIC_SCORE_FIELDS:
+        val = obj.get(field)
+        if isinstance(val, bool) or not isinstance(val, (int, float)):
+            return None
+        val = int(val)
+        if not (0 <= val <= 100):
+            return None
+        scores[field] = val
+    misconceptions = obj.get("misconceptions")
+    strengths = obj.get("strengths")
+    if not isinstance(misconceptions, list) or not isinstance(strengths, list):
+        return None
+    scores["misconceptions"] = [m for m in misconceptions if isinstance(m, str)]
+    scores["strengths"] = [s for s in strengths if isinstance(s, str)]
+    return scores
+
+
 def grade_prompt(*, prompt_html, solution_ans, solution_note, answer):
     return (
         "You are a warm, honest tutor grading a learner's free-text answer to one "
@@ -526,7 +555,12 @@ def explain_prompt(*, prompt_html, solution_ans, solution_note, explanation):
         'idea it missed or got wrong>","followUp":"<ONE short reflective question addressed '
         "to 'you' that targets the weakest point of the explanation and pushes you to justify "
         "or connect it; if the explanation was fully correct, ask a transfer question that "
-        'connects the idea to a new situation instead>"}'
+        'connects the idea to a new situation instead>",'
+        '"accuracy":<0-100 integer>,"clarity":<0-100 integer>,'
+        '"completeness":<0-100 integer>,"understanding":<0-100 integer>,'
+        '"misconceptions":[<0 or more short, specific misconceptions this explanation '
+        'revealed, each addressed to \'you\' e.g. \'you think X always Y\', or [] if none>],'
+        '"strengths":[<0 or more short strengths, or [] if none>]}'
     )
 
 
@@ -543,8 +577,12 @@ def explain_answer(content_dir, course_id, lesson_id, explanation, *, generate):
     result = generate(prompt)
     if not isinstance(result, dict):
         raise claude_client.ClaudeError("explain grader returned a non-dict result")
+    # "rubric" is internal (charter Tier 2 item 7) — the route strips it before
+    # the response reaches the client; valid_explain has already gated success,
+    # so a malformed rubric here can only mean "nothing to persist", never a
+    # failed grade.
     return {"verdict": result["verdict"], "note": sanitize_html(result["note"]),
-            "followUp": sanitize_html(result["followUp"])}
+            "followUp": sanitize_html(result["followUp"]), "rubric": _extract_rubric(result)}
 
 
 # ---- Teach it to Claude: grade the learner's teaching episode ----
@@ -575,7 +613,12 @@ def teach_grade_prompt(*, prompt_html, solution_ans, solution_note, messages):
         "error), or incorrect. Reply with ONLY a JSON object, no prose, no fence:\n"
         '{"verdict":"correct"|"close"|"incorrect","note":"<one or two encouraging '
         'sentences addressed to \'you\': what you taught well, then the single most '
-        'important thing to fix or add>"}'
+        'important thing to fix or add>",'
+        '"accuracy":<0-100 integer>,"clarity":<0-100 integer>,'
+        '"completeness":<0-100 integer>,"understanding":<0-100 integer>,'
+        '"misconceptions":[<0 or more short, specific misconceptions this teaching '
+        'episode revealed, each addressed to \'you\' e.g. \'you think X always Y\', or '
+        '[] if none>],"strengths":[<0 or more short strengths, or [] if none>]}'
     )
 
 

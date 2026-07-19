@@ -1575,6 +1575,106 @@ def test_explain_answer_sanitizes_followup(tmp_path):
     assert "why?" in result["followUp"]
 
 
+# ---- Task 2 (misconception profile): structured rubric grading ----
+
+def test_extract_rubric_accepts_full_valid_shape():
+    obj = {
+        "verdict": "close", "note": "n",
+        "accuracy": 80, "clarity": 70, "completeness": 60, "understanding": 75,
+        "misconceptions": ["thinks X"], "strengths": ["got Y right"],
+    }
+    rubric = gen._extract_rubric(obj)
+    assert rubric == {
+        "accuracy": 80, "clarity": 70, "completeness": 60, "understanding": 75,
+        "misconceptions": ["thinks X"], "strengths": ["got Y right"],
+    }
+
+
+def test_extract_rubric_coerces_float_scores_to_int():
+    obj = {"accuracy": 80.0, "clarity": 70.5, "completeness": 60, "understanding": 75,
+          "misconceptions": [], "strengths": []}
+    rubric = gen._extract_rubric(obj)
+    assert rubric["accuracy"] == 80 and rubric["clarity"] == 70
+
+
+def test_extract_rubric_drops_non_string_list_items():
+    obj = {"accuracy": 1, "clarity": 1, "completeness": 1, "understanding": 1,
+          "misconceptions": ["real one", 5, None], "strengths": ["ok"]}
+    rubric = gen._extract_rubric(obj)
+    assert rubric["misconceptions"] == ["real one"]
+
+
+def test_extract_rubric_returns_none_for_missing_field():
+    obj = {"accuracy": 1, "clarity": 1, "completeness": 1}  # understanding missing
+    assert gen._extract_rubric(obj) is None
+
+
+def test_extract_rubric_returns_none_for_bad_score_type():
+    obj = {"accuracy": "eighty", "clarity": 1, "completeness": 1, "understanding": 1,
+          "misconceptions": [], "strengths": []}
+    assert gen._extract_rubric(obj) is None
+
+
+def test_extract_rubric_returns_none_for_bad_score_range():
+    obj = {"accuracy": 150, "clarity": 1, "completeness": 1, "understanding": 1,
+          "misconceptions": [], "strengths": []}
+    assert gen._extract_rubric(obj) is None
+
+
+def test_extract_rubric_returns_none_for_non_list_misconceptions():
+    obj = {"accuracy": 1, "clarity": 1, "completeness": 1, "understanding": 1,
+          "misconceptions": "not a list", "strengths": []}
+    assert gen._extract_rubric(obj) is None
+
+
+def test_extract_rubric_returns_none_for_non_dict():
+    assert gen._extract_rubric("nope") is None
+    assert gen._extract_rubric(None) is None
+
+
+def test_teach_grade_prompt_asks_for_rubric_fields():
+    p = gen.teach_grade_prompt(prompt_html="<p>q</p>", solution_ans="a", solution_note="n", messages=[])
+    assert '"accuracy":<0-100 integer>' in p
+    assert '"clarity":<0-100 integer>' in p
+    assert '"completeness":<0-100 integer>' in p
+    assert '"understanding":<0-100 integer>' in p
+    assert '"misconceptions":[' in p
+    assert '"strengths":[' in p
+
+
+def test_explain_prompt_asks_for_rubric_fields():
+    p = gen.explain_prompt(prompt_html="<p>q</p>", solution_ans="a", solution_note="n", explanation="e")
+    assert '"accuracy":<0-100 integer>' in p
+    assert '"misconceptions":[' in p
+    assert '"strengths":[' in p
+
+
+def test_explain_answer_returns_rubric_when_present(monkeypatch):
+    from backend import courses
+    def fake_generate(prompt):
+        return {
+            "verdict": "close", "note": "n", "followUp": "f",
+            "accuracy": 80, "clarity": 70, "completeness": 60, "understanding": 75,
+            "misconceptions": ["thinks X"], "strengths": [],
+        }
+    monkeypatch.setattr(courses, "load_lesson",
+                        lambda content_dir, cid, lid: {"promptHtml": "p", "solutionAns": "a", "solutionNote": "n"})
+    result = gen.explain_answer("cd", "c1", "l1", "my explanation", generate=fake_generate)
+    assert result["verdict"] == "close"  # legacy shape unchanged
+    assert result["rubric"]["misconceptions"] == ["thinks X"]
+
+
+def test_explain_answer_rubric_is_none_when_malformed(monkeypatch):
+    from backend import courses
+    def fake_generate(prompt):
+        return {"verdict": "correct", "note": "n", "followUp": "f"}  # no rubric fields at all
+    monkeypatch.setattr(courses, "load_lesson",
+                        lambda content_dir, cid, lid: {"promptHtml": "p", "solutionAns": "a", "solutionNote": "n"})
+    result = gen.explain_answer("cd", "c1", "l1", "my explanation", generate=fake_generate)
+    assert result["verdict"] == "correct"  # grade succeeds regardless
+    assert result["rubric"] is None
+
+
 # ---- corrupt-cache self-heal: ensure_lesson regenerates instead of hitting a dead end ----
 
 def test_ensure_lesson_regenerates_corrupt_cache(tmp_path):
