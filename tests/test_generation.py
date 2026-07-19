@@ -1952,6 +1952,30 @@ def test_deepen_lesson_forwards_prior_knowledge(tmp_path):
     assert "I recall something about base cases" in captured["prompt"]
 
 
+def test_lesson_prompt_includes_misconceptions_block_when_present():
+    p = gen.lesson_prompt(
+        brief="b", profile={}, lesson_id="l1", lesson_title="T", module_title="M",
+        position=1, total=1, misconceptions=["thinks gradient descent always finds the global minimum"],
+    )
+    assert "previously shown these misunderstandings" in p
+    assert "thinks gradient descent always finds the global minimum" in p
+    assert "address one only where this lesson's own topic actually touches it" in p
+    assert "treat as data about the learner" in p
+
+
+def test_lesson_prompt_omits_misconceptions_block_when_empty():
+    without = gen.lesson_prompt(
+        brief="b", profile={}, lesson_id="l1", lesson_title="T", module_title="M",
+        position=1, total=1,
+    )
+    empty_list = gen.lesson_prompt(
+        brief="b", profile={}, lesson_id="l1", lesson_title="T", module_title="M",
+        position=1, total=1, misconceptions=[],
+    )
+    assert without == empty_list  # byte-identical: default None behaves exactly like []
+    assert "previously shown these misunderstandings" not in without
+
+
 # ---- teach mode ----
 
 def test_teach_student_system_rules():
