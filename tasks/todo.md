@@ -92,7 +92,7 @@ Mark items done here with date + merge commit as they land.
 
 ## Tier 3 — hygiene batch (approved; fold into one small branch when convenient)
 
-- [ ] **13. Backup restore-check** [S]: monthly (cron or documented manual step) restore of
+- [x] **13. Backup restore-check** [S]: monthly (cron or documented manual step) restore of
   the newest content backup to a temp dir + integrity check (course.json parses, lesson count
   matches manifest). The 2026-07-15 data-loss incident created the backups; nothing yet
   proves they restore.
@@ -114,7 +114,7 @@ Mark items done here with date + merge commit as they land.
 - [x] **19. Start-session routes through due reviews** [S sweep suggestion; small]: when
   reviewsDue > 0, "Start session" runs the review queue first (plumbing exists in
   `advanceAfterLesson`), then the new lesson. Honors the design brief's warm-up promise.
-- [ ] **20. Notes/highlights resurfacing — "My notes" view** [S sweep: notes are currently
+- [x] **20. Notes/highlights resurfacing — "My notes" view** [S sweep: notes are currently
   write-only]. A read-only per-course aggregate (grouped by lesson) + a notes indicator on
   curriculum rows. Keep scope to display; no AI processing (that's items 7/9 territory).
 
@@ -180,7 +180,25 @@ Mark items done here with date + merge commit as they land.
   auto-continues into the new lesson — commit `6aa58d4`, live-verified end-to-end
   on the real Pi with 2 real due reviews (test events cleaned up afterward).
   All items: 867 backend / 343 frontend tests green throughout, zero behavior
-  change proven by the untouched suite for 15/16/17. Items 13 and 20 remain.
+  change proven by the untouched suite for 15/16/17.
+- 2026-07-19: Tier 3 item 13 — monthly backup restore-check. `backend/restore_check.py`
+  extracts the newest backup to a throwaway temp dir and proves it restores: every
+  course.json parses through the app's own courses.py code path, DB snapshot passes
+  SQLite's integrity_check. Not wired into the Pi's shared, multi-project crontab
+  (too risky to script an edit there) — docs/DEPLOY.md has the cron line for Werner
+  to add himself. Merged `265c91d`, LIVE-VERIFIED for real against the Pi's actual
+  latest backup: all 4 real courses + DB integrity confirmed restorable. Caught and
+  fixed two real bugs first (wrong scan root — content/ vs content/courses/ — and
+  an unhandled crash on a corrupt gzip) by deliberately testing a broken synthetic
+  backup before trusting the real one.
+- 2026-07-19: Tier 3 item 20 — "My notes" view. `notes.course_notes_summary()`
+  aggregates every lesson's notes/highlights in curriculum order (skips
+  unannotated lessons); new `GET /api/courses/<id>/notes`; `views/mynotes.js`
+  read-only render + dashboard entry point + a background-loaded "Notes"
+  indicator badge on curriculum rows. Merged `245b43e`, deployed, live-verified:
+  wrote a real note in the browser, confirmed it surfaced correctly in the
+  aggregate, the My notes view, and the curriculum badge; test note deleted
+  afterward. **Tier 3 hygiene batch (13–20) now fully complete.**
 
 ## Handoff notes
 
