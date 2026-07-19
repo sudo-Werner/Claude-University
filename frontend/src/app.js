@@ -1250,8 +1250,15 @@ export async function init({ window, fetch }) {
     ui.loadSeq = (ui.loadSeq || 0) + 1;
     const seq = ui.loadSeq;
     ui.screen = "lesson-loading";
-    const view = root.querySelector("#view");
-    if (view) startLoading(view, "lesson", LESSON_STAGES);
+    // Cache-first: nearly every open is an already-generated lesson that resolves in a
+    // few hundred ms, and painting the skeleton immediately made every open flash it.
+    // Delay the paint; the re-check makes a fast open (or navigating away) skip it, and
+    // the slow paths (generation, slow Pi) still get the skeleton after 200ms.
+    window.setTimeout(() => {
+      if (ui.screen !== "lesson-loading" || ui.loadSeq !== seq) return;
+      const v = root.querySelector("#view");
+      if (v) startLoading(v, "lesson", LESSON_STAGES);
+    }, 200);
     // Prior-knowledge activation: a not-yet-generated lesson gets one free-text
     // question before the slow generation call; an already-generated lesson (or a
     // failed/errored status check) opens exactly as before — the feature only adds.
