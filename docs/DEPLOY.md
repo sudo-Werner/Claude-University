@@ -39,3 +39,28 @@ after a deploy is a red flag — stop and investigate before doing anything else
 A daily cron on the Pi (03:30) tars `content/` and snapshots `learning.db` into
 `~/backups/claude_university/` (7 kept), which the existing weekly rclone job syncs
 to Google Drive. Verify with: `ls -lh ~/backups/claude_university/` on the Pi.
+
+### Restore-check (monthly)
+
+The 2026-07-15 data-loss incident above is what created these backups — a backup
+that exists but doesn't actually restore is a false sense of safety. `backend/restore_check.py`
+proves it: extracts the newest tarball to a throwaway temp dir (never touches the
+live `content/` or `backend/data/`), parses every `course.json` through the app's
+own `courses.py` code path, and runs SQLite's `PRAGMA integrity_check` against the
+DB snapshot. Run monthly on the Pi:
+
+```bash
+cd ~/claude_university && .venv/bin/python -m backend.restore_check
+```
+
+Exits non-zero on any failure. The Pi's crontab is large and spans several
+unrelated projects (trading system, home automation) — rather than script an edit
+to it, add this one line yourself with `crontab -e` when convenient:
+
+```
+0 4 1 * * cd ~/claude_university && .venv/bin/python -m backend.restore_check >> ~/backups/claude_university/restore-check.log 2>&1
+```
+
+First real run (2026-07-19, against `content-20260719.tar.gz` / `learning-20260719.db.gz`):
+all 4 courses parsed with the correct lesson counts (30/25/30/22) and the DB
+integrity check passed — the backups DO restore.
