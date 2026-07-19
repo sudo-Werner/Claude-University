@@ -939,12 +939,15 @@ export async function init({ window, fetch }) {
         ? `<div class="prompt">Score could not be saved.</div>` +
           `<button class="btn-secondary" data-action="arcade-retry-save" ${st.saving ? "disabled" : ""}>${st.saving ? "Retrying…" : "Retry save"}</button>`
         : "";
-      view.innerHTML = arcadeResultHTML(st) + saveNotice;
+      view.innerHTML = arcadeResultHTML(st, st.lessonTitles || {}) + saveNotice;
       view.querySelector('[data-action="arcade-play-again"]').addEventListener("click", () => startArcadeRound(ui.arcadeCourseId));
       view.querySelector('[data-action="arcade-back"]').addEventListener("click", showArcade);
       if (st.saveFailed && !st.saving) {
         view.querySelector('[data-action="arcade-retry-save"]').addEventListener("click", retrySaveResult);
       }
+      view.querySelectorAll("[data-lesson]").forEach((b) => {
+        b.addEventListener("click", () => openMissedLesson(b.getAttribute("data-lesson")));
+      });
       return;
     }
     if (st.round.format === "match_up") {
@@ -1176,6 +1179,7 @@ export async function init({ window, fetch }) {
       total: st.total,
       missed: st.missed,
     };
+    if (Object.keys(st.missed).length) loadMissedTitles(st);
     paintArcadePlay();
     await saveRoundResult(st);
   }
@@ -1187,6 +1191,27 @@ export async function init({ window, fetch }) {
     st.saving = false;
     st.saveFailed = !result || !!result.error;
     if (st.phase === "result") paintArcadePlay();
+  }
+
+  // Titles for the result screen's missed-lesson chips. Fail-open: the score renders
+  // immediately with raw-id chips; titles repaint when (if) the manifest arrives.
+  async function loadMissedTitles(st) {
+    const course = await loadCourse({ fetch, courseId: ui.arcadeCourseId });
+    if (ui.quizPlay !== st || ui.screen !== "arcade-play") return; // navigated away mid-fetch
+    if (!course || course.error) return;
+    const titles = {};
+    (course.modules || []).forEach((m) => (m.lessons || []).forEach((l) => { titles[l.id] = l.title; }));
+    st.lessonTitles = titles;
+    if (st.phase === "result") paintArcadePlay();
+  }
+
+  // Chip tap: enter the course's context first (the Arcade is course-less), then open
+  // the lesson so Prev/Next/curriculum all work. Mirrors openCourse's manifest guard.
+  async function openMissedLesson(lessonId) {
+    ui.courseId = ui.arcadeCourseId;
+    await refreshSummary();
+    if (!ui.manifest) { showHome(); return; }
+    openLesson(lessonId);
   }
 
   function retrySaveResult() {

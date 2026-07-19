@@ -265,13 +265,24 @@ export function quizChatHTML(qchat) {
 
 // ---- end of round ----
 
-export function arcadeResultHTML(playState) {
+// End-of-round card. `lessonTitles` maps lesson id -> title for the missed-lesson
+// chips (fetched after the round ends — the Arcade is a global tab with no course
+// manifest loaded); an unknown id falls back to the raw id rather than hiding the chip.
+export function arcadeResultHTML(playState, lessonTitles = {}) {
   const pct = playState.total ? Math.round((playState.score / playState.total) * 100) : 0;
+  const chips = Object.entries(playState.missed || {})
+    .filter(([, n]) => Number.isInteger(n) && n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, n]) =>
+      `<div class="weak-spot"><button class="weak-lesson" data-lesson="${esc(id)}">` +
+      `${esc(lessonTitles[id] || id)} — missed ${n}${n > 1 ? " times" : " time"}</button></div>`)
+    .join("");
   return `
     <div class="arcade-result card">
       <div class="eyebrow">ROUND COMPLETE</div>
       <h1 class="session-topic">${pct}%</h1>
-      <div class="arcade-score-note">${playState.score} / ${playState.total} correct</div>
+      <div class="arcade-score-note">${playState.score} / ${playState.total} correct</div>` +
+    (chips ? `<h2 class="arcade-missed-head">Review what you missed</h2>${chips}` : "") + `
       <button class="btn-primary" data-action="arcade-play-again">Play again</button>
       <button class="btn-secondary" data-action="arcade-back">Back to Arcade</button>
     </div>`;
