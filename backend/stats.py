@@ -9,8 +9,9 @@ from backend import courses
 STUDY_EVENTS = ("lesson_view", "lesson_reviewed", "prequiz_attempt",
                 "exam_result", "remediation_started", "capstone_result", "quiz_round")
 
-# Event types worth showing in the study log. Checks, hints, and timer ticks
-# are noise at log granularity and are filtered out here, server-side.
+# Event types worth showing in the study log, including Arcade rounds. Checks,
+# hints, and timer ticks are noise at log granularity and are filtered out here,
+# server-side.
 ACTIVITY_EVENTS = ("lesson_view", "lesson_reviewed", "course_created", "course_revised",
                    "exam_result", "remediation_started", "capstone_result", "quiz_round")
 
