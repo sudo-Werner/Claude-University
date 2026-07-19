@@ -65,6 +65,113 @@ def _fixture_course(courses, root):
     return manifest, lesson_id
 
 
+def test_misconceptions_route_empty_when_none_recorded(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _fixture_course(courses, root)
+    resp = client.get(f"/api/courses/{manifest['id']}/misconceptions")
+    assert resp.status_code == 200
+    assert resp.get_json()["entries"] == []
+
+
+def test_misconceptions_route_404s_unknown_course(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    assert client.get("/api/courses/nope/misconceptions").status_code == 404
+    assert client.get("/api/courses/Bad_Id/misconceptions").status_code == 404
+
+
+def test_explain_route_persists_misconception_and_hides_rubric_from_response(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, validate=None, **kw: {
+        "verdict": "close", "note": "n", "followUp": "f",
+        "accuracy": 80, "clarity": 70, "completeness": 60, "understanding": 75,
+        "misconceptions": ["you think gradient descent always finds the global minimum"],
+        "strengths": [],
+    })
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/explain",
+                       json={"explanation": "my explanation of the idea"})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert set(body.keys()) == {"verdict", "note", "followUp"}  # rubric never reaches the client
+    profile = client.get(f"/api/courses/{cid}/misconceptions").get_json()["entries"]
+    assert len(profile) == 1
+    assert profile[0]["text"] == "you think gradient descent always finds the global minimum"
+    assert profile[0]["excerpt"] == "my explanation of the idea"
+    assert profile[0]["source"] == "explain"
+    assert profile[0]["lessonId"] == lesson_id
+
+
+def test_explain_route_persistence_failure_does_not_break_the_grade(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client, misconceptions as mc
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, validate=None, **kw: {
+        "verdict": "correct", "note": "n", "followUp": "f",
+        "accuracy": 1, "clarity": 1, "completeness": 1, "understanding": 1,
+        "misconceptions": ["something"], "strengths": [],
+    })
+    def boom(*a, **kw):
+        raise OSError("disk full")
+    monkeypatch.setattr(mc, "add_entries", boom)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/explain",
+                       json={"explanation": "my explanation"})
+    assert resp.status_code == 200  # grade succeeds even though persistence blew up
+    assert resp.get_json()["verdict"] == "correct"
+
+
+def test_teach_route_persists_misconception(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, validate=None, **kw: {
+        "verdict": "close", "note": "n",
+        "accuracy": 80, "clarity": 70, "completeness": 60, "understanding": 75,
+        "misconceptions": ["you think X"], "strengths": [],
+    })
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/teach",
+                       json={"messages": [{"role": "user", "content": "X is always true"}]})
+    assert resp.status_code == 200
+    assert set(resp.get_json().keys()) == {"verdict", "note"}  # rubric never reaches the client
+    profile = client.get(f"/api/courses/{cid}/misconceptions").get_json()["entries"]
+    assert len(profile) == 1
+    assert profile[0]["source"] == "teach"
+    assert profile[0]["excerpt"] == "X is always true"
+
+
+def test_delete_misconception_route(client, tmp_path, monkeypatch):
+    from backend import courses, misconceptions as mc
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    mc.add_entries(root, cid, lesson_id, "Lesson One", "explain", [("text", "excerpt")])
+    entry_id = mc.load_profile(root, cid)[0]["id"]
+    resp = client.delete(f"/api/courses/{cid}/misconceptions/{entry_id}")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert mc.load_profile(root, cid) == []
+
+
+def test_delete_misconception_route_404s_unknown_entry(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    manifest, _ = _fixture_course(courses, root)
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    resp = client.delete(f"/api/courses/{manifest['id']}/misconceptions/mc-doesnotexist")
+    assert resp.status_code == 404
+
+
 def test_list_courses_returns_created_course(client, tmp_path, monkeypatch):
     from backend import courses
     root = tmp_path / "courses"
@@ -957,6 +1064,27 @@ def test_apply_revision_prunes_review_items(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert review_items.load_items(tmp_path, cid, kept_id) is not None
     assert review_items.load_items(tmp_path, cid, "ghost-lesson") is None
+
+
+def test_apply_revision_keeps_misconceptions_for_a_dropped_lesson(tmp_path):
+    # Uses the COMPILED fixture (like the sibling apply_revision tests above), not
+    # _fixture_course — apply_revision's own valid_compiled_course gate requires
+    # schemaVersion 2 + level/targetHours/skills/outcomes, which _fixture_course's
+    # bare manifest doesn't carry, so a revision built from it is always rejected
+    # regardless of the misconceptions behavior under test here.
+    from backend import courses, misconceptions as mc
+    root = tmp_path / "courses"; root.mkdir()
+    manifest = courses.write_course(root, COMPILED)
+    cid = manifest["id"]
+    lesson_id = manifest["modules"][0]["lessons"][0]["id"]
+    mc.add_entries(root, cid, lesson_id, "Lesson One", "explain", [("kept forever", "ex")])
+    revised = {**manifest, "modules": [{"id": "m-new", "title": "New Module", "outcomes": [OBJ],
+        "lessons": [{"id": f"{cid}-l99", "title": "New Lesson", "estMinutes": 30, "objectives": [OBJ]}]}]}
+    result = courses.apply_revision(root, cid, revised)
+    assert result is not None
+    profile = mc.load_profile(root, cid)
+    assert len(profile) == 1
+    assert profile[0]["text"] == "kept forever"  # survives even though its lesson was dropped
 
 
 # ---- #5 explain-it-back grading ----

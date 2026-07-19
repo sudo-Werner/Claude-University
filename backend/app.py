@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items, feedback, quiz
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items, feedback, quiz, misconceptions
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 _IMAGE_FILENAME_RE = _re.compile(r"^[a-z0-9-]+-\d\.(jpg|png|webp)$")
@@ -265,6 +265,28 @@ def create_app(db_path=None):
         summary = notes.course_notes_summary(courses.CONTENT_DIR, course_id, manifest)
         return jsonify({"lessons": summary})
 
+    @app.get("/api/courses/<course_id>/misconceptions")
+    def get_misconceptions(course_id):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        entries = misconceptions.load_profile(courses.CONTENT_DIR, course_id)
+        return jsonify({"entries": entries})
+
+    @app.delete("/api/courses/<course_id>/misconceptions/<entry_id>")
+    def delete_misconception(course_id, entry_id):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        removed = misconceptions.delete_entry(courses.CONTENT_DIR, course_id, entry_id)
+        if not removed:
+            return jsonify({"error": "not found"}), 404
+        return jsonify({"ok": True})
+
     @app.get("/api/courses/<course_id>/lessons/<lesson_id>")
     def get_lesson(course_id, lesson_id):
         if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
@@ -280,6 +302,7 @@ def create_app(db_path=None):
         finally:
             conn.close()
         prof_data = (prof or {}).get("data")
+        misconception_texts = [e["text"] for e in misconceptions.load_profile(courses.CONTENT_DIR, course_id)]
         # Phase 2: generate lessons WITH web search so they're grounded in real accredited
         # sources (run_sourced returns (lesson, captured_sources)).
         generate = lambda prompt: claude_client.run_sourced(prompt, validate=generation.valid_lesson)
@@ -290,7 +313,7 @@ def create_app(db_path=None):
             lesson = generation.ensure_lesson(
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
                 generate=generate, performance=performance, verify_generate=verify,
-                prior_knowledge=prior_knowledge,
+                prior_knowledge=prior_knowledge, misconceptions=misconception_texts,
             )
         except claude_client.ClaudeAuthError:
             return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
@@ -357,6 +380,19 @@ def create_app(db_path=None):
             return jsonify({"error": "could not read your explanation"}), 502
         if result is None:
             return jsonify({"error": "lesson not found"}), 404
+        rubric = result.pop("rubric", None)
+        if rubric and rubric.get("misconceptions"):
+            try:
+                manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+                lesson_meta = next(
+                    (l for l in courses.flatten_lessons(manifest) if l["id"] == lesson_id), None)
+                lesson_title = lesson_meta["title"] if lesson_meta else lesson_id
+                misconceptions.add_entries(
+                    courses.CONTENT_DIR, course_id, lesson_id, lesson_title, "explain",
+                    [(text, explanation[:280]) for text in rubric["misconceptions"]],
+                )
+            except Exception:
+                app.logger.exception("failed to persist misconceptions from /explain")
         return jsonify(result)
 
     @app.post("/api/courses/<course_id>/exams/<exam_key>")
@@ -516,6 +552,7 @@ def create_app(db_path=None):
         finally:
             conn.close()
         prof_data = (prof or {}).get("data")
+        misconception_texts = [e["text"] for e in misconceptions.load_profile(courses.CONTENT_DIR, course_id)]
         # Phase 2: re-ground the deepened lesson in real accredited sources too.
         generate = lambda prompt: claude_client.run_sourced(prompt, validate=generation.valid_lesson)
         verify = claude_client.structured_generate
@@ -523,7 +560,7 @@ def create_app(db_path=None):
             lesson = generation.deepen_lesson(
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
                 generate=generate, performance=performance, verify_generate=verify,
-                prior_knowledge=prior_knowledge,
+                prior_knowledge=prior_knowledge, misconceptions=misconception_texts,
             )
         except claude_client.ClaudeAuthError:
             return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
@@ -716,6 +753,21 @@ def create_app(db_path=None):
             return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
         except claude_client.ClaudeError:
             return jsonify({"error": "could not grade your teaching"}), 502
+        rubric = generation._extract_rubric(result)
+        if rubric and rubric.get("misconceptions"):
+            try:
+                manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+                lesson_meta = next(
+                    (l for l in courses.flatten_lessons(manifest) if l["id"] == lesson_id), None)
+                lesson_title = lesson_meta["title"] if lesson_meta else lesson_id
+                teacher_text = " ".join(
+                    str(m.get("content", "")) for m in messages if m.get("role") == "user")
+                misconceptions.add_entries(
+                    courses.CONTENT_DIR, course_id, lesson_id, lesson_title, "teach",
+                    [(text, teacher_text[:280]) for text in rubric["misconceptions"]],
+                )
+            except Exception:
+                app.logger.exception("failed to persist misconceptions from /teach")
         return jsonify({"verdict": result["verdict"], "note": generation.sanitize_html(result["note"])})
 
     @app.get("/api/courses/<course_id>/reviews")

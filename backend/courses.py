@@ -201,4 +201,12 @@ def apply_revision(content_dir, course_id, revised, *, now=None):
     # review-items are keyed by lesson id (like spine.json), not exam key -> reuse `seen`,
     # the lesson-id set already validated above and used for spine.prune.
     review_items.prune(content_dir, course_id, seen)
+    # misconceptions.json is deliberately NEVER pruned here, unlike the caches above:
+    # spine/review-items/exams are lesson-CONTENT caches (stale entries are dead weight
+    # once the syllabus changes), but a misconception profile is learner STATE — the
+    # learner's misunderstanding of a concept doesn't evaporate because the course was
+    # reorganized, and silently deleting profile entries without the learner's own
+    # action would violate the "nothing in your profile is unaccountable" trust model
+    # the feature is built on. Its lessonTitle field is a write-time snapshot for
+    # exactly this reason — never re-resolved against the current manifest.
     return revised
