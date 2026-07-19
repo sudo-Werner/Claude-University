@@ -145,7 +145,7 @@ if __name__ == "__main__":
     from backend import claude_client
 
     content_dir = Path(__file__).resolve().parent.parent / "content" / "courses"
-    run = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+    run = claude_client.structured_generate
     for course_dir in sorted(p for p in content_dir.iterdir() if p.is_dir()):
         count = backfill_course(content_dir, course_dir.name, generate=run)
         print(f"{course_dir.name}: {count} spine entries added")

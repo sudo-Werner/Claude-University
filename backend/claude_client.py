@@ -261,3 +261,17 @@ def run_sourced(prompt, *, model=DEFAULT_MODEL, validate=None, spawn=_spawn_cli)
             "Reply again with ONLY the JSON object, no prose, no code fence."
         )
     raise ClaudeError("sourced generation failed after retry")
+
+
+# Route handlers (and a couple of __main__ backfill scripts) need a plain
+# (prompt, validate) callable to pass down into generation.py's ensure_*
+# helpers — run_structured/run_sourced take `validate` keyword-only, so
+# something has to adapt the positional pair. These replace what used to be
+# 16 verbatim-duplicated `lambda prompt, validate: claude_client.run_x(prompt,
+# validate=validate)` closures.
+def structured_generate(prompt, validate):
+    return run_structured(prompt, validate=validate)
+
+
+def sourced_generate(prompt, validate):
+    return run_sourced(prompt, validate=validate)

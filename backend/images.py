@@ -521,7 +521,7 @@ if __name__ == "__main__":
     import sys
 
     _content_dir = Path(__file__).resolve().parent.parent / "content" / "courses"
-    _run = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+    _run = claude_client.structured_generate
     if len(sys.argv) != 2 or (sys.argv[1] != "--all" and not re.match(r"^[a-z0-9-]+$", sys.argv[1])):
         print("usage: python -m backend.images <course_id>|--all")
         raise SystemExit(1)

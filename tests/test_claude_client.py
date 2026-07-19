@@ -17,6 +17,28 @@ def test_extract_fenced_json_by_label():
     assert cc.extract_fenced_json("nothing", "course") is None
 
 
+def test_structured_generate_forwards_prompt_and_validate_as_keyword(monkeypatch):
+    calls = []
+    def fake_run_structured(prompt, validate=None):
+        calls.append((prompt, validate))
+        return {"ok": True}
+    monkeypatch.setattr(cc, "run_structured", fake_run_structured)
+    v = lambda o: True
+    assert cc.structured_generate("hello", v) == {"ok": True}
+    assert calls == [("hello", v)]
+
+
+def test_sourced_generate_forwards_prompt_and_validate_as_keyword(monkeypatch):
+    calls = []
+    def fake_run_sourced(prompt, validate=None):
+        calls.append((prompt, validate))
+        return ({"ok": True}, [])
+    monkeypatch.setattr(cc, "run_sourced", fake_run_sourced)
+    v = lambda o: True
+    assert cc.sourced_generate("hello", v) == ({"ok": True}, [])
+    assert calls == [("hello", v)]
+
+
 def test_run_structured_returns_parsed_json():
     calls = []
     def runner(args):

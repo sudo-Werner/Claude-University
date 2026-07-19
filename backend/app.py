@@ -83,7 +83,7 @@ def create_app(db_path=None):
         # completed lesson's course to restock its Arcade bank. kick_restock's
         # own try-lock and floor check make a spurious nudge (duplicate
         # replay, bank already full) a no-op.
-        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        generate = claude_client.structured_generate
         nudged = set()
         for ev in raw_events:
             if not isinstance(ev, dict) or ev.get("event_type") != "lesson_completed":
@@ -213,8 +213,8 @@ def create_app(db_path=None):
         if not isinstance(brief, dict) or not brief.get("goal"):
             return jsonify({"error": "learnerBrief with a goal is required"}), 400
         # Grounded stages web-search; structured stages don't — same wiring as lessons.
-        generate_sourced = lambda prompt, validate: claude_client.run_sourced(prompt, validate=validate)
-        verify = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        generate_sourced = claude_client.sourced_generate
+        verify = claude_client.structured_generate
         try:
             compiled = compiler.compile_course(brief, generate_sourced=generate_sourced, verify=verify)
         except claude_client.ClaudeAuthError:
@@ -275,7 +275,7 @@ def create_app(db_path=None):
         generate = lambda prompt: claude_client.run_sourced(prompt, validate=generation.valid_lesson)
         # University-grade self-consistency: an audit-first, non-web pass reconciles terminology
         # and guarantees every end-question is answerable from the body (rewrites only on a defect).
-        verify = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        verify = claude_client.structured_generate
         try:
             lesson = generation.ensure_lesson(
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
@@ -400,7 +400,7 @@ def create_app(db_path=None):
             return jsonify({"error": "course not found"}), 404
         body = request.get_json(silent=True) or {}
         answers = body.get("answers")
-        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        generate = claude_client.structured_generate
         conn = db.get_connection(path)
         try:
             with generation._gen_lock(("exam", course_id, exam_key)):
@@ -438,7 +438,7 @@ def create_app(db_path=None):
         if failed is None:
             return jsonify({"error": "nothing to review — no failed attempt on record for this exam"}), 404
         spine_lessons = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"]
-        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        generate = claude_client.structured_generate
         try:
             with generation._gen_lock(("remediation", course_id, exam_key)):
                 session = remediation.ensure_session(
@@ -508,7 +508,7 @@ def create_app(db_path=None):
         prof_data = (prof or {}).get("data")
         # Phase 2: re-ground the deepened lesson in real accredited sources too.
         generate = lambda prompt: claude_client.run_sourced(prompt, validate=generation.valid_lesson)
-        verify = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        verify = claude_client.structured_generate
         try:
             lesson = generation.deepen_lesson(
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
@@ -563,7 +563,7 @@ def create_app(db_path=None):
         work = work.strip() if isinstance(work, str) else ""
         if not work:
             return jsonify({"error": "work is required"}), 400
-        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        generate = claude_client.structured_generate
         conn = db.get_connection(path)
         try:
             result = capstone.submit_capstone(
@@ -738,7 +738,7 @@ def create_app(db_path=None):
         spine_entry = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"].get(lesson_id)
         cached_lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
         existing_checks = cached_lesson.get("checks", []) if isinstance(cached_lesson, dict) else []
-        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        generate = claude_client.structured_generate
         try:
             with generation._gen_lock(("review-items", course_id, lesson_id)):
                 result = review_items.ensure_review_items(
@@ -770,7 +770,7 @@ def create_app(db_path=None):
         if not isinstance(text, str) or not text.strip() or len(text) > notes._MAX_HIGHLIGHT_TEXT:
             return jsonify({"error": "invalid highlight text"}), 400
         spine_entry = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"].get(lesson_id)
-        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        generate = claude_client.structured_generate
         try:
             with generation._gen_lock(("highlight-item", course_id, lesson_id)):
                 item = review_items.make_highlight_item(
@@ -791,8 +791,8 @@ def create_app(db_path=None):
         if manifest is None:
             return jsonify({"error": "course not found"}), 404
         body = request.get_json(silent=True) or {}
-        generate_sourced = lambda prompt, validate: claude_client.run_sourced(prompt, validate=validate)
-        verify = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        generate_sourced = claude_client.sourced_generate
+        verify = claude_client.structured_generate
         try:
             proposed = compiler.revise_course(
                 manifest, body.get("messages", []),
@@ -849,7 +849,7 @@ def create_app(db_path=None):
             conn.close()
         if not pool:
             return jsonify({"status": "locked"})
-        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        generate = claude_client.structured_generate
         round_ = quiz.serve_round(courses.CONTENT_DIR, course_id)
         # kick_restock is idempotent-safe (try-lock + its own floor check), so it
         # is always safe to call here — whether the bank was empty (generating)
@@ -874,7 +874,7 @@ def create_app(db_path=None):
             return jsonify({"error": str(exc)}), 400
         finally:
             conn.close()
-        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        generate = claude_client.structured_generate
         try:
             quiz.kick_restock(courses.CONTENT_DIR, path, course_id, generate=generate)
         except Exception:
