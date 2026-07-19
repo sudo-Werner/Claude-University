@@ -1,7 +1,11 @@
 import datetime
 import json
+from pathlib import Path
 
-from backend import courses
+from backend import courses, srs
+
+HEATMAP_PAST_DAYS = 370
+HEATMAP_FORECAST_DAYS = 30
 
 # A streak day is a day the learner actually studied — opened a lesson, completed a
 # review, attempted a pre-quiz, sat an exam, worked a gap review, or played an
@@ -47,6 +51,56 @@ def streak_days(conn, today=None):
             break
         streak += 1
     return streak
+
+
+def heatmap(conn, content_dir, today=None):
+    """Past study-day counts (all courses, from STUDY_EVENTS, last ~year) plus a
+    forecast of upcoming SM-2-scheduled review load (all courses, next 30 days).
+
+    Only the SM-2 schedule can be forecast — a lesson going due because an exam
+    or quiz round revealed a weak spot is a reactive trigger with no future date,
+    so it surfaces as due today (srs.due_lesson_ids) rather than in this forecast.
+    """
+    today = today or _utc_today()
+    window_start = (today - datetime.timedelta(days=HEATMAP_PAST_DAYS)).isoformat()
+    placeholders = ",".join("?" * len(STUDY_EVENTS))
+    rows = conn.execute(
+        f"SELECT substr(occurred_at, 1, 10) AS day, COUNT(*) AS n FROM events "
+        f"WHERE event_type IN ({placeholders}) AND substr(occurred_at, 1, 10) >= ? "
+        f"GROUP BY day",
+        (*STUDY_EVENTS, window_start),
+    ).fetchall()
+    past = {}
+    for r in rows:
+        try:
+            datetime.date.fromisoformat(r["day"])
+        except ValueError:
+            continue  # malformed timestamp — skip rather than crash the dashboard
+        past[r["day"]] = r["n"]
+
+    forecast = {}
+    horizon = today + datetime.timedelta(days=HEATMAP_FORECAST_DAYS)
+    content_dir = Path(content_dir)
+    if content_dir.exists():
+        for child in sorted(content_dir.iterdir()):
+            if not (child / "course.json").exists():
+                continue
+            manifest = courses.load_manifest(content_dir, child.name)
+            if manifest is None:
+                continue
+            by_lesson = srs.reviews_by_lesson(conn, child.name)
+            if not by_lesson:
+                continue
+            for module in manifest.get("modules", []):
+                for lesson in module.get("lessons", []):
+                    revs = by_lesson.get(lesson.get("id"))
+                    if not revs:
+                        continue
+                    next_review = srs.sm2(revs)["next_review"]
+                    if next_review is not None and today <= next_review <= horizon:
+                        key = next_review.isoformat()
+                        forecast[key] = forecast.get(key, 0) + 1
+    return {"past": past, "forecast": forecast}
 
 
 def _course_titles(content_dir, course_id, cache):

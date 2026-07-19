@@ -136,9 +136,10 @@ def create_app(db_path=None):
         conn = db.get_connection(path)
         try:
             streak = stats.streak_days(conn)
+            heatmap = stats.heatmap(conn, courses.CONTENT_DIR)
         finally:
             conn.close()
-        return jsonify({"streakDays": streak})
+        return jsonify({"streakDays": streak, "heatmap": heatmap})
 
     @app.get("/api/activity")
     def get_activity():

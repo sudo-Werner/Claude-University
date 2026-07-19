@@ -64,6 +64,20 @@ def test_stats_streak_from_study_events(client):
     assert isinstance(body["streakDays"], int)
 
 
+def test_stats_includes_heatmap_past_and_forecast(client, tmp_path, monkeypatch):
+    from backend import courses
+    monkeypatch.setattr(courses, "CONTENT_DIR", tmp_path / "content")
+    client.post("/api/events", json={"events": [{
+        "client_event_id": "hm1", "session_id": "s1",
+        "event_type": "lesson_view", "occurred_at": "2026-07-15T10:00:00+00:00",
+    }]})
+    resp = client.get("/api/stats")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["heatmap"]["past"]["2026-07-15"] == 1
+    assert body["heatmap"]["forecast"] == {}
+
+
 def test_activity_returns_resolved_entries(client, tmp_path, monkeypatch):
     import json as _json
     from backend import courses

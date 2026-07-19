@@ -401,6 +401,7 @@ export async function init({ window, fetch }) {
         skills: ui.manifest.skills || [],
       } : null,
       streakDays: (ui.stats && ui.stats.streakDays) || 0,
+      heatmap: ui.stats && ui.stats.heatmap,
     };
   }
 

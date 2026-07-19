@@ -991,6 +991,17 @@ test("dashboard streak uses singular day and a nudge at zero", () => {
   assert.match(zero, /Study today to start one/);
 });
 
+test("dashboard renders the study heatmap when heatmap data is present", () => {
+  const html = dashboardHTML(
+    { ...DASHBOARD_SEED, heatmap: { past: { "2026-07-15": 2 }, forecast: {} } }, idleTimer);
+  assert.match(html, /STUDY HEATMAP/);
+});
+
+test("dashboard omits the study heatmap when no heatmap data was loaded", () => {
+  const html = dashboardHTML(DASHBOARD_SEED, idleTimer);
+  assert.doesNotMatch(html, /STUDY HEATMAP/);
+});
+
 test("lessonHTML renders the pre-quiz stage instead of the exercise", () => {
   const lesson = { ...SAMPLE_LESSON, preQuiz: { type: "mcq", prompt: "Guess?", choices: ["A", "B"], answer: 0, explanation: "A." } };
   const html = lessonHTML(lesson, { stage: "prequiz", answer: "", hintVisible: false, solutionRevealed: false }, {});

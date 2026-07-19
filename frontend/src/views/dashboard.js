@@ -1,5 +1,6 @@
 import { PHASE_NAMES, PHASE_SECONDS } from "../timer.js";
 import { esc } from "../escape.js";
+import { heatmapHTML } from "./heatmap.js";
 
 function contractHTML(contract) {
   if (!contract) return "";
@@ -85,6 +86,7 @@ export function dashboardHTML(data, timerView) {
       ` : ""}
     </div>
     ${masteryHTML(data.masteryCounts)}
+    ${data.heatmap ? heatmapHTML(data.heatmap) : ""}
     </div>
   `;
 }

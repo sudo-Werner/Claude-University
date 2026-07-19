@@ -4,8 +4,8 @@ import json
 from backend import events, stats
 
 
-def _ev(i, event_type, occurred_at, course_id="c1", topic_id="c1-l1"):
-    return {
+def _ev(i, event_type, occurred_at, course_id="c1", topic_id="c1-l1", payload=None):
+    ev = {
         "client_event_id": f"e{i}",
         "session_id": "s1",
         "event_type": event_type,
@@ -13,6 +13,9 @@ def _ev(i, event_type, occurred_at, course_id="c1", topic_id="c1-l1"):
         "course_id": course_id,
         "topic_id": topic_id,
     }
+    if payload is not None:
+        ev["payload"] = payload
+    return ev
 
 
 TODAY = datetime.date(2026, 7, 15)
@@ -251,3 +254,69 @@ def test_activity_quiz_round_tolerates_malformed_payload(conn, tmp_path):
     out = stats.recent_activity(conn, content, limit=10)
     assert out[0]["type"] == "quiz_round"
     assert "score" not in out[0] or out[0]["score"] is None
+
+
+def test_heatmap_past_counts_study_events_per_day(conn, tmp_path):
+    events.insert_events(conn, [
+        _ev(1, "lesson_view", "2026-07-13T10:00:00+00:00"),
+        _ev(2, "lesson_view", "2026-07-13T14:00:00+00:00"),
+        _ev(3, "lesson_reviewed", "2026-07-14T10:00:00+00:00"),
+    ])
+    result = stats.heatmap(conn, tmp_path, today=TODAY)
+    assert result["past"]["2026-07-13"] == 2
+    assert result["past"]["2026-07-14"] == 1
+    assert "2026-07-15" not in result["past"]
+
+
+def test_heatmap_past_ignores_non_study_events(conn, tmp_path):
+    events.insert_events(conn, [_ev(1, "lesson_check", "2026-07-14T10:00:00+00:00")])
+    result = stats.heatmap(conn, tmp_path, today=TODAY)
+    assert result["past"] == {}
+
+
+def test_heatmap_past_excludes_events_older_than_the_window(conn, tmp_path):
+    old = (TODAY - datetime.timedelta(days=400)).isoformat()
+    events.insert_events(conn, [_ev(1, "lesson_view", f"{old}T10:00:00+00:00")])
+    result = stats.heatmap(conn, tmp_path, today=TODAY)
+    assert result["past"] == {}
+
+
+def test_heatmap_forecast_buckets_by_sm2_next_review_date(conn, tmp_path):
+    content = _write_course(tmp_path)
+    events.insert_events(conn, [
+        _ev(1, "lesson_reviewed", "2026-07-15T10:00:00+00:00",
+            payload={"quality": "good"}),
+    ])
+    result = stats.heatmap(conn, content, today=TODAY)
+    # first "good" review on 2026-07-15 -> sm2 interval=1 -> next_review 2026-07-16
+    assert result["forecast"] == {"2026-07-16": 1}
+
+
+def test_heatmap_forecast_empty_for_never_reviewed_lessons(conn, tmp_path):
+    content = _write_course(tmp_path)
+    result = stats.heatmap(conn, content, today=TODAY)
+    assert result["forecast"] == {}
+
+
+def test_heatmap_forecast_ignores_deleted_courses(conn, tmp_path):
+    events.insert_events(conn, [
+        _ev(1, "lesson_reviewed", "2026-07-15T10:00:00+00:00", course_id="ghost",
+            topic_id="ghost-l1", payload={"quality": "good"}),
+    ])
+    result = stats.heatmap(conn, tmp_path, today=TODAY)
+    assert result["forecast"] == {}
+
+
+def test_heatmap_forecast_excludes_dates_beyond_the_horizon(conn, tmp_path):
+    content = _write_course(tmp_path)
+    # three "good" reviews push the interval well past a 30-day forecast horizon
+    events.insert_events(conn, [
+        _ev(1, "lesson_reviewed", "2026-01-01T10:00:00+00:00",
+            payload={"quality": "good"}),
+        _ev(2, "lesson_reviewed", "2026-01-02T10:00:00+00:00",
+            payload={"quality": "good"}),
+        _ev(3, "lesson_reviewed", "2026-01-08T10:00:00+00:00",
+            payload={"quality": "good"}),
+    ])
+    result = stats.heatmap(conn, content, today=TODAY)
+    assert result["forecast"] == {}
