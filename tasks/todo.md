@@ -18,7 +18,7 @@ Mark items done here with date + merge commit as they land.
   existing `lesson_chat_prompt` test style. Acceptance: a chat asked point-blank for the
   active exercise's answer coaches instead of answering (live-verified); revealed/completed
   items unchanged; suites green.
-- [ ] **2. Study heatmap on the dashboard** [R: Anki Review Heatmap — the most-loved habit
+- [x] **2. Study heatmap on the dashboard** [R: Anki Review Heatmap — the most-loved habit
   surface in the SRS world; passive + honest]
   GitHub-contribution-style calendar: past study days (from STUDY_EVENTS, all courses) AND
   forecast of upcoming review load (from the real SRS queue — we can forecast properly).
@@ -120,6 +120,12 @@ Mark items done here with date + merge commit as they land.
   against the same pivot. Socratic/teach/quiz-question-chat already compliant. Merged
   `99d90cf`, deployed, live-verified on Pi with real Claude calls (declines + hints while
   unrevealed, discusses freely once revealed), ledgered in `.superpowers/sdd/progress.md`.
+- 2026-07-19: Tier 1 item 2 — study heatmap on the dashboard. `stats.heatmap()` aggregates
+  past study-day counts (all courses) + a 30-day SM-2 due-forecast; new `/api/stats.heatmap`
+  field; `heatmap.js` GitHub-style calendar (purple=studied, blue=forecast) alongside the
+  streak stat. Merged `0b4aa64`, deployed, live-verified in a real browser (desktop + phone
+  width, real Pi data matched a hand-computed sample); caught and fixed a desktop grid-area
+  collision with the session card during that verification.
 
 ## Handoff notes
 
