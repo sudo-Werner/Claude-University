@@ -52,6 +52,13 @@ Mark items done here with date + merge commit as they land.
   Acceptance: Chrome shows the install prompt on the HTTPS origin; installed app opens
   standalone and works end-to-end; plain LAN HTTP still works; live-verified from at least
   one device.
+  **STATUS 2026-07-19: (b)+(c) SHIPPED (commit fc58133, deployed, live-verified —
+  manifest.json/sw.js/icons all serve correctly, zero console errors, plain HTTP
+  unaffected). (a) BLOCKED on Werner: `tailscale cert` on the Pi returns "your
+  Tailscale account does not support getting TLS certs" — HTTPS Certificates need
+  enabling at https://login.tailscale.com/admin/dns first (account-level, one click),
+  then the two commands in docs/INSTALL.md finish it. Install prompt can't be
+  live-verified until then — item stays open.**
 
 ## Tier 2 — needs Werner's go/no-go BEFORE building (present, don't assume)
 
