@@ -1685,6 +1685,103 @@ def test_review_items_route_maps_claude_errors(client, tmp_path, monkeypatch):
     assert r.status_code == 503 and r.get_json()["code"] == "reauth"
 
 
+# ---------------------------------------------------------------------------
+# highlight -> review item
+# ---------------------------------------------------------------------------
+
+def test_highlight_review_item_route_creates_and_persists(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, validate=None, **kw: {
+        "item": {"type": "fill", "prompt": "q", "answer": "x", "explanation": "e"}})
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/highlight-review-item",
+                       json={"text": "a passage worth remembering"})
+    assert resp.status_code == 200
+    item = resp.get_json()["item"]
+    assert item["prompt"] == "q" and item["source"] == "highlight" and item["id"].startswith("hi-")
+    stored = json.loads((root / cid / "review-items" / f"{lesson_id}.json").read_text())
+    assert stored["userItems"] == [item]
+
+
+def test_highlight_review_item_route_survives_in_the_review_flow(client, tmp_path, monkeypatch):
+    """The GET review-items route must fold userItems into the served items list —
+    the frontend adopts res.items as-is with no separate handling."""
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, validate=None, **kw: {
+        "item": {"type": "fill", "prompt": "q", "answer": "x", "explanation": "e"}})
+    client.post(f"/api/courses/{cid}/lessons/{lesson_id}/highlight-review-item",
+               json={"text": "a passage worth remembering"})
+
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, validate=None, **kw: {
+        "items": [{"type": "mcq", "prompt": "q1", "choices": ["a", "b"], "answer": 0, "explanation": "e1"}]})
+    resp = client.get(f"/api/courses/{cid}/lessons/{lesson_id}/review-items")
+    assert resp.status_code == 200
+    items = resp.get_json()["items"]
+    assert len(items) == 2
+    assert any(i.get("source") == "highlight" for i in items)
+
+
+def test_highlight_review_item_route_rejects_empty_and_oversized_text(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    assert client.post(f"/api/courses/{cid}/lessons/{lesson_id}/highlight-review-item",
+                       json={"text": ""}).status_code == 400
+    assert client.post(f"/api/courses/{cid}/lessons/{lesson_id}/highlight-review-item",
+                       json={"text": "   "}).status_code == 400
+    assert client.post(f"/api/courses/{cid}/lessons/{lesson_id}/highlight-review-item",
+                       json={"text": "x" * 2001}).status_code == 400
+    assert client.post(f"/api/courses/{cid}/lessons/{lesson_id}/highlight-review-item",
+                       json={}).status_code == 400
+
+
+def test_highlight_review_item_route_404s(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    body = {"text": "some passage"}
+    assert client.post(f"/api/courses/{cid}/lessons/nope/highlight-review-item",
+                       json=body).status_code == 404
+    assert client.post("/api/courses/nope/lessons/x/highlight-review-item",
+                       json=body).status_code == 404
+    assert client.post(f"/api/courses/Bad_Id/lessons/{lesson_id}/highlight-review-item",
+                       json=body).status_code == 404
+
+
+def test_highlight_review_item_route_maps_claude_errors(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    body = {"text": "some passage"}
+
+    def boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeError("nope")
+    monkeypatch.setattr(claude_client, "run_structured", boom)
+    assert client.post(f"/api/courses/{cid}/lessons/{lesson_id}/highlight-review-item",
+                       json=body).status_code == 502
+
+    def auth_boom(prompt, validate=None, **kw):
+        raise claude_client.ClaudeAuthError("login")
+    monkeypatch.setattr(claude_client, "run_structured", auth_boom)
+    r = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/highlight-review-item", json=body)
+    assert r.status_code == 503 and r.get_json()["code"] == "reauth"
+
+
 def test_get_lesson_route_includes_prior_knowledge_in_prompt(client, tmp_path, monkeypatch):
     from backend import courses, claude_client, events, db
     root = tmp_path / "courses"; root.mkdir()

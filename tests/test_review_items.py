@@ -155,3 +155,92 @@ def test_ensure_review_items_corrupt_cache_regenerates(tmp_path):
         tmp_path, "c1", "c1-l1", 1, lesson_meta=meta, spine_entry=None,
         existing_checks=[], generate=lambda p, v: _good_items())
     assert result["reviewCount"] == 1 and len(result["items"]) == 2
+
+
+# ---- highlight -> review item ----
+
+def _good_highlight_item():
+    return {"item": {"type": "fill", "prompt": "What does a for loop do?",
+                      "answer": "repeats a block of code", "explanation": "that's its job"}}
+
+
+def test_highlight_item_prompt_includes_highlighted_text_and_lesson_context():
+    p = review_items.highlight_item_prompt("for loops repeat code", _lesson_meta(OBJECTIVES), None)
+    assert "for loops repeat code" in p
+    assert '"Loops"' in p and '"Control Flow"' in p
+    assert 'Reply with ONLY JSON, no prose, no fence: {"item":' in p
+
+
+def test_highlight_item_prompt_includes_spine_when_present():
+    p = review_items.highlight_item_prompt("for loops repeat code", _lesson_meta(OBJECTIVES), SPINE_ENTRY)
+    assert "Loops repeat a block of code." in p
+
+
+def test_valid_highlight_item_accepts_wrapped_check_rejects_bad_shapes():
+    assert review_items.valid_highlight_item(_good_highlight_item())
+    assert not review_items.valid_highlight_item({"item": {"type": "mcq"}})
+    assert not review_items.valid_highlight_item({})
+    assert not review_items.valid_highlight_item({"items": [_good_highlight_item()["item"]]})
+    assert not review_items.valid_highlight_item(None)
+
+
+def test_make_highlight_item_generates_finalizes_ids_and_persists(tmp_path):
+    meta = _lesson_meta(OBJECTIVES)
+    item = review_items.make_highlight_item(
+        tmp_path, "c1", "c1-l1", "for loops repeat code",
+        lesson_meta=meta, spine_entry=None, generate=lambda p, v: _good_highlight_item())
+    assert item["prompt"] == "What does a for loop do?"
+    assert item["source"] == "highlight"
+    assert item["id"].startswith("hi-")
+    stored = review_items.load_items(tmp_path, "c1", "c1-l1")
+    assert stored["userItems"] == [item]
+    assert stored["items"] == []          # no AI-generated fresh items exist yet
+    assert stored["reviewCount"] == -1    # sentinel: never matches a real review count
+
+
+def test_make_highlight_item_preserves_existing_ai_items_and_review_count(tmp_path):
+    meta = _lesson_meta(OBJECTIVES)
+    review_items.ensure_review_items(
+        tmp_path, "c1", "c1-l1", 3, lesson_meta=meta, spine_entry=None,
+        existing_checks=[], generate=lambda p, v: _good_items())
+    item = review_items.make_highlight_item(
+        tmp_path, "c1", "c1-l1", "for loops repeat code",
+        lesson_meta=meta, spine_entry=None, generate=lambda p, v: _good_highlight_item())
+    stored = review_items.load_items(tmp_path, "c1", "c1-l1")
+    assert stored["reviewCount"] == 3
+    assert len(stored["items"]) == 2      # untouched
+    assert stored["userItems"] == [item]
+
+
+def test_make_highlight_item_appends_to_existing_user_items(tmp_path):
+    meta = _lesson_meta(OBJECTIVES)
+    first = review_items.make_highlight_item(
+        tmp_path, "c1", "c1-l1", "first passage",
+        lesson_meta=meta, spine_entry=None, generate=lambda p, v: _good_highlight_item())
+    second = review_items.make_highlight_item(
+        tmp_path, "c1", "c1-l1", "second passage",
+        lesson_meta=meta, spine_entry=None, generate=lambda p, v: _good_highlight_item())
+    stored = review_items.load_items(tmp_path, "c1", "c1-l1")
+    assert stored["userItems"] == [first, second]
+    assert first["id"] != second["id"]
+
+
+def test_ensure_review_items_preserves_user_items_across_regeneration(tmp_path):
+    meta = _lesson_meta(OBJECTIVES)
+    user_item = review_items.make_highlight_item(
+        tmp_path, "c1", "c1-l1", "for loops repeat code",
+        lesson_meta=meta, spine_entry=None, generate=lambda p, v: _good_highlight_item())
+    regenerated = review_items.ensure_review_items(
+        tmp_path, "c1", "c1-l1", 1, lesson_meta=meta, spine_entry=None,
+        existing_checks=[], generate=lambda p, v: _good_items())
+    assert regenerated["reviewCount"] == 1
+    assert len(regenerated["items"]) == 2
+    assert regenerated["userItems"] == [user_item]
+
+
+def test_load_items_defaults_user_items_for_back_compat_files(tmp_path):
+    path = tmp_path / "c1" / "review-items" / "c1-l1.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"lessonId": "c1-l1", "reviewCount": 1, "items": []}))
+    loaded = review_items.load_items(tmp_path, "c1", "c1-l1")
+    assert loaded["userItems"] == []

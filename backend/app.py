@@ -744,7 +744,38 @@ def create_app(db_path=None):
             return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
         except claude_client.ClaudeError:
             return jsonify({"error": "could not prepare fresh review questions"}), 502
-        return jsonify({"items": result["items"]})
+        # userItems (highlight-derived, persistent) ride along with the AI-fresh set —
+        # the review screen treats the combined list as one flat array of check items.
+        return jsonify({"items": result["items"] + result.get("userItems", [])})
+
+    @app.post("/api/courses/<course_id>/lessons/<lesson_id>/highlight-review-item")
+    def post_highlight_review_item(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        lesson_meta = next(
+            (l for l in courses.flatten_lessons(manifest) if l["id"] == lesson_id), None)
+        if lesson_meta is None:
+            return jsonify({"error": "lesson not found"}), 404
+        body = request.get_json(silent=True) or {}
+        text = body.get("text")
+        if not isinstance(text, str) or not text.strip() or len(text) > notes._MAX_HIGHLIGHT_TEXT:
+            return jsonify({"error": "invalid highlight text"}), 400
+        spine_entry = spine.load_spine(courses.CONTENT_DIR, course_id)["lessons"].get(lesson_id)
+        generate = lambda prompt, validate: claude_client.run_structured(prompt, validate=validate)
+        try:
+            with generation._gen_lock(("highlight-item", course_id, lesson_id)):
+                item = review_items.make_highlight_item(
+                    courses.CONTENT_DIR, course_id, lesson_id, text.strip(),
+                    lesson_meta=lesson_meta, spine_entry=spine_entry, generate=generate,
+                )
+        except claude_client.ClaudeAuthError:
+            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+        except claude_client.ClaudeError:
+            return jsonify({"error": "could not create a review item from that highlight"}), 502
+        return jsonify({"item": item})
 
     @app.post("/api/courses/<course_id>/revise")
     def post_course_revise(course_id):

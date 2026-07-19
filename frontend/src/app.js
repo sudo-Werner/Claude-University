@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback, getQuizRound, postQuizResults, getQuizStats } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { arcadeHTML, arcadeGeneratingHTML, arcadeLockedHTML, arcadeTimeoutHTML, hostIntroHTML, questionHTML, gradeChoice, matchBoardHTML, matchUpInit, matchUpSelectLeft, matchUpSelectRight, matchUpScore, arcadeResultHTML } from "./views/arcade.js";
 import { shellHTML, feedbackBarHTML } from "./views/shell.js";
@@ -155,7 +155,8 @@ export async function init({ window, fetch }) {
 
   root.addEventListener("click", (e) => {
     const mark = e.target.closest("mark.highlight");
-    if (mark) { removeHighlightAt(mark); return; }
+    if (mark) { showHighlightMenu(mark); return; }
+    if (highlightMenu && !e.target.closest(".highlight-menu")) hideHighlightMenu();
     const fbToggle = e.target.closest('[data-action="feedback-toggle"]');
     if (fbToggle) {
       // Navigation repaints the shell with an empty slot without touching
@@ -273,9 +274,9 @@ export async function init({ window, fetch }) {
     applyHighlight(container, highlight);
     saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
   }
-  // Tapping any <mark> removes just that highlight: drop its id from the stored list,
-  // unwrap its mark(s) back into plain text (no re-render needed -- this mutates the
-  // live DOM directly), and save immediately (same non-debounced trigger as creation).
+  // Removes one highlight: drop its id from the stored list, unwrap its mark(s) back
+  // into plain text (no re-render needed -- this mutates the live DOM directly), and
+  // save immediately (same non-debounced trigger as creation).
   function removeHighlightAt(mark) {
     const container = promptContainer();
     const id = mark.dataset.highlightId;
@@ -284,6 +285,68 @@ export async function init({ window, fetch }) {
     ws.highlights = (ws.highlights || []).filter((h) => h.id !== id);
     removeHighlightMarks(container, id);
     saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+  }
+
+  // Tapping any <mark> opens a small 2-action menu instead of removing it outright:
+  // "Remove" (the old behavior) or "Make review item" (a paid, one-shot Claude call
+  // that turns the highlighted passage into a retrieval-practice question, persisted
+  // server-side at backend/review_items.py's userItems -- a store independent of this
+  // workspace's highlights list, so removing the highlight afterward never deletes the
+  // item it produced). Tapping the same mark again toggles the menu closed.
+  let highlightMenu = null;
+  let highlightMenuId = null;
+  function hideHighlightMenu() {
+    if (highlightMenu) { highlightMenu.remove(); highlightMenu = null; }
+    highlightMenuId = null;
+  }
+  function showHighlightMenu(mark) {
+    const id = mark.dataset.highlightId;
+    if (!id) return;
+    if (highlightMenuId === id) { hideHighlightMenu(); return; }
+    hideHighlightMenu();
+    const menu = doc.createElement("div");
+    menu.className = "highlight-menu";
+    menu.innerHTML =
+      '<button type="button" data-action="hl-review">Make review item</button>' +
+      '<button type="button" data-action="hl-remove">Remove</button>';
+    doc.body.appendChild(menu);
+    const rect = mark.getBoundingClientRect();
+    menu.style.top = `${Math.max(8, rect.top - 76)}px`;
+    menu.style.left = `${rect.left}px`;
+    menu.querySelector('[data-action="hl-remove"]').addEventListener("click", () => {
+      removeHighlightAt(mark);
+      hideHighlightMenu();
+    });
+    menu.querySelector('[data-action="hl-review"]').addEventListener("click", () => makeReviewItemFromHighlight(mark, menu));
+    highlightMenu = menu;
+    highlightMenuId = id;
+  }
+  // Busy-guards both buttons for the duration of the call (the double-click-races-a-
+  // paid-call idiom used elsewhere -- e.g. teach-start's `entering` guard) so a fast
+  // second tap can't fire two generations for the same highlight.
+  function makeReviewItemFromHighlight(mark, menu) {
+    const id = mark.dataset.highlightId;
+    const ws = ui.lessonState.ws;
+    const highlight = ws && (ws.highlights || []).find((h) => h.id === id);
+    if (!highlight) { hideHighlightMenu(); return; }
+    const reviewBtn = menu.querySelector('[data-action="hl-review"]');
+    const removeBtn = menu.querySelector('[data-action="hl-remove"]');
+    reviewBtn.disabled = true;
+    removeBtn.disabled = true;
+    reviewBtn.textContent = "Adding…";
+    const courseId = ui.courseId;
+    const lessonId = ui.lesson.id;
+    makeHighlightReviewItem({ fetch, courseId, lessonId, text: highlight.text }).then((res) => {
+      if (highlightMenu !== menu) return; // menu was dismissed or replaced mid-request
+      if (res.error) {
+        reviewBtn.textContent = "Couldn't add — try again";
+        reviewBtn.disabled = false;
+        removeBtn.disabled = false;
+        return;
+      }
+      reviewBtn.textContent = "Added to review";
+      window.setTimeout(() => { if (highlightMenu === menu) hideHighlightMenu(); }, 900);
+    });
   }
 
   // ---- diagnostic (unchanged flow, now lands on the home) ----
@@ -1608,6 +1671,7 @@ export async function init({ window, fetch }) {
 
   function paintLesson() {
     hideHighlightBtn(); // the DOM this button points at is about to be rebuilt
+    hideHighlightMenu(); // same reason -- its target mark is about to be rebuilt
     const view = root.querySelector("#view");
     const nav = { hasPrev: !!adjacentLesson(-1), hasNext: !!adjacentLesson(1) };
     view.innerHTML = lessonHTML(ui.lesson, ui.lessonState, nav);

@@ -153,6 +153,20 @@ export async function loadReviewItems({ fetch, courseId, lessonId }) {
   }
 }
 
+export async function makeHighlightReviewItem({ fetch, courseId, lessonId, text }) {
+  const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/highlight-review-item`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!resp.ok) {
+    let message = "Couldn't create a review item from that highlight.";
+    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
+    return { error: message };
+  }
+  return resp.json();
+}
+
 export async function createCourse({ fetch, proposal }) {
   const resp = await fetch("/api/courses", {
     method: "POST",

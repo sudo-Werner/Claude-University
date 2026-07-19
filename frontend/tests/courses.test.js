@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, getQuizRound, postQuizResults, getQuizStats } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -100,6 +100,25 @@ test("deepenLesson returns an error shape on non-ok", async () => {
   const fetch = async () => ({ ok: false, status: 503, json: async () => ({ error: "reauth" }) });
   const r = await deepenLesson({ fetch, courseId: "c", lessonId: "c-l1" });
   assert.equal(r.error, "reauth");
+});
+
+test("makeHighlightReviewItem posts the highlighted text and returns the item", async () => {
+  let url, opts;
+  const fetch = async (u, o) => {
+    url = u; opts = o;
+    return { ok: true, json: async () => ({ item: { id: "hi-1", prompt: "q", source: "highlight" } }) };
+  };
+  const r = await makeHighlightReviewItem({ fetch, courseId: "c", lessonId: "c-l1", text: "worth remembering" });
+  assert.equal(url, "/api/courses/c/lessons/c-l1/highlight-review-item");
+  assert.equal(opts.method, "POST");
+  assert.deepEqual(JSON.parse(opts.body), { text: "worth remembering" });
+  assert.equal(r.item.id, "hi-1");
+});
+
+test("makeHighlightReviewItem returns an error shape on non-ok", async () => {
+  const fetch = async () => ({ ok: false, status: 502, json: async () => ({ error: "down" }) });
+  const r = await makeHighlightReviewItem({ fetch, courseId: "c", lessonId: "c-l1", text: "x" });
+  assert.equal(r.error, "down");
 });
 
 test("loadCapstone fetches by course and scope", async () => {
