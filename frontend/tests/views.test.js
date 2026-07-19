@@ -12,6 +12,7 @@ import { syllabusHTML } from "../src/views/syllabus.js";
 import { homeHTML } from "../src/views/home.js";
 import { activateHTML } from "../src/views/activate.js";
 import { myNotesHTML } from "../src/views/mynotes.js";
+import { misconceptionsHTML } from "../src/views/misconceptions.js";
 const DASHBOARD_SEED = {
   topic: "Backpropagation, intuitively",
   sub: "Module 3 · Neural Networks · Lesson 2",
@@ -254,6 +255,44 @@ test("myNotesHTML escapes notes and highlight text", () => {
   assert.doesNotMatch(html, /<img src=x>/);
   assert.doesNotMatch(html, /<script>/);
   assert.doesNotMatch(html, /<b>bold<\/b>/);
+});
+
+test("misconceptionsHTML renders entries grouped by lesson, newest lesson first", () => {
+  const html = misconceptionsHTML({ entries: [
+    { id: "mc-1", text: "thinks X is always true", excerpt: "X is definitely always true",
+      lessonId: "c-l1", lessonTitle: "Intro", source: "explain", occurredAt: "2026-07-19T10:00:00Z" },
+    { id: "mc-2", text: "confuses Y with Z", excerpt: "Y and Z are the same thing right",
+      lessonId: "c-l2", lessonTitle: "Loops", source: "teach", occurredAt: "2026-07-19T11:00:00Z" },
+  ] });
+  assert.match(html, /Misconceptions/);
+  assert.match(html, /thinks X is always true/);
+  assert.match(html, /X is definitely always true/);
+  assert.match(html, /Intro/);
+  assert.match(html, /confuses Y with Z/);
+  assert.match(html, /Loops/);
+  assert.match(html, /data-action="delete-misconception"/);
+  assert.match(html, /data-entry="mc-1"/);
+  assert.match(html, /data-entry="mc-2"/);
+});
+
+test("misconceptionsHTML shows an empty-state nudge when nothing is recorded", () => {
+  const html = misconceptionsHTML({ entries: [] });
+  assert.match(html, /Nothing here yet/);
+});
+
+test("misconceptionsHTML escapes entry text, excerpt, and lesson title", () => {
+  const html = misconceptionsHTML({ entries: [
+    { id: "mc-1", text: "<script>alert(1)</script>", excerpt: "<b>bold</b>",
+      lessonId: "c-l1", lessonTitle: "<img src=x>", source: "explain", occurredAt: "2026-07-19T10:00:00Z" },
+  ] });
+  assert.doesNotMatch(html, /<script>/);
+  assert.doesNotMatch(html, /<b>bold<\/b>/);
+  assert.doesNotMatch(html, /<img src=x>/);
+});
+
+test("misconceptionsHTML includes a back nav action", () => {
+  const html = misconceptionsHTML({ entries: [] });
+  assert.match(html, /data-action="back"/);
 });
 
 test("libraryHTML shows a 'used in your lessons' roll-up when present", () => {
