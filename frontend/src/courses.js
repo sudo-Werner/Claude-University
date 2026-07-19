@@ -1,3 +1,16 @@
+// Shared by every fetch wrapper below that surfaces a server error message: a
+// non-ok response's body is normally {"error": "..."}, but a malformed or
+// non-JSON body must never throw here — the caller still gets a usable
+// message, just the fallback instead of a server-supplied one.
+async function parseErrorBody(resp, fallback) {
+  let message = fallback;
+  try {
+    const body = await resp.json();
+    if (body && body.error) message = body.error;
+  } catch (e) {}
+  return message;
+}
+
 export async function listCourses({ fetch, endpoint = "/api/courses" }) {
   const resp = await fetch(endpoint);
   if (!resp.ok) return [];
@@ -14,9 +27,7 @@ export async function loadCourse({ fetch, courseId }) {
 export async function loadLesson({ fetch, courseId, lessonId }) {
   const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}`);
   if (!resp.ok) {
-    let message = "Couldn't load this lesson. Please try again.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't load this lesson. Please try again.") };
   }
   return resp.json();
 }
@@ -43,9 +54,7 @@ export async function gradeAnswer({ fetch, courseId, lessonId, answer }) {
     body: JSON.stringify({ answer }),
   });
   if (!resp.ok) {
-    let message = "Couldn't check your answer right now.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't check your answer right now.") };
   }
   return resp.json();
 }
@@ -57,9 +66,7 @@ export async function explainAnswer({ fetch, courseId, lessonId, explanation }) 
     body: JSON.stringify({ explanation }),
   });
   if (!resp.ok) {
-    let message = "Couldn't read your explanation right now.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't read your explanation right now.") };
   }
   return resp.json();
 }
@@ -74,9 +81,7 @@ export async function sendFeedback({ fetch, text, screen = null, courseId = null
       body: JSON.stringify({ text, screen, courseId, lessonId }),
     });
     if (!resp.ok) {
-      let message = "Couldn't send your feedback right now.";
-      try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-      return { error: message };
+      return { error: await parseErrorBody(resp, "Couldn't send your feedback right now.") };
     }
     return await resp.json();
   } catch (e) {
@@ -91,9 +96,7 @@ export async function gradeTeaching({ fetch, courseId, lessonId, messages }) {
     body: JSON.stringify({ messages }),
   });
   if (!resp.ok) {
-    let message = "Couldn't grade your teaching right now.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't grade your teaching right now.") };
   }
   return resp.json();
 }
@@ -101,9 +104,7 @@ export async function gradeTeaching({ fetch, courseId, lessonId, messages }) {
 export async function loadLibrary({ fetch, courseId }) {
   const resp = await fetch(`/api/courses/${courseId}/library`);
   if (!resp.ok) {
-    let message = "Couldn't compile the library right now.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't compile the library right now.") };
   }
   return resp.json();
 }
@@ -111,9 +112,7 @@ export async function loadLibrary({ fetch, courseId }) {
 export async function loadCapstone({ fetch, courseId, scope }) {
   const resp = await fetch(`/api/courses/${courseId}/capstone/${scope}`);
   if (!resp.ok) {
-    let message = "Couldn't load the real-world connections right now.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't load the real-world connections right now.") };
   }
   return resp.json();
 }
@@ -121,9 +120,7 @@ export async function loadCapstone({ fetch, courseId, scope }) {
 export async function deepenLesson({ fetch, courseId, lessonId }) {
   const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/deepen`, { method: "POST" });
   if (!resp.ok) {
-    let message = "Couldn't rewrite this lesson right now.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't rewrite this lesson right now.") };
   }
   return resp.json();
 }
@@ -141,9 +138,7 @@ export async function loadReviewItems({ fetch, courseId, lessonId }) {
   try {
     const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/review-items`, { signal: controller.signal });
     if (!resp.ok) {
-      let message = "Couldn't prepare fresh review questions right now.";
-      try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-      return { error: message };
+      return { error: await parseErrorBody(resp, "Couldn't prepare fresh review questions right now.") };
     }
     return await resp.json();
   } catch (e) {
@@ -160,9 +155,7 @@ export async function makeHighlightReviewItem({ fetch, courseId, lessonId, text 
     body: JSON.stringify({ text }),
   });
   if (!resp.ok) {
-    let message = "Couldn't create a review item from that highlight.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't create a review item from that highlight.") };
   }
   return resp.json();
 }
@@ -185,9 +178,7 @@ export async function compileProgram({ fetch, learnerBrief }) {
     body: JSON.stringify({ learnerBrief }),
   });
   if (!resp.ok) {
-    let message = "Couldn't build your program right now. Please try again.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't build your program right now. Please try again.") };
   }
   const body = await resp.json();
   return body.course;
@@ -200,9 +191,7 @@ export async function reviseCourse({ fetch, courseId, messages }) {
     body: JSON.stringify({ messages }),
   });
   if (!resp.ok) {
-    let message = "Couldn't propose changes right now. Please try again.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't propose changes right now. Please try again.") };
   }
   return resp.json();
 }
@@ -214,9 +203,7 @@ export async function applyRevision({ fetch, courseId, course }) {
     body: JSON.stringify({ course }),
   });
   if (!resp.ok) {
-    let message = "Couldn't apply the revision right now. Please try again.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't apply the revision right now. Please try again.") };
   }
   const body = await resp.json();
   return body.course;
@@ -244,9 +231,7 @@ export async function submitExam({ fetch, courseId, examKey, answers }) {
     body: JSON.stringify({ answers }),
   });
   if (!resp.ok) {
-    let message = "Couldn't grade the exam right now — your answers are still here, try again.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't grade the exam right now — your answers are still here, try again.") };
   }
   return resp.json();
 }
@@ -254,9 +239,7 @@ export async function submitExam({ fetch, courseId, examKey, answers }) {
 export async function startRemediation({ fetch, courseId, examKey }) {
   const resp = await fetch(`/api/courses/${courseId}/exams/${examKey}/remediation`, { method: "POST" });
   if (!resp.ok) {
-    let message = "Couldn't prepare the gap review right now.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't prepare the gap review right now.") };
   }
   return resp.json();
 }
@@ -274,9 +257,7 @@ export async function gradeRemediationApply({ fetch, courseId, examKey, gapIndex
     body: JSON.stringify({ gapIndex, answer }),
   });
   if (!resp.ok) {
-    let message = "Couldn't grade this answer right now.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't grade this answer right now.") };
   }
   return resp.json();
 }
@@ -288,9 +269,7 @@ export async function submitCapstone({ fetch, courseId, scope, work }) {
     body: JSON.stringify({ work }),
   });
   if (!resp.ok) {
-    let message = "Couldn't grade your capstone right now.";
-    try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-    return { error: message };
+    return { error: await parseErrorBody(resp, "Couldn't grade your capstone right now.") };
   }
   return resp.json();
 }
@@ -313,9 +292,7 @@ export async function postQuizResults({ fetch, courseId, result }) {
       body: JSON.stringify(result),
     });
     if (!resp.ok) {
-      let message = "Couldn't save your result right now.";
-      try { const body = await resp.json(); if (body && body.error) message = body.error; } catch (e) {}
-      return { error: message };
+      return { error: await parseErrorBody(resp, "Couldn't save your result right now.") };
     }
     return await resp.json();
   } catch (e) {
