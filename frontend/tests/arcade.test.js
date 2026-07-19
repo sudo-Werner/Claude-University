@@ -200,6 +200,28 @@ test("arcadeResultHTML shows the rounded percentage and score", () => {
   assert.ok(html.includes('data-action="arcade-back"'));
 });
 
+test("arcadeResultHTML lists missed lessons sorted by miss count, titles escaped", () => {
+  const html = arcadeResultHTML(
+    { score: 6, total: 8, missed: { "c1-l2": 1, "c1-l5": 3 } },
+    { "c1-l2": "Neurons <fast>", "c1-l5": "Synapses" });
+  assert.match(html, /Review what you missed/);
+  const iSyn = html.indexOf("Synapses");
+  const iNeu = html.indexOf("Neurons &lt;fast&gt;");
+  assert.ok(iSyn !== -1 && iNeu !== -1 && iSyn < iNeu);
+  assert.ok(html.includes('data-lesson="c1-l5"'));
+  assert.match(html, /missed 3/);
+});
+
+test("arcadeResultHTML falls back to the lesson id when no title is known", () => {
+  const html = arcadeResultHTML({ score: 1, total: 2, missed: { "c1-l9": 1 } }, {});
+  assert.ok(html.includes("c1-l9"));
+});
+
+test("arcadeResultHTML shows no missed section on a perfect round or missing map", () => {
+  assert.ok(!arcadeResultHTML({ score: 8, total: 8, missed: {} }).includes("missed"));
+  assert.ok(!arcadeResultHTML({ score: 6, total: 8 }).includes("missed"));
+});
+
 // ---- post-answer "Ask about this question" chat (design: 2026-07-17) ----
 
 test("questionHTML shows no quiz-chat affordance while a question is still open", () => {

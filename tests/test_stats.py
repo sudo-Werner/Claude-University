@@ -215,3 +215,39 @@ def test_activity_labels_capstone_results(conn, tmp_path):
     assert entries[0]["score"] == 0.5 and entries[0]["passed"] is False
     assert entries[1]["examLabel"] == "Sorting capstone"
     assert entries[1]["passed"] is True
+
+
+def test_streak_counts_an_arcade_only_day(conn):
+    events.insert_events(conn, [
+        _ev(1, "quiz_round", "2026-07-15T09:00:00+00:00", topic_id="r-abc123")])
+    assert stats.streak_days(conn, today=TODAY) == 1
+
+
+def test_activity_includes_quiz_round_with_score(conn, tmp_path):
+    content = _write_course(tmp_path)
+    events.insert_events(conn, [
+        _ev(1, "quiz_round", "2026-07-15T10:00:00+00:00", topic_id="r-abc123")])
+    conn.execute(
+        "UPDATE events SET payload = ? WHERE client_event_id = 'e1'",
+        (json.dumps({"format": "rapid_fire", "score": 7, "total": 8, "missed": {}}),),
+    )
+    conn.commit()
+    out = stats.recent_activity(conn, content, limit=10)
+    assert out[0]["type"] == "quiz_round"
+    assert out[0]["courseTitle"] == "Machine Learning"
+    assert out[0]["lessonTitle"] is None
+    assert out[0]["score"] == 7 and out[0]["total"] == 8
+
+
+def test_activity_quiz_round_tolerates_malformed_payload(conn, tmp_path):
+    content = _write_course(tmp_path)
+    events.insert_events(conn, [
+        _ev(1, "quiz_round", "2026-07-15T10:00:00+00:00", topic_id="r-abc123")])
+    conn.execute(
+        "UPDATE events SET payload = ? WHERE client_event_id = 'e1'",
+        (json.dumps({"score": "seven", "total": 0}),),
+    )
+    conn.commit()
+    out = stats.recent_activity(conn, content, limit=10)
+    assert out[0]["type"] == "quiz_round"
+    assert "score" not in out[0] or out[0]["score"] is None

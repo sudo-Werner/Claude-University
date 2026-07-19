@@ -939,12 +939,15 @@ export async function init({ window, fetch }) {
         ? `<div class="prompt">Score could not be saved.</div>` +
           `<button class="btn-secondary" data-action="arcade-retry-save" ${st.saving ? "disabled" : ""}>${st.saving ? "Retrying…" : "Retry save"}</button>`
         : "";
-      view.innerHTML = arcadeResultHTML(st) + saveNotice;
+      view.innerHTML = arcadeResultHTML(st, st.lessonTitles || {}) + saveNotice;
       view.querySelector('[data-action="arcade-play-again"]').addEventListener("click", () => startArcadeRound(ui.arcadeCourseId));
       view.querySelector('[data-action="arcade-back"]').addEventListener("click", showArcade);
       if (st.saveFailed && !st.saving) {
         view.querySelector('[data-action="arcade-retry-save"]').addEventListener("click", retrySaveResult);
       }
+      view.querySelectorAll("[data-lesson]").forEach((b) => {
+        b.addEventListener("click", () => openMissedLesson(b.getAttribute("data-lesson")));
+      });
       return;
     }
     if (st.round.format === "match_up") {
@@ -1176,6 +1179,7 @@ export async function init({ window, fetch }) {
       total: st.total,
       missed: st.missed,
     };
+    if (Object.keys(st.missed).length) loadMissedTitles(st).catch(() => {});
     paintArcadePlay();
     await saveRoundResult(st);
   }
@@ -1187,6 +1191,31 @@ export async function init({ window, fetch }) {
     st.saving = false;
     st.saveFailed = !result || !!result.error;
     if (st.phase === "result") paintArcadePlay();
+  }
+
+  // Titles for the result screen's missed-lesson chips. Fail-open: the score renders
+  // immediately with raw-id chips; titles repaint when (if) the manifest arrives.
+  async function loadMissedTitles(st) {
+    const course = await loadCourse({ fetch, courseId: ui.arcadeCourseId });
+    if (ui.quizPlay !== st || ui.screen !== "arcade-play") return; // navigated away mid-fetch
+    if (!course || course.error) return;
+    const titles = {};
+    (course.modules || []).forEach((m) => (m.lessons || []).forEach((l) => { titles[l.id] = l.title; }));
+    st.lessonTitles = titles;
+    if (st.phase === "result") paintArcadePlay();
+  }
+
+  // Chip tap: enter the course's context first (the Arcade is course-less), then open
+  // the lesson so Prev/Next/curriculum all work. Mirrors openCourse's manifest guard.
+  // Guarded like loadMissedTitles/saveRoundResult: bail if the player navigated away
+  // (Play again / Back to Arcade) while refreshSummary was in flight.
+  async function openMissedLesson(lessonId) {
+    const st = ui.quizPlay;
+    ui.courseId = ui.arcadeCourseId;
+    await refreshSummary();
+    if (ui.quizPlay !== st || ui.screen !== "arcade-play") return; // navigated away mid-fetch
+    if (!ui.manifest) { showHome(); return; }
+    openLesson(lessonId);
   }
 
   function retrySaveResult() {
@@ -1221,8 +1250,15 @@ export async function init({ window, fetch }) {
     ui.loadSeq = (ui.loadSeq || 0) + 1;
     const seq = ui.loadSeq;
     ui.screen = "lesson-loading";
-    const view = root.querySelector("#view");
-    if (view) startLoading(view, "lesson", LESSON_STAGES);
+    // Cache-first: nearly every open is an already-generated lesson that resolves in a
+    // few hundred ms, and painting the skeleton immediately made every open flash it.
+    // Delay the paint; the re-check makes a fast open (or navigating away) skip it, and
+    // the slow paths (generation, slow Pi) still get the skeleton after 200ms.
+    window.setTimeout(() => {
+      if (ui.screen !== "lesson-loading" || ui.loadSeq !== seq) return;
+      const v = root.querySelector("#view");
+      if (v) startLoading(v, "lesson", LESSON_STAGES);
+    }, 200);
     // Prior-knowledge activation: a not-yet-generated lesson gets one free-text
     // question before the slow generation call; an already-generated lesson (or a
     // failed/errored status check) opens exactly as before — the feature only adds.
