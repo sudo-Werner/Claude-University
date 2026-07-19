@@ -1,4 +1,6 @@
 import { esc } from "../escape.js";
+import { checkItemHTML } from "./checkItem.js";
+import { gradeCardHTML } from "./verdictCard.js";
 
 // A corrective session after a failed exam: per gap, a new-angle explanation
 // (server-sanitized, renders raw) plus fresh practice items graded client-side
@@ -46,30 +48,11 @@ export function remediationComplete(session, state) {
 }
 
 function practiceItem(check, k, state) {
-  const result = state.results && state.results[k];
-  const answered = !!result;
-  let body;
-  if (check.type === "mcq") {
-    body = check.choices
-      .map((c, j) => {
-        let cls = "choice";
-        if (answered) {
-          if (j === check.answer) cls = "choice correct";
-          else if (j === Number(state.answers[k])) cls = "choice wrong";
-        }
-        return `<button class="${cls}" data-rq="${k}" data-rq-choice="${j}" ${answered ? "disabled" : ""}>${c}</button>`;
-      })
-      .join("");
-  } else {
-    const val = state.answers && state.answers[k] != null ? state.answers[k] : "";
-    body = answered
-      ? `<div class="fill-answer">Your answer: <b>${esc(val)}</b></div>`
-      : `<div class="fill-row"><input data-rq-input="${k}" placeholder="Type your answer…" value="${esc(val)}"><button class="btn-secondary" data-action="rq-fill" data-rq="${k}">Check</button></div>`;
-  }
-  const feedback = answered
-    ? `<div class="check-feedback ${result.correct ? "ok" : "no"}">${result.correct ? "Correct" : "Not quite"} — ${check.explanation}</div>`
-    : "";
-  return `<div class="check"><div class="check-q">${check.prompt}</div>${body}${feedback}</div>`;
+  return checkItemHTML(check, k, state, {
+    resultsKey: "results", answersKey: "answers",
+    indexAttr: "data-rq", choiceAttr: "data-rq-choice", inputAttr: "data-rq-input",
+    action: "rq-fill",
+  });
 }
 
 const APPLY_LABEL = { correct: "Correct", close: "Almost there", incorrect: "Not quite" };
@@ -86,11 +69,8 @@ function applyBlock(gap, gi, state) {
   } else if (res && res.error) {
     feedback = `<div class="grade grade-soft">${esc(res.error)}</div>`;
   } else if (done) {
-    const v = APPLY_LABEL[res.verdict] ? res.verdict : "close";
     feedback =
-      `<div class="grade grade-${v}" aria-live="polite">` +
-      `<div class="grade-verdict">${APPLY_LABEL[v]}</div>` +
-      `<div class="grade-note">${res.note || ""}</div></div>` +
+      gradeCardHTML(res, { labels: APPLY_LABEL }) +
       `<div class="rem-model"><b>A correct answer covers:</b> ${res.modelAnswer || ""}</div>`;
   }
   const canSend = !!val.trim() && !busy && !done;

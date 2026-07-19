@@ -1,4 +1,5 @@
 import { esc } from "../escape.js";
+import { examBannerHTML } from "./verdictCard.js";
 
 // #1 — real-world evidence capstone. The backend supplies example titles/details +
 // a source NAME (never a URL, to avoid hallucinated/dead links); we build a live
@@ -37,9 +38,7 @@ function capResultHTML(result) {
     })
     .join("");
   const pct = Math.round((result.score || 0) * 100);
-  const banner = result.passed
-    ? `<div class="exam-banner pass">Passed — ${pct}%</div>`
-    : `<div class="exam-banner fail">Not passed — ${pct}% (70% needed)</div>`;
+  const banner = examBannerHTML(result.passed, pct, 70);
   return `${banner}${rows}<div class="cap-summary">${result.summary || ""}</div>`;
 }
 

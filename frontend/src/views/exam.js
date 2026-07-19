@@ -1,4 +1,5 @@
 import { esc } from "../escape.js";
+import { examBannerHTML } from "./verdictCard.js";
 
 // Question prompts, choices, and grader notes arrive SERVER-sanitized and render
 // raw (client esc() would double-escape). Objective texts, lesson titles, the exam
@@ -61,9 +62,7 @@ function resultQuestion(q, i) {
 
 export function examResultHTML(result) {
   const pct = Math.round(result.score * 100);
-  const banner = result.passed
-    ? `<div class="exam-banner pass">Passed — ${pct}%</div>`
-    : `<div class="exam-banner fail">Not passed — ${pct}% (80% needed)</div>`;
+  const banner = examBannerHTML(result.passed, pct, 80);
   const weak = (result.weakSpots || [])
     .map((w) =>
       `<div class="weak-spot"><button class="weak-lesson" data-lesson="${esc(w.lessonId)}">${esc(w.lessonTitle)} →</button>` +

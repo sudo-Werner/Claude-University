@@ -1,4 +1,4 @@
-import { esc } from "../escape.js";
+import { checkItemHTML } from "./checkItem.js";
 
 // Fill answers are short canonical tokens, so trivial formatting differences —
 // internal spacing ("-70mV" vs "-70 mV") and dash/minus variants (a typographic
@@ -19,30 +19,11 @@ export function gradeCheck(check, answer) {
 }
 
 function item(check, i, state) {
-  const result = state.checkResults && state.checkResults[i];
-  const answered = !!result;
-  let body;
-  if (check.type === "mcq") {
-    body = check.choices
-      .map((c, j) => {
-        let cls = "choice";
-        if (answered) {
-          if (j === check.answer) cls = "choice correct";
-          else if (j === Number(state.checkAnswers[i])) cls = "choice wrong";
-        }
-        return `<button class="${cls}" data-check="${i}" data-choice="${j}" ${answered ? "disabled" : ""}>${c}</button>`;
-      })
-      .join("");
-  } else {
-    const val = state.checkAnswers && state.checkAnswers[i] != null ? state.checkAnswers[i] : "";
-    body = answered
-      ? `<div class="fill-answer">Your answer: <b>${esc(val)}</b></div>`
-      : `<div class="fill-row"><input data-check-input="${i}" placeholder="Type your answer…" value="${esc(val)}"><button class="btn-secondary" data-action="check-fill" data-check="${i}">Check</button></div>`;
-  }
-  const feedback = answered
-    ? `<div class="check-feedback ${result.correct ? "ok" : "no"}">${result.correct ? "Correct" : "Not quite"} — ${check.explanation}</div>`
-    : "";
-  return `<div class="check"><div class="check-q">${check.prompt}</div>${body}${feedback}</div>`;
+  return checkItemHTML(check, i, state, {
+    resultsKey: "checkResults", answersKey: "checkAnswers",
+    indexAttr: "data-check", choiceAttr: "data-choice", inputAttr: "data-check-input",
+    action: "check-fill",
+  });
 }
 
 export function checksHTML(checks, state) {

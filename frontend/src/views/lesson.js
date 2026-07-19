@@ -3,6 +3,7 @@ import { checksHTML } from "./checks.js";
 import { preQuizHTML } from "./prequiz.js";
 import { esc } from "../escape.js";
 import { feedbackEntryHTML } from "./shell.js";
+import { gradeCardHTML } from "./verdictCard.js";
 
 const BULB = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0012 3z" stroke="#e0892f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const LOCK = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 11V8a4 4 0 018 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
@@ -16,24 +17,8 @@ const REVEAL_TEXT = {
 };
 const HINT_TEXT = { true: "Hide hint", false: "Show hint" };
 
-// #4 — Claude's verdict on the learner's typed answer. Warm, specific microcopy
-// (research: empathetic feedback beats "Wrong").
-const GRADE_LABEL = { correct: "Correct", close: "Almost there", incorrect: "Not quite" };
-
 function gradeBlock(state) {
-  if (state.grading) {
-    return `<div class="grade grade-loading" aria-live="polite">
-        <span class="grade-spin"></span><span>Checking your answer…</span>
-      </div>`;
-  }
-  const g = state.grade;
-  if (!g) return "";
-  if (g.error) return `<div class="grade grade-soft">${esc(g.error)}</div>`;
-  const v = GRADE_LABEL[g.verdict] ? g.verdict : "close";
-  return `<div class="grade grade-${v}" aria-live="polite">
-      <div class="grade-verdict">${GRADE_LABEL[v]}</div>
-      <div class="grade-note">${g.note || ""}</div>
-    </div>`;
+  return gradeCardHTML(state.grade, { grading: state.grading, loadingText: "Checking your answer…" });
 }
 
 // Explain-it-back (skippable): the learner restates the core idea in their own
@@ -41,21 +26,13 @@ function gradeBlock(state) {
 function explainHTML(state) {
   const ex = state.explain || {};
   const g = ex.grade;
-  let result = "";
-  if (ex.grading) {
-    result = `<div class="grade grade-loading" aria-live="polite"><span class="grade-spin"></span><span>Reading your explanation…</span></div>`;
-  } else if (g && g.error) {
-    result = `<div class="grade grade-soft">${esc(g.error)}</div>`;
-  } else if (g) {
-    const v = GRADE_LABEL[g.verdict] ? g.verdict : "close";
-    result = `<div class="grade grade-${v}" aria-live="polite"><div class="grade-verdict">${GRADE_LABEL[v]}</div><div class="grade-note">${g.note || ""}</div></div>`;
-    if (g.followUp) {
-      const seeded = !!ex.seeded;
-      result +=
-        `<div class="explain-followup"><div class="grade-note">${g.followUp}</div>` +
-        `<button class="btn-secondary" data-action="explain-chat"${seeded ? " disabled" : ""}>` +
-        `${seeded ? "Sent to side-chat" : "Explore in side-chat"}</button></div>`;
-    }
+  let result = gradeCardHTML(g, { grading: ex.grading, loadingText: "Reading your explanation…" });
+  if (!ex.grading && g && !g.error && g.followUp) {
+    const seeded = !!ex.seeded;
+    result +=
+      `<div class="explain-followup"><div class="grade-note">${g.followUp}</div>` +
+      `<button class="btn-secondary" data-action="explain-chat"${seeded ? " disabled" : ""}>` +
+      `${seeded ? "Sent to side-chat" : "Explore in side-chat"}</button></div>`;
   }
   const canSend = (ex.text || "").trim() && !ex.grading;
   return (
@@ -189,29 +166,13 @@ function wsNotesHTML(w) {
   );
 }
 
-// Teach it to Claude (protégé effect): a session-mode banner mirroring Socratic's, plus
-// the graded verdict once the episode ends. teachGradeHTML mirrors gradeBlock's own
-// verdict-painting idiom (GRADE_LABEL + .grade-<verdict>, .grade-soft for an error) so a
-// fourth grading surface doesn't invent a fourth visual language.
-function teachGradeHTML(g) {
-  if (!g) return "";
-  if (g.error) return `<div class="grade grade-soft">${esc(g.error)}</div>`;
-  const v = GRADE_LABEL[g.verdict] ? g.verdict : "close";
-  return `<div class="grade grade-${v}" aria-live="polite">
-      <div class="grade-verdict">${GRADE_LABEL[v]}</div>
-      <div class="grade-note">${g.note || ""}</div>
-    </div>`;
-}
-
 function wsChatHTML(w) {
   let banner = "";
   if (w.teaching) {
     const hasTeacherTurn = (w.chat || []).slice(w.teachStart || 0)
       .some((m) => m.role === "user" && (m.content || "").trim());
     const gradeDisabled = !!w.pending || !!w.grading || !hasTeacherTurn;
-    const gradeSurface = w.grading
-      ? `<div class="grade grade-loading" aria-live="polite"><span class="grade-spin"></span><span>Checking your teaching…</span></div>`
-      : teachGradeHTML(w.teachGrade);
+    const gradeSurface = gradeCardHTML(w.teachGrade, { grading: w.grading, loadingText: "Checking your teaching…" });
     banner =
       `<div class="ws-socratic"><span>You're the teacher — Claude is your student.</span>` +
       `<button class="ws-socratic-exit" data-action="teach-exit">Exit</button>` +
@@ -222,7 +183,7 @@ function wsChatHTML(w) {
       `<div class="ws-socratic"><span>Working through the exercise — Claude will guide with questions, not answers.</span>` +
       `<button class="ws-socratic-exit" data-action="socratic-exit">Exit</button></div>`;
   } else if (w.teachGrade) {
-    banner = teachGradeHTML(w.teachGrade);
+    banner = gradeCardHTML(w.teachGrade);
   }
   const thread = (w.chat || [])
     .map((m) => `<div class="ws-msg ws-${m.role === "user" ? "you" : "ai"}">${esc(m.content)}</div>`)
