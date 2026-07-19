@@ -1179,7 +1179,7 @@ export async function init({ window, fetch }) {
       total: st.total,
       missed: st.missed,
     };
-    if (Object.keys(st.missed).length) loadMissedTitles(st);
+    if (Object.keys(st.missed).length) loadMissedTitles(st).catch(() => {});
     paintArcadePlay();
     await saveRoundResult(st);
   }
@@ -1207,9 +1207,13 @@ export async function init({ window, fetch }) {
 
   // Chip tap: enter the course's context first (the Arcade is course-less), then open
   // the lesson so Prev/Next/curriculum all work. Mirrors openCourse's manifest guard.
+  // Guarded like loadMissedTitles/saveRoundResult: bail if the player navigated away
+  // (Play again / Back to Arcade) while refreshSummary was in flight.
   async function openMissedLesson(lessonId) {
+    const st = ui.quizPlay;
     ui.courseId = ui.arcadeCourseId;
     await refreshSummary();
+    if (ui.quizPlay !== st || ui.screen !== "arcade-play") return; // navigated away mid-fetch
     if (!ui.manifest) { showHome(); return; }
     openLesson(lessonId);
   }
