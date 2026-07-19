@@ -681,7 +681,7 @@ def test_lesson_chat_mode_falls_back_to_normal_unless_socratic(client, tmp_path,
         resp.get_data(as_text=True)
     assert len(prompts) == 4
     for p in prompts:
-        assert "give it plainly" in p          # default system prompt
+        assert "never state the answer" in p.lower()          # default system prompt
         assert "NEVER state it" not in p
 
 
@@ -778,7 +778,7 @@ def test_lesson_chat_analogy_mode_falls_back_when_concept_unresolved(client, tmp
         resp.get_data(as_text=True)
     assert len(prompts) == 3
     for p in prompts:
-        assert "give it plainly" in p            # default LESSON_CHAT_SYSTEM marker present
+        assert "never state the answer" in p.lower()            # default LESSON_CHAT_SYSTEM marker present
         assert "NEVER state it" not in p
         assert "already said" not in p.lower()   # ANALOGY_SYSTEM marker absent
     for kw in calls:
@@ -809,7 +809,7 @@ def test_lesson_chat_analogy_mode_falls_back_when_concepts_null(client, tmp_path
     resp.get_data(as_text=True)
     assert len(prompts) == 1
     p = prompts[0]
-    assert "give it plainly" in p            # default LESSON_CHAT_SYSTEM marker present
+    assert "never state the answer" in p.lower()            # default LESSON_CHAT_SYSTEM marker present
     assert "NEVER state it" not in p
     assert "already said" not in p.lower()   # ANALOGY_SYSTEM marker absent
     assert calls[0].get("tools") == ["WebSearch", "WebFetch"]   # normal-chat tools restored
@@ -1904,7 +1904,7 @@ def test_lesson_chat_teach_mode_typo_falls_back_to_normal(client, tmp_path, monk
         resp.get_data(as_text=True)
     assert len(prompts) == 3
     for p in prompts:
-        assert "give it plainly" in p          # default system prompt
+        assert "never state the answer" in p.lower()          # default system prompt
         assert "curious" not in p.lower()      # teach system prompt absent
 
 

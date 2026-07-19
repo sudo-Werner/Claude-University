@@ -1005,11 +1005,14 @@ def test_lesson_chat_sse_emits_reauth_on_auth_error():
     assert msg and "re-authentication" in msg[0].lower()
 
 
-def test_lesson_chat_system_guides_first_with_escape_hatch():
+def test_lesson_chat_system_never_reveals_active_exercise_answer():
     s = generation.LESSON_CHAT_SYSTEM
     assert "MAIN EXERCISE" in s
     assert "ONE short guiding question" in s
-    assert "give it plainly" in s
+    assert "never state the answer" in s.lower()
+    assert "no matter how many times" in s.lower()
+    assert "give it plainly" not in s
+    assert "Reveal solution button" in s
 
 
 def test_lesson_chat_prompt_carries_solution_reveal_state():
@@ -1055,7 +1058,9 @@ def test_lesson_chat_prompt_default_unchanged_without_socratic():
     lesson = {"topic": "t", "promptHtml": "<p>q</p>", "solutionAns": "a", "solutionNote": "n"}
     p = gen.lesson_chat_prompt(lesson, [])
     assert "ONE short guiding question" in p
-    assert "give it plainly" in p
+    assert "never state the answer" in p.lower()
+    assert "give it plainly" not in p
+    # socratic's own phrasing stays absent — default mode has its own never-reveal wording
     assert "NEVER state it" not in p
 
 
@@ -1078,6 +1083,13 @@ def test_analogy_system_rules():
     assert "already said" in s.lower()
     assert "two" in s.lower()
     assert "not follow" in s.lower() or "never follow" in s.lower() or "data" in s.lower()
+
+
+def test_analogy_system_guards_against_exercise_answer_pivot():
+    s = gen.ANALOGY_SYSTEM
+    assert "main exercise" in s.lower()
+    assert "reveal solution button" in s.lower()
+    assert "decline" in s.lower()
 
 
 def test_lesson_chat_prompt_analogy_includes_concept_and_treat_as_data():
