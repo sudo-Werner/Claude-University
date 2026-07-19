@@ -64,6 +64,7 @@ export function dashboardHTML(data, timerView) {
       <button class="btn-secondary" data-action="refine" style="margin-top:8px">Refine this course</button>
       <button class="btn-secondary" data-action="library" style="margin-top:8px">Library · grounded sources</button>
       <button class="btn-secondary" data-action="mynotes" style="margin-top:8px">My notes</button>
+      <button class="btn-secondary" data-action="misconceptions" style="margin-top:8px">Misconceptions</button>
     </section>
     <div class="stat-row">
       <section class="stat">

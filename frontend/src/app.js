@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, loadCourseNotes, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, loadCourseNotes, loadMisconceptions, deleteMisconception, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { arcadeHTML, arcadeGeneratingHTML, arcadeLockedHTML, arcadeTimeoutHTML, hostIntroHTML, questionHTML, gradeChoice, matchBoardHTML, matchUpInit, matchUpSelectLeft, matchUpSelectRight, matchUpScore, arcadeResultHTML } from "./views/arcade.js";
 import { shellHTML, feedbackBarHTML } from "./views/shell.js";
@@ -16,6 +16,7 @@ import { curriculumHTML } from "./views/curriculum.js";
 import { capstoneHTML } from "./views/capstone.js";
 import { libraryHTML } from "./views/library.js";
 import { myNotesHTML } from "./views/mynotes.js";
+import { misconceptionsHTML } from "./views/misconceptions.js";
 import { loadingHTML, LESSON_STAGES, DEEPEN_STAGES, CAPSTONE_STAGES, PROGRAM_STAGES, EXAM_STAGES, REMEDIATION_STAGES } from "./views/loading.js";
 import { examHTML, examResultHTML, examReady } from "./views/exam.js";
 import { diagnosticHTML } from "./views/diagnostic.js";
@@ -491,6 +492,8 @@ export async function init({ window, fetch }) {
     if (lib) lib.addEventListener("click", showLibrary);
     const mn = view.querySelector('[data-action="mynotes"]');
     if (mn) mn.addEventListener("click", showMyNotes);
+    const mc = view.querySelector('[data-action="misconceptions"]');
+    if (mc) mc.addEventListener("click", showMisconceptions);
     const ref = view.querySelector('[data-action="refine"]');
     if (ref) ref.addEventListener("click", startRefine);
     const cadenceBtn = view.querySelector('[data-action="streak-cadence"]');
@@ -650,6 +653,46 @@ export async function init({ window, fetch }) {
     if (ui.screen !== "mynotes") return; // navigated away mid-load
     view.innerHTML = myNotesHTML(data);
     view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
+  }
+
+  // Misconceptions profile (charter Tier 2 item 7): read-only + delete-only,
+  // mirrors showMyNotes's shape exactly.
+  async function showMisconceptions() {
+    pauseTimer();
+    ui.screen = "misconceptions";
+    root.innerHTML = shellHTML({ back: ui.manifest ? ui.manifest.title : "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
+    const view = root.querySelector("#view");
+    view.innerHTML = `<div class="card"><div class="prompt">Loading your misconceptions…</div></div>`;
+    const data = await loadMisconceptions({ fetch, courseId: ui.courseId });
+    if (ui.screen !== "misconceptions") return; // navigated away mid-load
+    paintMisconceptions(data);
+  }
+
+  function paintMisconceptions(data) {
+    const view = root.querySelector("#view");
+    view.innerHTML = misconceptionsHTML(data);
+    view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
+    view.querySelectorAll('[data-action="delete-misconception"]').forEach((btn) => {
+      btn.addEventListener("click", () => deleteMisconceptionEntry(btn, data));
+    });
+  }
+
+  // Busy-guards the clicked button for the duration of the call (the
+  // double-click-races-a-request idiom used elsewhere, e.g. the highlight
+  // menu's guard) so a fast second click can't double-fire the DELETE.
+  async function deleteMisconceptionEntry(btn, data) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const entryId = btn.getAttribute("data-entry");
+    const res = await deleteMisconception({ fetch, courseId: ui.courseId, entryId });
+    if (ui.screen !== "misconceptions") return; // navigated away mid-request
+    if (res.error) {
+      btn.disabled = false;
+      return;
+    }
+    data.entries = data.entries.filter((e) => e.id !== entryId);
+    paintMisconceptions(data);
   }
 
   function showCurriculum() {

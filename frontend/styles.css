@@ -590,6 +590,17 @@ textarea::placeholder{color:#b3a994}
 .mn-highlights{margin:0; padding-left:18px; font-size:13px; line-height:1.6; color:var(--text-2)}
 .mn-highlights li{margin-bottom:3px}
 
+/* ---- Misconceptions (Tier 2 #7): read-only, delete-only ---- */
+.mc-lesson{padding:14px 0; border-top:1px solid var(--border-field)}
+.mc-lesson:first-child{border-top:none; padding-top:0}
+.mc-ltitle{font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--text-mut); margin-bottom:10px}
+.mc-entry{background:var(--glass-inner); border:1px solid var(--border-field); border-radius:var(--r-md); padding:12px 14px; margin-bottom:10px}
+.mc-entry:last-child{margin-bottom:0}
+.mc-text{font-size:14px; font-weight:600; color:var(--text); margin-bottom:6px}
+.mc-excerpt{font-family:var(--serif); font-style:italic; font-size:13px; line-height:1.5; color:var(--text-mut); margin-bottom:8px}
+.mc-delete{border:none; background:none; cursor:pointer; padding:0; font:600 12px/1 inherit; color:var(--blue-text); text-decoration:underline; text-underline-offset:2px}
+.mc-delete:disabled{cursor:default; opacity:.6; text-decoration:none}
+
 /* Phase 2 — compact lesson-sources list (lesson view + Library roll-up) */
 .lesson-sources{padding:16px 18px}
 .ls-head{font-size:11px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--purple); margin-bottom:10px}
