@@ -174,6 +174,24 @@ def _events(sse_chunks):
     return out
 
 
+def test_build_chat_prompt_includes_system_prompt_profile_and_turns():
+    p = gen.build_chat_prompt(
+        [{"role": "user", "content": "what should I learn?"},
+         {"role": "assistant", "content": "Tell me your goal."}],
+        {"analogies": True},
+    )
+    assert gen.COURSE_SYSTEM_PROMPT in p
+    assert 'Learner preferences (JSON): {"analogies": true}' in p
+    assert "Learner: what should I learn?" in p
+    assert "You: Tell me your goal." in p
+    assert p.rstrip().endswith("You:")
+
+
+def test_build_chat_prompt_defaults_missing_profile_to_empty_object():
+    p = gen.build_chat_prompt([], None)
+    assert "Learner preferences (JSON): {}" in p
+
+
 def test_chat_sse_streams_deltas_then_done():
     def fake_stream(prompt):
         yield "Hi! "

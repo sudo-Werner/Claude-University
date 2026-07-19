@@ -46,6 +46,12 @@ def test_post_events_missing_field_returns_400(client):
     assert "error" in resp.get_json()
 
 
+def test_post_events_non_dict_item_returns_400_not_500(client):
+    resp = client.post("/api/events", json={"events": ["not-a-dict"]})
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
 def test_profile_roundtrip(client):
     assert client.get("/api/profile").get_json() == {}
     client.post("/api/profile", json={"analogies": True})

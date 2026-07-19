@@ -11,6 +11,8 @@ def _utcnow_iso():
 def insert_events(conn, events):
     # Validate everything first so a bad event inserts nothing.
     for ev in events:
+        if not isinstance(ev, dict):
+            raise ValueError("event must be an object")
         missing = [f for f in REQUIRED_FIELDS if not ev.get(f)]
         if missing:
             raise ValueError(f"event missing required fields: {missing}")

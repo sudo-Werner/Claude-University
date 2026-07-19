@@ -378,6 +378,38 @@ def test_recent_formats_empty_when_never_played(conn):
     assert quiz.recent_formats(conn, "c") == []
 
 
+def test_quiz_round_events_tolerates_forged_rows(conn):
+    _play(conn, "rapid_fire", score=5, total=8, occurred="2026-07-01T00:00:00+00:00")
+    events.insert_events(conn, [
+        {  # non-dict payload — skipped
+            "client_event_id": "bad-nondict", "session_id": "s1", "event_type": "quiz_round",
+            "occurred_at": "2026-07-02T00:00:00+00:00", "course_id": "c",
+            "topic_id": "round-000000000002", "payload": ["not", "a", "dict"],
+        },
+        {  # unknown format — skipped
+            "client_event_id": "bad-format", "session_id": "s1", "event_type": "quiz_round",
+            "occurred_at": "2026-07-03T00:00:00+00:00", "course_id": "c",
+            "topic_id": "round-000000000003",
+            "payload": {"format": "not_a_real_format", "score": 1, "total": 1},
+        },
+        {  # non-int score — skipped
+            "client_event_id": "bad-score", "session_id": "s1", "event_type": "quiz_round",
+            "occurred_at": "2026-07-04T00:00:00+00:00", "course_id": "c",
+            "topic_id": "round-000000000004",
+            "payload": {"format": "rapid_fire", "score": "five", "total": 8},
+        },
+        {  # total <= 0 — skipped
+            "client_event_id": "bad-total", "session_id": "s1", "event_type": "quiz_round",
+            "occurred_at": "2026-07-05T00:00:00+00:00", "course_id": "c",
+            "topic_id": "round-000000000005",
+            "payload": {"format": "rapid_fire", "score": 0, "total": 0},
+        },
+    ])
+    out = quiz._quiz_round_events(conn, "c")  # must not raise
+    assert len(out) == 1
+    assert out[0] == {"occurred_at": "2026-07-01T00:00:00+00:00", "format": "rapid_fire", "score": 5, "total": 8}
+
+
 # ---- restock (synchronous _restock_once, no threads) ----
 
 def test_restock_generates_until_floor_capped_at_restock_cap(conn, tmp_path):
@@ -769,6 +801,44 @@ def test_valid_question_chat_messages_rejects_bad_role():
 def test_valid_question_chat_messages_rejects_non_dict_entries():
     assert not quiz.valid_question_chat_messages(["hi"])
     assert not quiz.valid_question_chat_messages([{"role": "user", "content": 5}])
+
+
+def test_valid_question_chat_payload_accepts_minimal_valid_shapes():
+    assert quiz.valid_question_chat_payload({"prompt": "q"}, None) is None
+    assert quiz.valid_question_chat_payload({"prompt": "q"}, True) is None
+    assert quiz.valid_question_chat_payload({"prompt": "q"}, 2) is None
+    assert quiz.valid_question_chat_payload({"prompt": "q"}, "x" * 500) is None
+    assert quiz.valid_question_chat_payload({"prompt": "q"}, {"correct": 3, "total": 5}) is None
+
+
+def test_valid_question_chat_payload_rejects_non_dict_question():
+    assert quiz.valid_question_chat_payload("nope", None) == "question must be an object"
+    assert quiz.valid_question_chat_payload(None, None) == "question must be an object"
+
+
+def test_valid_question_chat_payload_rejects_non_serializable_question():
+    assert quiz.valid_question_chat_payload({"bad": {1, 2}}, None) == "question is not JSON-serializable"
+
+
+def test_valid_question_chat_payload_rejects_oversized_question():
+    assert quiz.valid_question_chat_payload({"prompt": "x" * 9000}, None) == "question too large"
+
+
+def test_valid_question_chat_payload_rejects_overlong_answer_string():
+    assert quiz.valid_question_chat_payload({"prompt": "q"}, "x" * 501) == "answer too long"
+
+
+def test_valid_question_chat_payload_rejects_wrong_dict_shape():
+    assert quiz.valid_question_chat_payload({"prompt": "q"}, {"correct": 3}) == "answer has invalid type"
+    assert quiz.valid_question_chat_payload(
+        {"prompt": "q"}, {"correct": True, "total": 5}) == "answer has invalid type"
+    assert quiz.valid_question_chat_payload(
+        {"prompt": "q"}, {"correct": 3, "total": 5, "extra": 1}) == "answer has invalid type"
+
+
+def test_valid_question_chat_payload_rejects_list_and_float_answer():
+    assert quiz.valid_question_chat_payload({"prompt": "q"}, [1, 2]) == "answer has invalid type"
+    assert quiz.valid_question_chat_payload({"prompt": "q"}, 1.5) == "answer has invalid type"
 
 
 def test_quiz_question_chat_sse_streams_deltas_and_done():

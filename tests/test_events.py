@@ -49,6 +49,22 @@ def test_missing_required_field_raises(conn):
     assert count == 0
 
 
+def test_non_dict_event_raises_instead_of_crashing(conn):
+    # A client can post anything as JSON — "events": ["not-a-dict"] must 400
+    # via the same ValueError path as a missing field, never an AttributeError.
+    with pytest.raises(ValueError):
+        events.insert_events(conn, ["not-a-dict"])
+    count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
+    assert count == 0
+
+
+def test_non_dict_event_rejects_whole_batch_like_missing_field(conn):
+    with pytest.raises(ValueError):
+        events.insert_events(conn, [_ev("a"), "not-a-dict"])
+    count = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
+    assert count == 0  # "validate everything first" — a good event earlier in the list still inserts nothing
+
+
 def test_insert_persists_course_id(conn):
     from backend import events, queries
 

@@ -239,6 +239,11 @@ def _answers(exam, *, mcq=1, free="my answer"):
     return [mcq if q["type"] == "mcq" else free for q in exam["questions"]]
 
 
+def _mcq_slots(n, lesson_id="c1-l1"):
+    return [{"lessonId": lesson_id, "objectiveText": f"o{i}", "bloom": "remember", "type": "mcq"}
+            for i in range(n)]
+
+
 def _grader(verdict="correct", note="Good.", evidence="my answer"):
     def generate(prompt, validate):
         import re
@@ -337,22 +342,18 @@ def test_grade_exam_all_correct_passes():
 
 
 def test_grade_exam_exactly_eighty_percent_passes():
-    exam = _exam()
-    mcq_idx = [i for i, q in enumerate(exam["questions"]) if q["type"] == "mcq"]
-    free_count = 10 - len(mcq_idx)
-    # Make wrong MCQs + close frees add up to exactly 2.0 lost points when possible;
-    # fall back to asserting the boundary rule directly.
+    # Deterministic by construction (10 slots, all MCQ) rather than scanning
+    # module_blueprint's fixture-derived round-robin output for 2 MCQ slots —
+    # that count depends on the fixture's objective/bloom distribution and isn't
+    # guaranteed, which previously let this test's only real assertion sit
+    # behind an `if wrong == 2` that could silently never run.
     assert exams.PASS_SCORE == 0.8
+    exam = _exam(_mcq_slots(10))
     answers = _answers(exam)
-    wrong = 0
-    for i in mcq_idx:
-        if wrong == 2:
-            break
+    for i in (0, 1):  # exactly 2 wrong of 10 -> 8/10 = 0.8, right at the pass boundary
         answers[i] = (exam["questions"][i]["answerIndex"] + 1) % len(exam["questions"][i]["choices"])
-        wrong += 1
-    if wrong == 2:
-        result = exams.grade_exam(exam, answers, _manifest(), generate=_grader())
-        assert result["score"] == 0.8 and result["passed"] is True
+    result = exams.grade_exam(exam, answers, _manifest(), generate=_grader())
+    assert result["score"] == 0.8 and result["passed"] is True
 
 
 def test_grade_exam_failure_builds_weak_spots():
