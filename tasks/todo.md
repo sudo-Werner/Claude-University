@@ -33,7 +33,7 @@ Mark items done here with date + merge commit as they land.
   (reuse the existing review-items machinery). Keep highlights otherwise inert (design doc
   decision stands). Acceptance: item appears in that lesson's review flow and in reviews-due
   counts; removal of the highlight does NOT delete the created item; live-verified.
-- [ ] **4. Flexible streak** [R: rigid daily streaks are the top documented gamification
+- [x] **4. Flexible streak** [R: rigid daily streaks are the top documented gamification
   complaint; Duolingo's own data — flexibility increases retention]
   Add a learner setting: streak cadence "daily" (default, current behavior) or "weekly"
   (a week with ≥N study days keeps the streak; pick N=1 or make it part of the setting —
@@ -137,6 +137,15 @@ Mark items done here with date + merge commit as they land.
   alongside 2 fresh AI items in the actual review-items response); caught and fixed a
   reviewCount-sentinel bug (0 collided with a legitimate never-reviewed lesson) before
   it shipped, via the route-level tests. Test artifacts cleaned from the Pi.
+- 2026-07-19: Tier 1 item 4 — flexible streak. New `streakCadence` profile setting
+  (daily default / weekly, simplest N=1 rule) read server-side by `GET /api/stats`;
+  `stats.weekly_streak_weeks()` shares a new `_study_days()` helper with `streak_days`
+  (Monday-anchored weeks, same one-unit tolerance). Dashboard STREAK tile gets a
+  "Switch to weekly/daily" toggle that POSTs the full merged profile (never just the
+  one key). Arcade's own per-course streak untouched. Merged `8fc752f`, deployed,
+  live-verified: toggled live on the real Pi, label+number flipped correctly, then
+  restored to daily — confirmed the merge preserved every real onboarding-diagnostic
+  answer already on Werner's profile.
 
 ## Handoff notes
 
