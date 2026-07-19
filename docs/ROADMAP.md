@@ -3,6 +3,10 @@
 **Derived from:** [CHARTER.md](CHARTER.md) + [research/online-universities-reference.md](research/online-universities-reference.md)
 **Updated:** 2026-06-23
 
+> **This phase is COMPLETE.** Current work is governed by
+> [CHARTER-PHASE-2.md](CHARTER-PHASE-2.md) with the live backlog in
+> [../tasks/todo.md](../tasks/todo.md) (established 2026-07-19).
+
 Ordered sequence of slices to "finish" the system. Each is its own brainstorm → spec → plan →
 subagent build → deploy cycle. I execute these autonomously under the charter; this file is the
 steering map and gets updated as slices land. Items can be re-ordered if reality demands.
