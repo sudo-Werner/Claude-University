@@ -73,6 +73,25 @@ def test_load_profile_tolerates_malformed_shape(tmp_path):
     assert misconceptions.load_profile(tmp_path, "c1") == []
 
 
+def test_load_profile_drops_malformed_entries(tmp_path):
+    # A hand-corrupted or bug-produced misconceptions.json can contain entries
+    # missing "text", with a non-string "text", or missing "id". Those must be
+    # silently dropped, not raised (KeyError) or passed through — callers like
+    # get_lesson's `e["text"]` comprehension assume every returned entry is
+    # well-formed.
+    course_dir = tmp_path / "c1"
+    course_dir.mkdir()
+    good = {"id": "mc-good1", "text": "a real misconception", "excerpt": "ex",
+            "lessonId": "l1", "lessonTitle": "L1", "source": "explain", "occurredAt": "2026-07-19T00:00:00+00:00"}
+    missing_text = {"id": "mc-bad1", "excerpt": "ex", "lessonId": "l1"}
+    non_string_text = {"id": "mc-bad2", "text": 12345, "excerpt": "ex", "lessonId": "l1"}
+    missing_id = {"text": "no id here", "excerpt": "ex", "lessonId": "l1"}
+    (course_dir / "misconceptions.json").write_text(
+        json.dumps({"entries": [good, missing_text, non_string_text, missing_id]}))
+    profile = misconceptions.load_profile(tmp_path, "c1")
+    assert [e["id"] for e in profile] == ["mc-good1"]
+
+
 def test_add_entries_skips_blank_text(tmp_path):
     misconceptions.add_entries(tmp_path, "c1", "c1-l1", "L1", "explain", [("  ", "ex"), ("", "ex2")])
     assert misconceptions.load_profile(tmp_path, "c1") == []

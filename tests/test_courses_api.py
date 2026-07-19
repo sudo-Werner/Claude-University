@@ -149,6 +149,67 @@ def test_teach_route_persists_misconception(client, tmp_path, monkeypatch):
     assert profile[0]["excerpt"] == "X is always true"
 
 
+def test_lesson_generation_prompt_includes_persisted_misconception_text(client, tmp_path, monkeypatch):
+    # Integration test for the full round trip: persist (misconceptions.add_entries)
+    # -> load_profile -> misconception_texts -> ensure_lesson(misconceptions=...) ->
+    # lesson_prompt -> injected block. Unit tests cover lesson_prompt's injection and
+    # the persist routes separately, but nothing previously proved the two connect
+    # end-to-end through the running app.
+    from backend import courses, claude_client, misconceptions as mc
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest = courses.write_course(root, {
+        "title": "MC Round Trip", "subtitle": "s", "brief": "b",
+        "modules": [{"title": "M", "lessons": [{"title": "Lesson One"}, {"title": "Lesson Two"}]}]})
+    cid = manifest["id"]
+    lesson1_id = manifest["modules"][0]["lessons"][0]["id"]
+    lesson2_id = manifest["modules"][0]["lessons"][1]["id"]
+
+    # Seed a misconception directly, as if an earlier teach/explain grading persisted it.
+    mc.add_entries(root, cid, lesson1_id, "Lesson One", "explain",
+                   [("thinks gradient descent always finds the global minimum", "excerpt text")])
+
+    # Lesson Two is NOT cached, so GETting it forces ensure_lesson -> generation.
+    made = {"id": lesson2_id, "courseId": cid, "topic": "t", "step": 2, "totalSteps": 2,
+            "eyebrow": "EXERCISE", "promptHtml": "<p>p</p>", "hintHtml": "h",
+            "solutionAns": "a", "solutionNote": "n",
+            "checks": [{"type": "fill", "prompt": "p", "answer": "x", "explanation": "e"}],
+            "preQuiz": {"type": "mcq", "prompt": "Guess?", "choices": ["A", "B"],
+                        "answer": 0, "explanation": "Because."},
+            "spine": {"summary": "s", "concepts": [{"term": "t", "definition": "d"}]}}
+    captured = {}
+
+    def fake_sourced(prompt, **kw):
+        captured["prompt"] = prompt
+        return made, []
+    monkeypatch.setattr(claude_client, "run_sourced", fake_sourced)
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, **kw: dict(made))
+
+    resp = client.get(f"/api/courses/{cid}/lessons/{lesson2_id}")
+    assert resp.status_code == 200
+    assert "thinks gradient descent always finds the global minimum" in captured["prompt"]
+
+
+def test_teach_route_persistence_failure_does_not_break_the_grade(client, tmp_path, monkeypatch):
+    from backend import courses, claude_client, misconceptions as mc
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    monkeypatch.setattr(claude_client, "run_structured", lambda prompt, validate=None, **kw: {
+        "verdict": "correct", "note": "n",
+        "accuracy": 1, "clarity": 1, "completeness": 1, "understanding": 1,
+        "misconceptions": ["something"], "strengths": [],
+    })
+    def boom(*a, **kw):
+        raise OSError("disk full")
+    monkeypatch.setattr(mc, "add_entries", boom)
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/teach",
+                       json={"messages": [{"role": "user", "content": "X is always true"}]})
+    assert resp.status_code == 200  # grading succeeds even though persistence blew up
+    assert resp.get_json()["verdict"] == "correct"
+
+
 def test_delete_misconception_route(client, tmp_path, monkeypatch):
     from backend import courses, misconceptions as mc
     root = tmp_path / "courses"; root.mkdir()

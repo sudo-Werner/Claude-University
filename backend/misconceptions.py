@@ -41,7 +41,8 @@ def load_profile(content_dir, course_id):
         return []
     if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
         return []
-    entries = [e for e in data["entries"] if isinstance(e, dict)]
+    entries = [e for e in data["entries"]
+               if isinstance(e, dict) and isinstance(e.get("text"), str) and e.get("id")]
     return sorted(entries, key=lambda e: e.get("occurredAt", ""), reverse=True)
 
 
