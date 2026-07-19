@@ -98,6 +98,7 @@ export async function init({ window, fetch }) {
     arcadePollTimer: null,
     feedback: { open: false, sending: false, text: "", notice: "", activeWhere: "top" },
     profile: null,
+    continueToLessonAfterReview: false,
   };
 
   // ---- feedback bar (global; delegated on root so it survives every shell repaint) ----
@@ -475,7 +476,13 @@ export async function init({ window, fetch }) {
     const view = root.querySelector("#view");
     view.innerHTML = dashboardHTML(sessionData(), timerView(ui.timer.elapsed));
     view.querySelector('[data-action="start-session"]').addEventListener("click", startLesson);
-    view.querySelector('[data-action="review"]').addEventListener("click", startReviewSession);
+    view.querySelector('[data-action="review"]').addEventListener("click", () => {
+      // The standalone Review button must always land back on the dashboard when
+      // it finishes, even if a "Start session" review-then-lesson flow was
+      // interrupted earlier and left the flag set.
+      ui.continueToLessonAfterReview = false;
+      startReviewSession();
+    });
     const cur = view.querySelector('[data-action="curriculum"]');
     if (cur) cur.addEventListener("click", showCurriculum);
     const lib = view.querySelector('[data-action="library"]');
@@ -1422,7 +1429,19 @@ export async function init({ window, fetch }) {
     showLesson();
   }
 
+  // Charter Tier 3 #19 — honors the design brief's warm-up promise: due reviews are
+  // a quick warm-up before new material, so "Start session" clears them first. The
+  // continuation back into a new lesson happens in advanceAfterLesson's empty-queue
+  // branch (the existing per-review "what's next" plumbing already runs there for
+  // free); this flag is the only thing distinguishing that from a normal review
+  // session started via the standalone Review button, which must still land back
+  // on the dashboard when it finishes, unchanged.
   function startLesson() {
+    if (ui.summary && ui.summary.reviewsDue > 0) {
+      ui.continueToLessonAfterReview = true;
+      startReviewSession();
+      return;
+    }
     const next = ui.summary && ui.summary.nextLesson;
     if (next) openLesson(next.id);
   }
@@ -1989,7 +2008,13 @@ export async function init({ window, fetch }) {
       const lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: nextId });
       if (ui.screen !== "lesson") return; // navigated away while loading the next review
       ui.lesson = lesson;
-      if (lessonFailed(ui.lesson)) { await refreshSummary(); if (ui.screen !== "lesson") return; showCourse(); return; }
+      if (lessonFailed(ui.lesson)) {
+        ui.continueToLessonAfterReview = false;
+        await refreshSummary();
+        if (ui.screen !== "lesson") return;
+        showCourse();
+        return;
+      }
       ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main", isReview: true };
       fetchFreshItems(ui.lessonState, ui.lesson);
       log("lesson_view", { courseId: ui.courseId, topicId: nextId });
@@ -1998,6 +2023,11 @@ export async function init({ window, fetch }) {
     }
     await refreshSummary();
     if (ui.screen !== "lesson") return; // navigated away — don't yank them to the dashboard
+    if (ui.continueToLessonAfterReview) {
+      ui.continueToLessonAfterReview = false;
+      startLesson(); // reviewsDue is now 0 (refreshSummary just reloaded it) — opens the next lesson
+      return;
+    }
     showCourse();
   }
 
@@ -2008,12 +2038,12 @@ export async function init({ window, fetch }) {
     const due = await loadReviews({ fetch, courseId: ui.courseId });
     if (ui.screen !== "review-loading" || ui.loadSeq !== seq) return; // navigated away
     log("review_opened", { courseId: ui.courseId });
-    if (!due.length) { showCourse(); return; }
+    if (!due.length) { ui.continueToLessonAfterReview = false; showCourse(); return; }
     ui.reviewQueue = due.slice(1);
     const lesson = await loadLesson({ fetch, courseId: ui.courseId, lessonId: due[0] });
     if (ui.screen !== "review-loading" || ui.loadSeq !== seq) return; // navigated away
     ui.lesson = lesson;
-    if (lessonFailed(ui.lesson)) { showCourse(); return; }
+    if (lessonFailed(ui.lesson)) { ui.continueToLessonAfterReview = false; showCourse(); return; }
     ui.lessonState = { answer: "", hintVisible: false, solutionRevealed: false, checkAnswers: {}, checkResults: {}, stage: "main", isReview: true };
     fetchFreshItems(ui.lessonState, ui.lesson);
     log("lesson_view", { courseId: ui.courseId, topicId: due[0] });
