@@ -26,7 +26,7 @@ Mark items done here with date + merge commit as they land.
   aggregating events/day + due-counts/day. Frontend: render-only view, warm-glass styling.
   Acceptance: matches a hand-computed sample from the events table; renders on phone width;
   live-verified.
-- [ ] **3. Highlight → review item (one tap)** [R: highlighting is low-utility as study,
+- [x] **3. Highlight → review item (one tap)** [R: highlighting is low-utility as study,
   retrieval is highest — convert one into the other]
   Tapping an existing highlight currently only offers removal. Add a second action: "Make
   review item" — creates a review/SRS item from the highlighted text + its lesson context
@@ -126,6 +126,17 @@ Mark items done here with date + merge commit as they land.
   streak stat. Merged `0b4aa64`, deployed, live-verified in a real browser (desktop + phone
   width, real Pi data matched a hand-computed sample); caught and fixed a desktop grid-area
   collision with the session card during that verification.
+- 2026-07-19: Tier 1 item 3 — highlight → review item. Tapping a highlight now opens a
+  Remove / Make review item menu; the latter is a one-shot Claude call that turns the
+  passage into a check item, persisted as `userItems` in `review_items.py`'s per-lesson
+  file (survives regeneration and the source highlight's later removal). `GET
+  review-items` folds `userItems` into the served list — zero changes needed to the
+  review-consumption path. Merged `307cec8`, deployed, live-verified end-to-end in a real
+  browser + real Claude calls (created a real grounded MCQ from a real highlighted
+  passage on ML l1; confirmed it survived highlight removal; confirmed it appears
+  alongside 2 fresh AI items in the actual review-items response); caught and fixed a
+  reviewCount-sentinel bug (0 collided with a legitimate never-reviewed lesson) before
+  it shipped, via the route-level tests. Test artifacts cleaned from the Pi.
 
 ## Handoff notes
 
