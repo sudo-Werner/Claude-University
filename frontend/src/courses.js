@@ -107,6 +107,18 @@ export async function loadCourseNotes({ fetch, courseId }) {
   return resp.json();
 }
 
+export async function loadMisconceptions({ fetch, courseId }) {
+  const resp = await fetch(`/api/courses/${courseId}/misconceptions`);
+  if (!resp.ok) return { entries: [] };
+  return resp.json();
+}
+
+export async function deleteMisconception({ fetch, courseId, entryId }) {
+  const resp = await fetch(`/api/courses/${courseId}/misconceptions/${entryId}`, { method: "DELETE" });
+  if (!resp.ok) return { error: await parseErrorBody(resp, "Couldn't remove that entry right now.") };
+  return resp.json();
+}
+
 export async function loadLibrary({ fetch, courseId }) {
   const resp = await fetch(`/api/courses/${courseId}/library`);
   if (!resp.ok) {

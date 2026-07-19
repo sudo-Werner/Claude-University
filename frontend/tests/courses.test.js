@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, loadCourseNotes, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, loadCourseNotes, loadMisconceptions, deleteMisconception, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -155,6 +155,35 @@ test("loadCourseNotes fails open to an empty list on non-ok", async () => {
   const fetch = async () => ({ ok: false, status: 500 });
   const data = await loadCourseNotes({ fetch, courseId: "c" });
   assert.deepEqual(data.lessons, []);
+});
+
+test("loadMisconceptions fetches the course misconceptions summary", async () => {
+  let url;
+  const fetch = async (u) => { url = u; return { ok: true, json: async () => ({ entries: [{ id: "mc-1" }] }) }; };
+  const data = await loadMisconceptions({ fetch, courseId: "c" });
+  assert.equal(url, "/api/courses/c/misconceptions");
+  assert.deepEqual(data.entries, [{ id: "mc-1" }]);
+});
+
+test("loadMisconceptions fails open to an empty list on non-ok", async () => {
+  const fetch = async () => ({ ok: false, status: 500 });
+  const data = await loadMisconceptions({ fetch, courseId: "c" });
+  assert.deepEqual(data.entries, []);
+});
+
+test("deleteMisconception DELETEs the entry and returns the parsed body", async () => {
+  let url, opts;
+  const fetch = async (u, o) => { url = u; opts = o; return { ok: true, json: async () => ({ ok: true }) }; };
+  const r = await deleteMisconception({ fetch, courseId: "c", entryId: "mc-1" });
+  assert.equal(url, "/api/courses/c/misconceptions/mc-1");
+  assert.equal(opts.method, "DELETE");
+  assert.equal(r.ok, true);
+});
+
+test("deleteMisconception returns an error shape on non-ok", async () => {
+  const fetch = async () => ({ ok: false, status: 404, json: async () => ({ error: "not found" }) });
+  const r = await deleteMisconception({ fetch, courseId: "c", entryId: "mc-1" });
+  assert.equal(r.error, "not found");
 });
 
 test("loadLibrary returns an error shape on non-ok", async () => {
