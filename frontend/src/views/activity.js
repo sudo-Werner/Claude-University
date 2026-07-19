@@ -40,6 +40,14 @@ function entryHTML(e) {
       `<span class="act-course">${esc(e.courseTitle || "")}</span>` +
       `<span class="act-quality">${pct}% — ${e.passed ? "passed" : "not passed"}</span></span></div>`;
   }
+  if (e.type === "quiz_round") {
+    const hasScore = Number.isInteger(e.score) && Number.isInteger(e.total) && e.total > 0;
+    return `<div class="act-entry"><span class="act-time">${when}</span>` +
+      `<span class="act-text"><b>Arcade round</b> ` +
+      `<span class="act-course">${esc(e.courseTitle || "")}</span>` +
+      (hasScore ? `<span class="act-quality">${e.score}/${e.total}</span>` : "") +
+      `</span></div>`;
+  }
   const verb = VERBS[e.type] || e.type;
   const what = e.lessonTitle ? esc(e.lessonTitle) : (e.courseTitle ? esc(e.courseTitle) : "");
   const context = e.lessonTitle && e.courseTitle ? `<span class="act-course">${esc(e.courseTitle)}</span>` : "";

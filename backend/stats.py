@@ -4,15 +4,15 @@ import json
 from backend import courses
 
 # A streak day is a day the learner actually studied — opened a lesson, completed a
-# review, attempted a pre-quiz, sat an exam, or worked a gap review. session_start
-# (just opening the app) does not count.
+# review, attempted a pre-quiz, sat an exam, worked a gap review, or played an
+# Arcade round. session_start (just opening the app) does not count.
 STUDY_EVENTS = ("lesson_view", "lesson_reviewed", "prequiz_attempt",
-                "exam_result", "remediation_started", "capstone_result")
+                "exam_result", "remediation_started", "capstone_result", "quiz_round")
 
 # Event types worth showing in the study log. Checks, hints, and timer ticks
 # are noise at log granularity and are filtered out here, server-side.
 ACTIVITY_EVENTS = ("lesson_view", "lesson_reviewed", "course_created", "course_revised",
-                   "exam_result", "remediation_started", "capstone_result")
+                   "exam_result", "remediation_started", "capstone_result", "quiz_round")
 
 
 def _utc_today():
@@ -103,5 +103,12 @@ def recent_activity(conn, content_dir, limit=50):
             if r["event_type"] in ("exam_result", "capstone_result"):
                 entry["score"] = payload.get("score")
                 entry["passed"] = bool(payload.get("passed"))
+        if r["event_type"] == "quiz_round":
+            score, total = payload.get("score"), payload.get("total")
+            if (isinstance(score, int) and not isinstance(score, bool)
+                    and isinstance(total, int) and not isinstance(total, bool)
+                    and total > 0):
+                entry["score"] = score
+                entry["total"] = total
         out.append(entry)
     return out

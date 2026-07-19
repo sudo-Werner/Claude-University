@@ -77,3 +77,14 @@ test("capstone_result entries show label, score, and outcome", () => {
   assert.ok(html.includes("75%"));
   assert.ok(html.includes("passed"));
 });
+
+test("activity renders an Arcade round with its score, and omits a malformed score", () => {
+  const html = activityHTML([
+    { occurredAt: at(0), type: "quiz_round", courseTitle: "ML", lessonTitle: null, quality: null, score: 7, total: 8 },
+    { occurredAt: at(0), type: "quiz_round", courseTitle: "ML", lessonTitle: null, quality: null, score: "x", total: 0 },
+  ], { now: NOW });
+  assert.match(html, /Arcade round/);
+  assert.match(html, /7\/8/);
+  assert.ok(!html.includes("x/0"));
+  assert.ok(!html.includes("undefined"));
+});
