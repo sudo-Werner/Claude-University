@@ -96,22 +96,22 @@ Mark items done here with date + merge commit as they land.
   the newest content backup to a temp dir + integrity check (course.json parses, lesson count
   matches manifest). The 2026-07-15 data-loss incident created the backups; nothing yet
   proves they restore.
-- [ ] **14. events.py non-dict crash guard** [S, pre-existing ticket]: a malformed item in
+- [x] **14. events.py non-dict crash guard** [S, pre-existing ticket]: a malformed item in
   the events list 500s list endpoints; skip-don't-crash like every other ledger read.
-- [ ] **15. Shared generate-adapter** [S, verified 13 verbatim copies]: one helper for the
+- [x] **15. Shared generate-adapter** [S, verified 13 verbatim copies]: one helper for the
   `lambda prompt, validate: claude_client.run_structured(...)` shim in app.py (+ twins in
   images.py/spine.py `__main__`s). Zero behavior change; tests stay green untouched.
-- [ ] **16. courses.js fetch-error helper** [S, verified 17+ copies]: one
+- [x] **16. courses.js fetch-error helper** [S, verified 17+ copies]: one
   `parseErrorBody(resp, fallback)` used by all fetchers. Tests assert on the returned shape
   only, so this is drop-in.
-- [ ] **17. checks/remediation renderer dedup + verdict-card helper** [S, both verified
+- [x] **17. checks/remediation renderer dedup + verdict-card helper** [S, both verified
   verbatim-duplicated]: shared check-item renderer parameterized on attribute names; shared
   `verdictCardHTML`. lesson.js's own comment already wished for this.
-- [ ] **18. Small test gaps** [S]: quiz.py `_quiz_round_events` forged-row tests (mirror
+- [x] **18. Small test gaps** [S]: quiz.py `_quiz_round_events` forged-row tests (mirror
   test_exams' existing pattern); direct unit tests for `valid_question_chat_payload`;
   content assertions for `build_chat_prompt`; fix the conditional-assertion exam test
   (`test_grade_exam_exactly_eighty_percent_passes`) so it can't silently no-op.
-- [ ] **19. Start-session routes through due reviews** [S sweep suggestion; small]: when
+- [x] **19. Start-session routes through due reviews** [S sweep suggestion; small]: when
   reviewsDue > 0, "Start session" runs the review queue first (plumbing exists in
   `advanceAfterLesson`), then the new lesson. Honors the design brief's warm-up promise.
 - [ ] **20. Notes/highlights resurfacing — "My notes" view** [S sweep: notes are currently
@@ -153,6 +153,34 @@ Mark items done here with date + merge commit as they land.
   live-verified: toggled live on the real Pi, label+number flipped correctly, then
   restored to daily — confirmed the merge preserved every real onboarding-diagnostic
   answer already on Werner's profile.
+- 2026-07-19: Tier 1 item 5 (partial) — app-ification. (b)+(c) shipped: web app
+  manifest + icons (generated to match the existing topbar badge exactly) + a
+  shell-only service worker (never caches `/api/*`) + docs/INSTALL.md. Merged
+  `fc58133`, deployed, live-verified (manifest/sw/icons all serve, zero console
+  errors, plain HTTP unaffected). (a) Tailscale HTTPS BLOCKED on Werner — see the
+  item's own STATUS note above; needs one admin-console click before it can finish.
+- 2026-07-19: Tier 3 items 14–19 (hygiene batch). **14** events.insert_events now
+  rejects a non-dict event item the same way as a missing field (400, not 500) —
+  commit `ac668d0`, live-verified. **15** the 16 verbatim
+  `lambda prompt, validate: claude_client.run_x(...)` shims across app.py/images.py/
+  spine.py replaced with two named functions, `claude_client.structured_generate`/
+  `sourced_generate` — commit `8efd4b0`. **16** courses.js's 18 duplicated
+  fetch-error blocks now share one `parseErrorBody(resp, fallback)` helper —
+  commit `582146c`. **17** checks.js/remediation.js's duplicated check-item
+  renderer unified into `views/checkItem.js::checkItemHTML` (prequiz.js kept
+  separate — genuinely different shape); the grade-verdict card (4x) and
+  exam-banner card (2x) unified into `views/verdictCard.js` — commit `9eaf76d`,
+  deployed, live-verified (real Claude grading call rendered through the
+  refactored gradeCardHTML; real check-answer rendered through checkItemHTML,
+  exact `data-check`/`data-choice` attributes confirmed preserved). **18** closed
+  4 test gaps (valid_question_chat_payload direct tests, _quiz_round_events
+  forged-row test, build_chat_prompt content tests, fixed
+  test_grade_exam_exactly_eighty_percent_passes' conditional-assertion bug) —
+  bundled in `ac668d0`. **19** "Start session" now runs due reviews first, then
+  auto-continues into the new lesson — commit `6aa58d4`, live-verified end-to-end
+  on the real Pi with 2 real due reviews (test events cleaned up afterward).
+  All items: 867 backend / 343 frontend tests green throughout, zero behavior
+  change proven by the untouched suite for 15/16/17. Items 13 and 20 remain.
 
 ## Handoff notes
 
