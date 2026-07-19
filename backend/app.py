@@ -255,6 +255,16 @@ def create_app(db_path=None):
         return jsonify({**manifest, "mastery": m, "masteryCounts": mastery.mastery_counts(m),
                         "exams": ex, "coursePassed": exams.course_passed(ex, manifest)})
 
+    @app.get("/api/courses/<course_id>/notes")
+    def get_course_notes(course_id):
+        if not _ID_RE.match(course_id):
+            return jsonify({"error": "course not found"}), 404
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return jsonify({"error": "course not found"}), 404
+        summary = notes.course_notes_summary(courses.CONTENT_DIR, course_id, manifest)
+        return jsonify({"lessons": summary})
+
     @app.get("/api/courses/<course_id>/lessons/<lesson_id>")
     def get_lesson(course_id, lesson_id):
         if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):

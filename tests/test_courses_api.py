@@ -1782,6 +1782,41 @@ def test_highlight_review_item_route_maps_claude_errors(client, tmp_path, monkey
     assert r.status_code == 503 and r.get_json()["code"] == "reauth"
 
 
+def test_course_notes_route_returns_annotated_lessons_only(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    client.put(f"/api/courses/{cid}/lessons/{lesson_id}/workspace", json={"notes": "key idea here", "chat": []})
+    resp = client.get(f"/api/courses/{cid}/notes")
+    assert resp.status_code == 200
+    lessons = resp.get_json()["lessons"]
+    assert len(lessons) == 1
+    assert lessons[0]["lessonId"] == lesson_id
+    assert lessons[0]["notes"] == "key idea here"
+    assert lessons[0]["lessonTitle"] == "Lesson One"
+    assert lessons[0]["moduleTitle"] == "Module One"
+
+
+def test_course_notes_route_empty_when_nothing_annotated(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, _ = _fixture_course(courses, root)
+    resp = client.get(f"/api/courses/{manifest['id']}/notes")
+    assert resp.status_code == 200
+    assert resp.get_json()["lessons"] == []
+
+
+def test_course_notes_route_404s(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    assert client.get("/api/courses/nope/notes").status_code == 404
+    assert client.get("/api/courses/Bad_Id/notes").status_code == 404
+
+
 def test_get_lesson_route_includes_prior_knowledge_in_prompt(client, tmp_path, monkeypatch):
     from backend import courses, claude_client, events, db
     root = tmp_path / "courses"; root.mkdir()

@@ -542,6 +542,8 @@ textarea::placeholder{color:#b3a994}
 .c-badge.proficient{background:rgba(47,143,208,.14); color:var(--blue-text); border-color:rgba(47,143,208,.3)}
 .c-badge.familiar{background:rgba(124,106,255,.14); color:var(--purple); border-color:rgba(124,106,255,.25)}
 .c-badge.attempted{background:rgba(131,122,108,.12); color:var(--text-mut); border-color:rgba(131,122,108,.2)}
+.c-noted{font-size:10px; font-weight:600; padding:3px 8px; border-radius:999px; margin-left:8px;
+  background:rgba(47,143,208,.14); color:var(--blue-text); border:1px solid rgba(47,143,208,.25)}
 
 /* #1 real-world capstone — entry button in the curriculum + the capstone view */
 .c-capstone{display:block; width:100%; text-align:left; padding:11px 16px; cursor:pointer;
@@ -577,6 +579,16 @@ textarea::placeholder{color:#b3a994}
 .src-badge.src-official-docs{background:rgba(47,143,208,.14); color:var(--blue-text); border-color:rgba(47,143,208,.3)}
 .src-badge.src-video{background:rgba(214,72,110,.12); color:#a63d5c; border-color:rgba(214,72,110,.28)}
 .src-empty{font-size:14px; color:var(--text-mut)}
+
+/* ---- My notes (Tier 3 #20): read-only per-course aggregate ---- */
+.mn-lesson{padding:14px 0; border-top:1px solid var(--border-field)}
+.mn-lesson:first-child{border-top:none; padding-top:0}
+.mn-head{display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:6px}
+.mn-ltitle{font-size:15px; font-weight:600; color:var(--text)}
+.mn-mtitle{font-size:11px; color:var(--text-mut); white-space:nowrap}
+.mn-notes{font-family:var(--serif); font-size:14px; line-height:1.55; color:var(--text-2); white-space:pre-wrap; margin-bottom:8px}
+.mn-highlights{margin:0; padding-left:18px; font-size:13px; line-height:1.6; color:var(--text-2)}
+.mn-highlights li{margin-bottom:3px}
 
 /* Phase 2 — compact lesson-sources list (lesson view + Library roll-up) */
 .lesson-sources{padding:16px 18px}

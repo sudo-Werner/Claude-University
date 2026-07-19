@@ -37,16 +37,18 @@ export function recommendedStep(manifest, mastery, exams) {
   return null;
 }
 
-function lessonRow(lesson, mastery, currentId, recommended) {
+function lessonRow(lesson, mastery, currentId, recommended, notedIds) {
   const status = lessonStatus(lesson.id, mastery, currentId);
   const level = mastery && mastery[lesson.id];
   const badge = level ? `<span class="c-badge ${level}">${LABELS[level]}</span>` : "";
   const chip = recommended ? `<span class="c-next">Next</span>` : "";
+  const noted = notedIds && notedIds.has(lesson.id)
+    ? `<span class="c-noted" title="Has notes or highlights">Notes</span>` : "";
   const inner = status === "done" ? CHECK : "";
   return (
     `<button class="c-lesson ${status}" data-lesson="${esc(lesson.id)}">` +
     `<span class="c-mark ${status}">${inner}</span>` +
-    `<span class="c-ltitle">${esc(lesson.title)}</span>${chip}${badge}</button>`
+    `<span class="c-ltitle">${esc(lesson.title)}</span>${chip}${noted}${badge}</button>`
   );
 }
 
@@ -73,11 +75,11 @@ function examRow(examKey, exams, label, opts = {}) {
   );
 }
 
-function moduleBlock(module, mastery, currentId, exams, rec, flagged) {
+function moduleBlock(module, mastery, currentId, exams, rec, flagged, notedIds) {
   const p = moduleProgress(module, mastery);
   const rows = (module.lessons || [])
     .map((l) => lessonRow(l, mastery, currentId,
-      !!(rec && rec.type === "lesson" && rec.id === l.id)))
+      !!(rec && rec.type === "lesson" && rec.id === l.id), notedIds))
     .join("");
   // #1: once every lesson in the module is done, offer its real-world capstone.
   const complete = p.total > 0 && p.done === p.total;
@@ -95,7 +97,7 @@ function moduleBlock(module, mastery, currentId, exams, rec, flagged) {
   );
 }
 
-export function curriculumHTML(manifest, mastery, currentId, exams, coursePassed) {
+export function curriculumHTML(manifest, mastery, currentId, exams, coursePassed, notedIds) {
   const m = mastery || {};
   const flat = flatten(manifest);
   const done = flat.filter((l) => m[l.id]).length;
@@ -106,7 +108,7 @@ export function curriculumHTML(manifest, mastery, currentId, exams, coursePassed
   const anyDone = mods.map((mod) => (mod.lessons || []).some((l) => m[l.id]));
   const modules = mods
     .map((mod, i) => moduleBlock(mod, m, currentId, exams, rec,
-      !passedExam(mod.id) && anyDone.slice(i + 1).some(Boolean)))
+      !passedExam(mod.id) && anyDone.slice(i + 1).some(Boolean), notedIds))
     .join("");
   // #1: when the whole course is done, offer a course-wide real-world capstone.
   const courseDone = flat.length > 0 && done === flat.length;

@@ -11,6 +11,7 @@ import { libraryHTML } from "../src/views/library.js";
 import { syllabusHTML } from "../src/views/syllabus.js";
 import { homeHTML } from "../src/views/home.js";
 import { activateHTML } from "../src/views/activate.js";
+import { myNotesHTML } from "../src/views/mynotes.js";
 const DASHBOARD_SEED = {
   topic: "Backpropagation, intuitively",
   sub: "Module 3 · Neural Networks · Lesson 2",
@@ -221,6 +222,38 @@ test("libraryHTML groups sources by type with badges and real links", () => {
 test("libraryHTML handles an empty source list", () => {
   const html = libraryHTML({ courseId: "c", title: "X", sources: [] });
   assert.match(html, /No grounded sources/);
+});
+
+test("myNotesHTML renders notes and highlights grouped by lesson", () => {
+  const html = myNotesHTML({ lessons: [
+    { lessonId: "c-l1", lessonTitle: "Intro", moduleTitle: "Module One",
+      notes: "key idea here", highlights: ["important bit"] },
+    { lessonId: "c-l2", lessonTitle: "Loops", moduleTitle: "Module One",
+      notes: "", highlights: ["for vs while"] },
+  ] });
+  assert.match(html, /My notes/);
+  assert.match(html, /Intro/);
+  assert.match(html, /Module One/);
+  assert.match(html, /key idea here/);
+  assert.match(html, /important bit/);
+  assert.match(html, /Loops/);
+  assert.match(html, /for vs while/);
+  assert.match(html, /data-action="back"/);
+});
+
+test("myNotesHTML shows an empty-state nudge when nothing is annotated", () => {
+  const html = myNotesHTML({ lessons: [] });
+  assert.match(html, /Nothing here yet/);
+});
+
+test("myNotesHTML escapes notes and highlight text", () => {
+  const html = myNotesHTML({ lessons: [
+    { lessonId: "c-l1", lessonTitle: "<img src=x>", moduleTitle: "M",
+      notes: "<script>alert(1)</script>", highlights: ["<b>bold</b>"] },
+  ] });
+  assert.doesNotMatch(html, /<img src=x>/);
+  assert.doesNotMatch(html, /<script>/);
+  assert.doesNotMatch(html, /<b>bold<\/b>/);
 });
 
 test("libraryHTML shows a 'used in your lessons' roll-up when present", () => {
@@ -1096,6 +1129,22 @@ test("curriculumHTML renders exam rows with status and final row", () => {
   assert.ok(html.includes("Not taken"));
   const passedHtml = curriculumHTML(manifest, {}, null, exams, true);
   assert.ok(passedHtml.includes("Course passed"));
+});
+
+test("curriculumHTML marks a lesson with notes/highlights and leaves others plain", () => {
+  const manifest = { title: "T", modules: [{ id: "m1", title: "M1", lessons: [
+    { id: "l1", title: "L1" }, { id: "l2", title: "L2" }] }] };
+  const html = curriculumHTML(manifest, {}, null, {}, false, new Set(["l1"]));
+  const l1Row = html.slice(html.indexOf('data-lesson="l1"'), html.indexOf('data-lesson="l2"'));
+  const l2Row = html.slice(html.indexOf('data-lesson="l2"'));
+  assert.match(l1Row, /c-noted/);
+  assert.doesNotMatch(l2Row, /c-noted/);
+});
+
+test("curriculumHTML omits the notes indicator when notedIds is absent", () => {
+  const manifest = { title: "T", modules: [{ id: "m1", title: "M1", lessons: [{ id: "l1", title: "L1" }] }] };
+  const html = curriculumHTML(manifest, {}, null, {}, false);
+  assert.doesNotMatch(html, /c-noted/);
 });
 
 test("curriculumHTML failed exam row shows best score and attempts", () => {

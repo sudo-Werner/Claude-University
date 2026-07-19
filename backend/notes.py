@@ -87,3 +87,29 @@ def save_workspace(content_dir, course_id, lesson_id, notes, chat, highlights=No
     path.parent.mkdir(parents=True, exist_ok=True)
     fsutil.write_text_atomic(path, blob)
     return record
+
+
+def course_notes_summary(content_dir, course_id, manifest):
+    """Read-only per-lesson aggregate of notes + highlights across a whole
+    course, in curriculum order, for the 'My notes' view (charter Tier 3 #20 —
+    display only, no AI processing). Skips lessons with neither: most lessons
+    are never annotated, and this view exists to surface the ones that were."""
+    out = []
+    for module in manifest.get("modules", []):
+        for lesson in module.get("lessons", []):
+            lesson_id = lesson.get("id")
+            ws = load_workspace(content_dir, course_id, lesson_id)
+            notes_text = (ws.get("notes") or "").strip()
+            highlights = [h.get("text", "") for h in (ws.get("highlights") or [])
+                         if isinstance(h, dict)]
+            if not notes_text and not highlights:
+                continue
+            out.append({
+                "lessonId": lesson_id,
+                "lessonTitle": lesson.get("title", ""),
+                "moduleTitle": module.get("title", ""),
+                "notes": notes_text,
+                "highlights": highlights,
+                "updatedAt": ws.get("updatedAt"),
+            })
+    return out

@@ -101,6 +101,12 @@ export async function gradeTeaching({ fetch, courseId, lessonId, messages }) {
   return resp.json();
 }
 
+export async function loadCourseNotes({ fetch, courseId }) {
+  const resp = await fetch(`/api/courses/${courseId}/notes`);
+  if (!resp.ok) return { lessons: [] };
+  return resp.json();
+}
+
 export async function loadLibrary({ fetch, courseId }) {
   const resp = await fetch(`/api/courses/${courseId}/library`);
   if (!resp.ok) {

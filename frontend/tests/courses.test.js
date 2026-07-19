@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, loadCourseNotes, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -141,6 +141,20 @@ test("loadLibrary fetches the course library", async () => {
   const lib = await loadLibrary({ fetch, courseId: "c" });
   assert.equal(url, "/api/courses/c/library");
   assert.equal(lib.courseId, "c");
+});
+
+test("loadCourseNotes fetches the course notes summary", async () => {
+  let url;
+  const fetch = async (u) => { url = u; return { ok: true, json: async () => ({ lessons: [{ lessonId: "c-l1" }] }) }; };
+  const data = await loadCourseNotes({ fetch, courseId: "c" });
+  assert.equal(url, "/api/courses/c/notes");
+  assert.deepEqual(data.lessons, [{ lessonId: "c-l1" }]);
+});
+
+test("loadCourseNotes fails open to an empty list on non-ok", async () => {
+  const fetch = async () => ({ ok: false, status: 500 });
+  const data = await loadCourseNotes({ fetch, courseId: "c" });
+  assert.deepEqual(data.lessons, []);
 });
 
 test("loadLibrary returns an error shape on non-ok", async () => {

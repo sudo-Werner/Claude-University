@@ -82,6 +82,40 @@ def test_save_workspace_rejects_bad_highlights(tmp_path, bad_highlights):
         notes.save_workspace(tmp_path, "c", "l1", "n", [], bad_highlights)
 
 
+def test_course_notes_summary_includes_only_lessons_with_notes_or_highlights(tmp_path):
+    manifest = {"modules": [{"id": "m1", "title": "M1", "lessons": [
+        {"id": "c1-l1", "title": "L1"}, {"id": "c1-l2", "title": "L2"}, {"id": "c1-l3", "title": "L3"}]}]}
+    notes.save_workspace(tmp_path, "c1", "c1-l1", "some notes", [])
+    notes.save_workspace(tmp_path, "c1", "c1-l2", "", [],
+                         highlights=[{"id": "h1", "text": "important bit", "occurrence": 0}])
+    # c1-l3 never touched -> no workspace file at all
+    summary = notes.course_notes_summary(tmp_path, "c1", manifest)
+    assert [s["lessonId"] for s in summary] == ["c1-l1", "c1-l2"]
+    assert summary[0]["notes"] == "some notes"
+    assert summary[0]["highlights"] == []
+    assert summary[1]["notes"] == ""
+    assert summary[1]["highlights"] == ["important bit"]
+
+
+def test_course_notes_summary_includes_module_and_lesson_titles(tmp_path):
+    manifest = {"modules": [{"id": "m1", "title": "Module One", "lessons": [{"id": "c1-l1", "title": "Lesson One"}]}]}
+    notes.save_workspace(tmp_path, "c1", "c1-l1", "n", [])
+    summary = notes.course_notes_summary(tmp_path, "c1", manifest)
+    assert summary[0]["moduleTitle"] == "Module One"
+    assert summary[0]["lessonTitle"] == "Lesson One"
+
+
+def test_course_notes_summary_empty_course_returns_empty_list(tmp_path):
+    manifest = {"modules": [{"id": "m1", "title": "M1", "lessons": [{"id": "c1-l1", "title": "L1"}]}]}
+    assert notes.course_notes_summary(tmp_path, "c1", manifest) == []
+
+
+def test_course_notes_summary_whitespace_only_notes_treated_as_empty(tmp_path):
+    manifest = {"modules": [{"id": "m1", "title": "M1", "lessons": [{"id": "c1-l1", "title": "L1"}]}]}
+    notes.save_workspace(tmp_path, "c1", "c1-l1", "   \n  ", [])
+    assert notes.course_notes_summary(tmp_path, "c1", manifest) == []
+
+
 def test_save_workspace_enforces_size_cap_via_highlights(tmp_path):
     big_highlights = [{"id": f"h{i}", "text": "x" * 500, "occurrence": 0} for i in range(300)]
     with pytest.raises(notes.WorkspaceTooLarge):

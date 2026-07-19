@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, loadCourseNotes, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { arcadeHTML, arcadeGeneratingHTML, arcadeLockedHTML, arcadeTimeoutHTML, hostIntroHTML, questionHTML, gradeChoice, matchBoardHTML, matchUpInit, matchUpSelectLeft, matchUpSelectRight, matchUpScore, arcadeResultHTML } from "./views/arcade.js";
 import { shellHTML, feedbackBarHTML } from "./views/shell.js";
@@ -15,6 +15,7 @@ import { activateHTML } from "./views/activate.js";
 import { curriculumHTML } from "./views/curriculum.js";
 import { capstoneHTML } from "./views/capstone.js";
 import { libraryHTML } from "./views/library.js";
+import { myNotesHTML } from "./views/mynotes.js";
 import { loadingHTML, LESSON_STAGES, DEEPEN_STAGES, CAPSTONE_STAGES, PROGRAM_STAGES, EXAM_STAGES, REMEDIATION_STAGES } from "./views/loading.js";
 import { examHTML, examResultHTML, examReady } from "./views/exam.js";
 import { diagnosticHTML } from "./views/diagnostic.js";
@@ -99,6 +100,7 @@ export async function init({ window, fetch }) {
     feedback: { open: false, sending: false, text: "", notice: "", activeWhere: "top" },
     profile: null,
     continueToLessonAfterReview: false,
+    curriculumNotedIds: null,
   };
 
   // ---- feedback bar (global; delegated on root so it survives every shell repaint) ----
@@ -487,6 +489,8 @@ export async function init({ window, fetch }) {
     if (cur) cur.addEventListener("click", showCurriculum);
     const lib = view.querySelector('[data-action="library"]');
     if (lib) lib.addEventListener("click", showLibrary);
+    const mn = view.querySelector('[data-action="mynotes"]');
+    if (mn) mn.addEventListener("click", showMyNotes);
     const ref = view.querySelector('[data-action="refine"]');
     if (ref) ref.addEventListener("click", startRefine);
     const cadenceBtn = view.querySelector('[data-action="streak-cadence"]');
@@ -633,17 +637,46 @@ export async function init({ window, fetch }) {
     paintCourse();
   }
 
+  // "My notes" (charter Tier 3 #20): a read-only per-course aggregate of every
+  // lesson's notes + highlights. Display only, mirrors showLibrary's shape.
+  async function showMyNotes() {
+    pauseTimer();
+    ui.screen = "mynotes";
+    root.innerHTML = shellHTML({ back: ui.manifest ? ui.manifest.title : "Courses" });
+    root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
+    const view = root.querySelector("#view");
+    view.innerHTML = `<div class="card"><div class="prompt">Loading your notes…</div></div>`;
+    const data = await loadCourseNotes({ fetch, courseId: ui.courseId });
+    if (ui.screen !== "mynotes") return; // navigated away mid-load
+    view.innerHTML = myNotesHTML(data);
+    view.querySelector('[data-action="back"]').addEventListener("click", showCourse);
+  }
+
   function showCurriculum() {
     pauseTimer();
     ui.screen = "curriculum";
+    ui.curriculumNotedIds = null; // stale from a previous course — reload before showing any indicator
     root.innerHTML = shellHTML({ back: ui.manifest.title });
     root.querySelector('[data-action="nav-back"]').addEventListener("click", showCourse);
     paintCurriculum();
+    loadCurriculumNotedIds();
+  }
+
+  // Background, non-blocking (charter Tier 3 #20's curriculum-row indicator):
+  // the curriculum itself renders immediately from data already in memory;
+  // this repaints once the notes summary lands, same idiom as fetchFreshItems.
+  function loadCurriculumNotedIds() {
+    const courseId = ui.courseId;
+    loadCourseNotes({ fetch, courseId }).then((data) => {
+      if (ui.courseId !== courseId || ui.screen !== "curriculum") return;
+      ui.curriculumNotedIds = new Set((data.lessons || []).map((l) => l.lessonId));
+      paintCurriculum();
+    }).catch(() => {});
   }
 
   function paintCurriculum() {
     const view = root.querySelector("#view");
-    view.innerHTML = curriculumHTML(ui.manifest, (ui.manifest && ui.manifest.mastery) || {}, currentLessonId(), ui.manifest && ui.manifest.exams, !!(ui.manifest && ui.manifest.coursePassed));
+    view.innerHTML = curriculumHTML(ui.manifest, (ui.manifest && ui.manifest.mastery) || {}, currentLessonId(), ui.manifest && ui.manifest.exams, !!(ui.manifest && ui.manifest.coursePassed), ui.curriculumNotedIds);
     view.querySelectorAll("[data-lesson]").forEach((row) => {
       row.addEventListener("click", () => openLesson(row.getAttribute("data-lesson")));
     });
