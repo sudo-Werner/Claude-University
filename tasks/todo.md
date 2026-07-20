@@ -68,7 +68,7 @@ Mark items done here with date + merge commit as they land.
   Changes when Werner's reviews come due — his call. If approved: implement FSRS scheduling
   derived from the same event log (state stays derivable, migration = re-derivation), keep
   SM-2 code deletable in one commit, A/B nothing (single user).
-- [ ] **7. Misconception profile via structured teach-back rubric** [R: Studyield's
+- [x] **7. Misconception profile via structured teach-back rubric** [R: Studyield's
   Feynman-rubric JSON (accuracy/clarity/completeness/understanding + misconceptions) is a
   ready blueprint; validation vs. human judgment unproven — use for feedback, NOT mastery
   gating. Parked by Werner earlier ("decide later") — the blueprint may change his answer]
@@ -76,6 +76,32 @@ Mark items done here with date + merge commit as they land.
   strings accumulate into a per-course, learner-visible AND learner-editable profile page
   (transparency pattern from DeepTutor [R]); profile feeds lesson-generation context. Never
   gates mastery.
+
+  **STATUS 2026-07-20: SHIPPED, deployed, live-verified.** Design brainstormed with Werner,
+  Fable-reviewed (caught a validation-fragility bug that would have made grading LESS
+  reliable, an accountability/excerpt gap, and an `/explain` plumbing correction — all three
+  confirmed present in the shipped code by two independent reviewers). Scope decision from
+  the brainstorm: **delete-only editing**, not full edit (Werner's explicit choice over the
+  original "learner-editable" framing above). Built subagent-driven, 7 tasks, TDD throughout,
+  each task individually reviewed (spec + quality, all Approved) plus a final whole-branch
+  review that found and fixed 2 Important issues before deploy: an unguarded `e["text"]`
+  read that could 500 lesson generation on a malformed `misconceptions.json` (permanent,
+  never-pruned learner state — hardened to a single choke-point filter in `load_profile`),
+  and a missing cross-task integration test proving the persist→inject round trip (added,
+  passed against existing code — confirmed a coverage gap, not a bug). 909 backend / 358
+  frontend tests, all green.
+  Live-verified on the Pi with real data: sent a real wrong explanation through `/explain`
+  on a real ML-course lesson, Claude's grader flagged 3 genuine misconceptions, confirmed
+  the HTTP response carried only the legacy `{verdict, note, followUp}` keys (no rubric
+  leak), confirmed `GET .../misconceptions` listed all 3. Triggered a real (uncached) next-
+  lesson generation and captured the literal prompt sent to Claude — it contained the
+  injection block with the exact 3 misconceptions, verbatim, framed as "address only where
+  relevant." Verified delete end-to-end in a real browser (Playwright, Tailscale): all 3
+  entries removed via the UI, page correctly fell back to the empty state. All test
+  data cleaned up (misconceptions.json entries removed via the app's own delete endpoint;
+  zero telemetry events were created by this verification, so nothing else needed cleanup).
+  Tier 2 items 6, 8, 9, 10, 11, 12 remain unbuilt — deliberately not selected by Werner
+  when this item was presented.
 - [ ] **8. Exercise-answer persistence** [Werner feedback #4 part 2 — explicitly deferred to
   a scope discussion that hasn't happened. Do not build without it]
   Open questions for that discussion: persist where (workspace file has room), restore on
