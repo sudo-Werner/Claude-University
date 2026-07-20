@@ -265,7 +265,7 @@ textarea::placeholder{color:#b3a994}
 .reveal.shown{background:rgba(37,180,120,.15); border:1px solid rgba(37,180,120,.42); color:#1c7a52}
 .solution{background:rgba(37,180,120,.15); border:1px solid rgba(37,180,120,.38); border-radius:13px; padding:14px; margin-top:10px}
 .solution .lbl{font-size:11px; font-weight:700; letter-spacing:.08em; color:#1c8c5c; margin-bottom:8px}
-.solution .ans{font:15px var(--mono); color:#13633f; margin-bottom:6px}
+.solution .ans{font-family:var(--serif); font-size:15px; font-weight:600; line-height:1.55; color:#13633f; margin-bottom:6px}
 .solution .note{font-family:var(--serif); font-size:14px; line-height:1.55; color:var(--text-2)}
 
 /* #5 "explain more deeply" — subtle, low-emphasis link-style button under the prompt */

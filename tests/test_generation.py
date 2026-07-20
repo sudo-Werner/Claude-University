@@ -735,6 +735,14 @@ def test_lesson_prompt_has_readability_style_guidance():
     assert "short" in low                   # short paragraphs/sentences
 
 
+def test_lesson_prompt_has_solution_ans_structure_guidance():
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="c-l1", lesson_title="L",
+                          module_title="M", position=1, total=3)
+    assert "solutionAns" in p and "<ul>" in p
+    low = p.lower()
+    assert "dense sentence" in low or "semicolons and arrows" in low
+
+
 def test_lesson_prompt_has_visual_aid_guidance():
     p = gen.lesson_prompt(brief="b", profile={}, lesson_id="c-l1", lesson_title="L",
                           module_title="M", position=1, total=3)
