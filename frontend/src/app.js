@@ -1592,7 +1592,7 @@ export async function init({ window, fetch }) {
   async function saveWsNow() {
     const ls = ui.lessonState, ws = ls.ws;
     if (!ws) return;
-    const res = await saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat });
+    const res = await saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
     if (ui.lessonState !== ls) return;
     ws.saveStatus = res.ok ? "saved" : "offline";
     const el = root.querySelector(".ws-status");
@@ -1630,7 +1630,7 @@ export async function init({ window, fetch }) {
       onDone: () => {
         ws.pending = false;                 // always clear pending so the input re-enables
         if (reply.content.trim()) ws.chat.push(reply);
-        saveWorkspace({ fetch, storage, courseId: cid, lessonId: lid, notes: ws.notes, chat: ws.chat });
+        saveWorkspace({ fetch, storage, courseId: cid, lessonId: lid, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
         if (onScreen()) paintLesson();
       },
       onError: (e) => {
@@ -1883,7 +1883,7 @@ export async function init({ window, fetch }) {
       ws.open = true;
       ws.tab = "chat";
       ws.chat.push({ role: "assistant", content: g.followUp });
-      saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat });
+      saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
       paintLesson();
     });
     const socBtn = view.querySelector('[data-action="socratic-start"]');
@@ -1897,7 +1897,7 @@ export async function init({ window, fetch }) {
       if (entering) {
         ws.chat.push({ role: "assistant", content: SOCRATIC_OPENER });
         // Best-effort persist — same fire-and-forget idiom as the explain-chat seeding.
-        saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat });
+        saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
       }
       paintLesson();
     });
@@ -1914,7 +1914,7 @@ export async function init({ window, fetch }) {
         ws.teachGrade = null;
         ws.chat.push({ role: "assistant", content: TEACH_OPENER });
         // Best-effort persist — same fire-and-forget idiom as the socratic entry above.
-        saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat });
+        saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
       }
       paintLesson();
     });

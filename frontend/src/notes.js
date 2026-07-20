@@ -20,6 +20,10 @@ export async function loadWorkspace({ fetch, storage, courseId, lessonId }) {
   return cacheGet(storage, courseId, lessonId) || { ...EMPTY };
 }
 
+// Every save is a full-record overwrite, not a merge — a caller that omits
+// `highlights` wipes any previously saved highlights (defaults to []), not
+// "leaves them unchanged". Always pass ws.highlights, even when the save is
+// about notes or chat, not highlights.
 export async function saveWorkspace({ fetch, storage, courseId, lessonId, notes, chat, highlights = [] }) {
   // Optimistic: write the local cache first so a failed/offline save never loses text
   // (or a just-created highlight -- see Task 6's addHighlightFromSelection).
