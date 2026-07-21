@@ -763,3 +763,16 @@ textarea::placeholder{color:#b3a994}
 .qc-compose textarea{flex:1; min-height:44px}
 .qc-send{padding:10px 14px; border:none; border-radius:var(--r-sm); cursor:pointer; font:600 13px/1 inherit; color:#fff; background:var(--grad)}
 .qc-send:disabled{opacity:.5; cursor:default}
+
+/* ---- live generation feed (2026-07-21) ---- */
+.gen-head{display:flex; align-items:center; gap:9px}
+.gen-title{font-size:14px; font-weight:600; color:var(--text)}
+.gen-elapsed{margin-left:auto; font-size:13px; color:var(--text-dim); font-variant-numeric:tabular-nums}
+.gen-feed{margin-top:14px; max-height:340px; overflow-y:auto; display:flex; flex-direction:column; gap:5px}
+.gen-line{font-size:13px; line-height:1.45; color:var(--text-2)}
+.gen-line.gen-stage{font-weight:600; color:var(--text); margin-top:7px}
+.gen-line.gen-think{font-style:italic; color:var(--text-dim)}
+.gen-line.gen-search,.gen-line.gen-read{color:var(--blue-text)}
+.gen-note{margin-top:12px; font-size:13px; color:var(--text-mut)}
+.gen-error{font-size:14px; color:var(--text)}
+.gen-retry{margin-top:10px}

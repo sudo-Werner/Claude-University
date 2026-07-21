@@ -4,7 +4,7 @@ import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
 import { loadProfile, saveProfile, buildProfile } from "./profile.js";
 import { timerView, TOTAL_SECONDS } from "./timer.js";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, loadCourseNotes, loadMisconceptions, deleteMisconception, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "./courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, loadCourseNotes, loadMisconceptions, deleteMisconception, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem, startLessonGeneration, getGenerationProgress, listGenerationJobs } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { arcadeHTML, arcadeGeneratingHTML, arcadeLockedHTML, arcadeTimeoutHTML, hostIntroHTML, questionHTML, gradeChoice, matchBoardHTML, matchUpInit, matchUpSelectLeft, matchUpSelectRight, matchUpScore, arcadeResultHTML } from "./views/arcade.js";
 import { shellHTML, feedbackBarHTML } from "./views/shell.js";
@@ -31,6 +31,7 @@ import { streamChat } from "./chat.js";
 import { loadWorkspace, saveWorkspace } from "./notes.js";
 import { autoGrowTextarea } from "./autogrow.js";
 import { countOccurrencesBefore, flattenTextNodes, applyHighlight, applyHighlights, removeHighlightMarks } from "./highlights.js";
+import { genFeedHTML, genLineHTML, genErrorHTML, genChipHTML, formatElapsed } from "./views/genfeed.js";
 
 const EVENTS_ENDPOINT = "/api/events";
 const PROFILE_ENDPOINT = "/api/profile";
@@ -102,6 +103,9 @@ export async function init({ window, fetch }) {
     profile: null,
     continueToLessonAfterReview: false,
     curriculumNotedIds: null,
+    genJob: null,
+    genRetry: null,
+    genPollTimer: null,
   };
 
   // ---- feedback bar (global; delegated on root so it survives every shell repaint) ----
@@ -162,6 +166,12 @@ export async function init({ window, fetch }) {
     const mark = e.target.closest("mark.highlight");
     if (mark) { showHighlightMenu(mark); return; }
     if (highlightMenu && !e.target.closest(".highlight-menu")) hideHighlightMenu();
+    if (e.target.closest('[data-action="gen-retry"]')) {
+      const t = ui.genRetry;
+      ui.genRetry = null;
+      if (t) openLesson(t.lessonId);
+      return;
+    }
     const fbToggle = e.target.closest('[data-action="feedback-toggle"]');
     if (fbToggle) {
       // Navigation repaints the shell with an empty slot without touching
@@ -1416,6 +1426,16 @@ export async function init({ window, fetch }) {
     // advanceAfterLesson) set isReview on their own state literals because openLesson
     // resets reviewQueue and lessonState from scratch.
     if (!lessonId) return;
+    // Rejoining a lesson whose generation is already running: skip the status
+    // check and the prior-knowledge card (it was answered when the job started)
+    // and drop straight back into the live feed.
+    if (ui.genJob && ui.genJob.courseId === ui.courseId
+        && ui.genJob.lessonId === lessonId && ui.genJob.status === "running") {
+      ui.reviewQueue = [];
+      ui.loadSeq = (ui.loadSeq || 0) + 1;
+      startGenerationFeed(lessonId, ui.loadSeq);
+      return;
+    }
     ui.reviewQueue = [];
     ui.loadSeq = (ui.loadSeq || 0) + 1;
     const seq = ui.loadSeq;
@@ -1460,10 +1480,7 @@ export async function init({ window, fetch }) {
     const ta = view.querySelector('[data-field="pk-text"]');
     if (ta) ta.addEventListener("input", () => { text = ta.value; });
     const continueToLesson = async () => {
-      ui.screen = "lesson-loading";
-      const v = root.querySelector("#view");
-      if (v) startLoading(v, "lesson", LESSON_STAGES);
-      await finishOpenLesson(lessonId, opts, seq);
+      await startGenerationFeed(lessonId, seq);
     };
     const startBtn = view.querySelector('[data-action="pk-start"]');
     const skipBtn = view.querySelector('[data-action="pk-skip"]');
@@ -1503,6 +1520,111 @@ export async function init({ window, fetch }) {
     log("lesson_view", { courseId: ui.courseId, topicId: lessonId });
     if (!ui.timer.running) startTimer();
     showLesson();
+  }
+
+  // ---- live generation feed (2026-07-21 design) ----
+  // The job lives on the server; ui.genJob only mirrors it. The feed's DOM
+  // presence (data-gen-feed) is the truth for "is the learner watching" — the
+  // same idiom startLoading uses — so roaming needs no bookkeeping.
+  function paintGenChip() {
+    root.querySelectorAll("[data-gen-chip]").forEach((slot) => {
+      slot.innerHTML = genChipHTML(ui.genJob);
+    });
+  }
+
+  function appendGenEvents(snap) {
+    if (ui.genJob) ui.genJob.next = snap.next;
+    const feed = root.querySelector("[data-gen-feed]");
+    if (feed && (snap.events || []).length) {
+      for (const ev of snap.events) feed.insertAdjacentHTML("beforeend", genLineHTML(ev));
+      feed.scrollTop = feed.scrollHeight;
+    }
+    const el = root.querySelector("[data-gen-elapsed]");
+    if (el && snap.elapsed != null) el.textContent = formatElapsed(snap.elapsed);
+  }
+
+  function scheduleGenPoll() {
+    // Clear-then-arm (same idiom as ui.arcadePollTimer): rejoining the feed calls
+    // startGenerationFeed again, and without the clear the old chain and the new
+    // one would BOTH tick — duplicate polls and duplicated feed lines.
+    window.clearTimeout(ui.genPollTimer);
+    ui.genPollTimer = window.setTimeout(pollGeneration, 2000);
+  }
+
+  async function pollGeneration() {
+    const job = ui.genJob;
+    if (!job) return; // opened/cleared — the chain ends here
+    if (job.status !== "running") {
+      // done/error while roaming: no network needed, but keep the chip painted
+      // across shell repaints (navigation empties the slot).
+      paintGenChip();
+      scheduleGenPoll();
+      return;
+    }
+    const snap = await getGenerationProgress({
+      fetch, courseId: job.courseId, lessonId: job.lessonId, since: job.next,
+    });
+    if (ui.genJob !== job) return; // superseded while awaiting
+    if (snap.error) { scheduleGenPoll(); return; } // network blip — next tick retries
+    job.status = snap.status;
+    job.elapsed = snap.elapsed;
+    appendGenEvents(snap);
+    paintGenChip();
+    if (snap.status === "running") { scheduleGenPoll(); return; }
+    if (snap.status === "done") { onGenerationDone(job); return; }
+    onGenerationFailed(job, snap.error || (snap.status === "none"
+      ? "Generation was interrupted on the server — try again."
+      : "Something went wrong during generation."));
+  }
+
+  async function startGenerationFeed(lessonId, seq) {
+    ui.screen = "generating";
+    const found = flatLessons().find((l) => l.id === lessonId);
+    const view = root.querySelector("#view");
+    if (view) view.innerHTML = genFeedHTML(found ? found.title : lessonId);
+    const snap = await startLessonGeneration({ fetch, courseId: ui.courseId, lessonId });
+    if (ui.loadSeq !== seq) return; // navigated away — the job runs on regardless
+    if (snap.error) {
+      ui.genRetry = { lessonId };
+      if (view && view.isConnected) view.innerHTML = genErrorHTML(snap.error);
+      return;
+    }
+    ui.genJob = {
+      courseId: ui.courseId, lessonId, next: 0,
+      status: snap.status, elapsed: snap.elapsed || 0,
+    };
+    appendGenEvents(snap); // POST returns the snapshot from 0 — the backfill on rejoin
+    paintGenChip();
+    if (snap.status === "done") { onGenerationDone(ui.genJob); return; }
+    scheduleGenPoll();
+  }
+
+  function onGenerationDone(job) {
+    if (ui.screen === "generating" && root.querySelector("[data-gen-feed]")) {
+      ui.genJob = null;
+      paintGenChip();
+      ui.screen = "lesson-loading";
+      const v = root.querySelector("#view");
+      if (v) startLoading(v, "lesson", LESSON_STAGES);
+      finishOpenLesson(job.lessonId, {}, ui.loadSeq);
+      return;
+    }
+    paintGenChip();
+    scheduleGenPoll(); // keep the "ready" chip alive across navigations
+  }
+
+  function onGenerationFailed(job, message) {
+    job.message = message;
+    if (ui.screen === "generating" && root.querySelector("[data-gen-feed]")) {
+      ui.genJob = null;
+      paintGenChip();
+      ui.genRetry = { lessonId: job.lessonId };
+      const v = root.querySelector("#view");
+      if (v) v.innerHTML = genErrorHTML(message);
+      return;
+    }
+    paintGenChip();
+    scheduleGenPoll(); // keep the "failed" chip alive across navigations
   }
 
   // Charter Tier 3 #19 — honors the design brief's warm-up promise: due reviews are
