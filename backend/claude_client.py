@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import threading
 
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = "claude-sonnet-5"
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/home/werner/.local/bin/claude")
 # A rich lesson — especially a "go deeper" regeneration that asks for fundamentals +
 # a worked example + a visual aid — legitimately takes ~110s via the Max CLI (measured
