@@ -327,3 +327,38 @@ export async function getQuizStats({ fetch, courseId }) {
     return null;
   }
 }
+
+// Live generation progress (2026-07-21 design). All three never reject: a network
+// blip mid-poll must read as "try again next tick", never a crashed feed.
+export async function startLessonGeneration({ fetch, courseId, lessonId }) {
+  try {
+    const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/generate`, { method: "POST" });
+    if (!resp.ok) {
+      return { error: await parseErrorBody(resp, "Couldn't start generating this lesson.") };
+    }
+    return await resp.json();
+  } catch (e) {
+    return { error: "Couldn't start generating this lesson." };
+  }
+}
+
+export async function getGenerationProgress({ fetch, courseId, lessonId, since = 0 }) {
+  try {
+    const resp = await fetch(`/api/courses/${courseId}/lessons/${lessonId}/generate?since=${since}`);
+    if (!resp.ok) return { error: "progress unavailable" };
+    return await resp.json();
+  } catch (e) {
+    return { error: "progress unavailable" };
+  }
+}
+
+export async function listGenerationJobs({ fetch }) {
+  try {
+    const resp = await fetch("/api/generation-jobs");
+    if (!resp.ok) return { jobs: [] };
+    const body = await resp.json();
+    return { jobs: body.jobs || [] };
+  } catch (e) {
+    return { jobs: [] };
+  }
+}

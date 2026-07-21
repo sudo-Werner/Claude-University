@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, loadCourseNotes, loadMisconceptions, deleteMisconception, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem } from "../src/courses.js";
+import { listCourses, loadCourse, loadLesson, getLessonStatus, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, loadCourseNotes, loadMisconceptions, deleteMisconception, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem, startLessonGeneration, getGenerationProgress, listGenerationJobs } from "../src/courses.js";
 
 test("listCourses returns the courses array", async () => {
   let url;
@@ -418,4 +418,52 @@ test("getQuizStats fetches the stats endpoint and returns the body, or null on f
   assert.equal(url, "/api/courses/c/quiz/stats");
   assert.equal(stats.roundsPlayed, 3);
   assert.equal(await getQuizStats({ fetch: async () => ({ ok: false }), courseId: "c" }), null);
+});
+
+test("startLessonGeneration POSTs and returns the snapshot", async () => {
+  let url, opts;
+  const fetch = async (u, o) => {
+    url = u; opts = o;
+    return { ok: true, json: async () => ({ status: "running", events: [], next: 0 }) };
+  };
+  const snap = await startLessonGeneration({ fetch, courseId: "c1", lessonId: "l1" });
+  assert.equal(url, "/api/courses/c1/lessons/l1/generate");
+  assert.equal(opts.method, "POST");
+  assert.equal(snap.status, "running");
+});
+
+test("startLessonGeneration surfaces a server error message", async () => {
+  const fetch = async () => ({ ok: false, json: async () => ({ error: "lesson not found" }) });
+  const snap = await startLessonGeneration({ fetch, courseId: "c1", lessonId: "l1" });
+  assert.equal(snap.error, "lesson not found");
+});
+
+test("startLessonGeneration never throws on network failure", async () => {
+  const fetch = async () => { throw new Error("offline"); };
+  const snap = await startLessonGeneration({ fetch, courseId: "c1", lessonId: "l1" });
+  assert.ok(snap.error);
+});
+
+test("getGenerationProgress passes since and returns the snapshot", async () => {
+  let url;
+  const fetch = async (u) => {
+    url = u;
+    return { ok: true, json: async () => ({ status: "running", events: [{ n: 3 }], next: 4 }) };
+  };
+  const snap = await getGenerationProgress({ fetch, courseId: "c1", lessonId: "l1", since: 3 });
+  assert.equal(url, "/api/courses/c1/lessons/l1/generate?since=3");
+  assert.equal(snap.next, 4);
+});
+
+test("getGenerationProgress returns error on failure without throwing", async () => {
+  const fetch = async () => { throw new Error("offline"); };
+  const snap = await getGenerationProgress({ fetch, courseId: "c1", lessonId: "l1", since: 0 });
+  assert.ok(snap.error);
+});
+
+test("listGenerationJobs returns jobs array, [] on failure", async () => {
+  const good = async () => ({ ok: true, json: async () => ({ jobs: [{ courseId: "c1" }] }) });
+  const bad = async () => { throw new Error("offline"); };
+  assert.deepEqual((await listGenerationJobs({ fetch: good })).jobs, [{ courseId: "c1" }]);
+  assert.deepEqual((await listGenerationJobs({ fetch: bad })).jobs, []);
 });
