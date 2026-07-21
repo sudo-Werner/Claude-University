@@ -41,6 +41,7 @@ export function shellHTML({ back = null }) {
   return `
     <header class="topbar">
       <div class="brand"><span class="logo">U</span>Claude University</div>
+      <span data-gen-chip></span>
       <button class="fb-toggle" data-action="feedback-toggle" data-fb-toggle="top">Feedback</button>
     </header>
     <div data-fb-slot="top"></div>

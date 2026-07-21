@@ -172,6 +172,7 @@ export async function init({ window, fetch }) {
       if (t) openLesson(t.lessonId);
       return;
     }
+    if (e.target.closest('[data-action="gen-open"]')) { openGenTarget(); return; }
     const fbToggle = e.target.closest('[data-action="feedback-toggle"]');
     if (fbToggle) {
       // Navigation repaints the shell with an empty slot without touching
@@ -1436,6 +1437,14 @@ export async function init({ window, fetch }) {
       startGenerationFeed(lessonId, ui.loadSeq);
       return;
     }
+    // A finished job's chip is only meaningful until its lesson is opened. Any
+    // direct open of that lesson (syllabus, next-lesson button) retires the chip
+    // and, via pollGeneration's !job guard, ends the keep-alive loop.
+    if (ui.genJob && ui.genJob.courseId === ui.courseId
+        && ui.genJob.lessonId === lessonId && ui.genJob.status !== "running") {
+      ui.genJob = null;
+      paintGenChip();
+    }
     ui.reviewQueue = [];
     ui.loadSeq = (ui.loadSeq || 0) + 1;
     const seq = ui.loadSeq;
@@ -1631,6 +1640,18 @@ export async function init({ window, fetch }) {
     }
     paintGenChip();
     scheduleGenPoll(); // keep the "failed" chip alive across navigations
+  }
+
+  // Chip click: a `done` job opens the now-cached lesson instantly; an `error`
+  // job re-enters openLesson's normal uncached flow (status check, activate
+  // card, fresh POST) — that IS the retry path, no separate branch needed.
+  async function openGenTarget() {
+    const job = ui.genJob;
+    if (!job) return;
+    ui.genJob = null;
+    paintGenChip();
+    if (ui.courseId !== job.courseId) await openCourse(job.courseId);
+    openLesson(job.lessonId);
   }
 
   // Charter Tier 3 #19 — honors the design brief's warm-up promise: due reviews are
@@ -2411,4 +2432,17 @@ export async function init({ window, fetch }) {
   ui.profile = profile;
   if (profile) showHome();
   else showDiagnostic();
+
+  // A page reload must not orphan a running generation: rejoin it and show the
+  // chip. Fire-and-forget — boot never blocks on this.
+  listGenerationJobs({ fetch }).then((resp) => {
+    const running = (resp.jobs || []).find((j) => j.status === "running");
+    if (!running || ui.genJob) return;
+    ui.genJob = {
+      courseId: running.courseId, lessonId: running.lessonId,
+      next: 0, status: "running", elapsed: running.elapsed || 0,
+    };
+    paintGenChip();
+    scheduleGenPoll();
+  });
 }

@@ -776,3 +776,9 @@ textarea::placeholder{color:#b3a994}
 .gen-note{margin-top:12px; font-size:13px; color:var(--text-mut)}
 .gen-error{font-size:14px; color:var(--text)}
 .gen-retry{margin-top:10px}
+
+/* ---- topbar generation chip (2026-07-21) ---- */
+.gen-chip{font-size:12px; font-weight:600; color:var(--text-dim); white-space:nowrap; font-variant-numeric:tabular-nums}
+button.gen-chip{cursor:pointer; border:1px solid var(--border-glass); border-radius:var(--r-sm); padding:4px 10px; background:var(--glass-field); font-family:var(--ui)}
+.gen-chip-ready{color:var(--purple-deep)}
+.gen-chip-err{color:var(--text)}
