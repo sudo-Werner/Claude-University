@@ -3,10 +3,24 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items, feedback, quiz, misconceptions
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items, feedback, quiz, misconceptions, jobs
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 _IMAGE_FILENAME_RE = _re.compile(r"^[a-z0-9-]+-\d\.(jpg|png|webp)$")
+
+# A background job has no HTTP channel to race (the old 540s watchdog existed only
+# to die before waitress's --channel-timeout). This is purely a hung-CLI guard.
+_JOB_TIMEOUT = 1200
+
+
+def _job_error_message(exc):
+    if isinstance(exc, claude_client.ClaudeAuthError):
+        return "Claude needs re-authentication on the Pi — run `claude` there to log in again."
+    if isinstance(exc, claude_client.ClaudeError):
+        if "timed out" in str(exc):
+            return "Generation took too long and was stopped — try again."
+        return "The model couldn't produce a valid lesson after a retry — try again."
+    return "Something unexpected went wrong during generation."
 
 
 def _lesson_concepts(course_id, lesson_id):
@@ -287,13 +301,7 @@ def create_app(db_path=None):
             return jsonify({"error": "not found"}), 404
         return jsonify({"ok": True})
 
-    @app.get("/api/courses/<course_id>/lessons/<lesson_id>")
-    def get_lesson(course_id, lesson_id):
-        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
-            return jsonify({"error": "lesson not found"}), 404
-        lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
-        if lesson is not None:
-            return jsonify(_with_concepts(lesson, course_id, lesson_id))
+    def _lesson_gen_inputs(course_id, lesson_id):
         conn = db.get_connection(path)
         try:
             prof = profile.latest_profile(conn)
@@ -303,6 +311,16 @@ def create_app(db_path=None):
             conn.close()
         prof_data = (prof or {}).get("data")
         misconception_texts = [e["text"] for e in misconceptions.load_profile(courses.CONTENT_DIR, course_id)]
+        return prof_data, performance, prior_knowledge, misconception_texts
+
+    @app.get("/api/courses/<course_id>/lessons/<lesson_id>")
+    def get_lesson(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
+        lesson = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id)
+        if lesson is not None:
+            return jsonify(_with_concepts(lesson, course_id, lesson_id))
+        prof_data, performance, prior_knowledge, misconception_texts = _lesson_gen_inputs(course_id, lesson_id)
         # Phase 2: generate lessons WITH web search so they're grounded in real accredited
         # sources (run_sourced returns (lesson, captured_sources)).
         generate = lambda prompt: claude_client.run_sourced(prompt, validate=generation.valid_lesson)
@@ -339,6 +357,81 @@ def create_app(db_path=None):
             return jsonify({"error": "lesson not found"}), 404
         generated = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id) is not None
         return jsonify({"generated": generated})
+
+    def _lesson_in_manifest(course_id, lesson_id):
+        manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+        if manifest is None:
+            return False
+        return lesson_id in {l["id"] for l in courses.flatten_lessons(manifest)}
+
+    @app.post("/api/courses/<course_id>/lessons/<lesson_id>/generate")
+    def start_lesson_generation(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
+        if not _lesson_in_manifest(course_id, lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
+        if courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id) is not None:
+            return jsonify({"status": "done", "error": None, "courseId": course_id,
+                            "lessonId": lesson_id, "elapsed": 0, "events": [], "next": 0})
+        # Built on the request thread, before jobs.start: DB access belongs here, not
+        # on the background worker thread.
+        prof_data, performance, prior_knowledge, misconception_texts = \
+            _lesson_gen_inputs(course_id, lesson_id)
+
+        def run(job):
+            job.emit("stage", "Researching and drafting the lesson…")
+
+            def on_event(ev):
+                for line in claude_client.progress_events(ev):
+                    job.emit(line["kind"], line["text"])
+
+            generate = lambda prompt: claude_client.run_sourced(
+                prompt, validate=generation.valid_lesson,
+                on_event=on_event, timeout=_JOB_TIMEOUT,
+            )
+            verify_calls = {"n": 0}
+
+            def verify(prompt, validate):
+                verify_calls["n"] += 1
+                job.emit("stage", "Fact-check audit…" if verify_calls["n"] == 1
+                         else "Revising flagged issues…")
+                return claude_client.structured_generate(prompt, validate)
+
+            generation.ensure_lesson(
+                courses.CONTENT_DIR, course_id, lesson_id, prof_data,
+                generate=generate, performance=performance, verify_generate=verify,
+                prior_knowledge=prior_knowledge, misconceptions=misconception_texts,
+            )
+            job.emit("stage", "Lesson saved.")
+
+        job = jobs.start(course_id, lesson_id, run, describe_error=_job_error_message)
+        return jsonify(job.snapshot(0)), 202
+
+    @app.get("/api/courses/<course_id>/lessons/<lesson_id>/generate")
+    def lesson_generation_progress(course_id, lesson_id):
+        if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
+        if not _lesson_in_manifest(course_id, lesson_id):
+            return jsonify({"error": "lesson not found"}), 404
+        since = request.args.get("since", 0, type=int)
+        job = jobs.get(course_id, lesson_id)
+        if job is not None:
+            return jsonify(job.snapshot(since))
+        # No job in memory: the lesson file is the truth. Present -> done (job
+        # already pruned); absent -> none (never started, or lost to a service
+        # restart -- the client says "interrupted" and offers retry).
+        done = courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id) is not None
+        return jsonify({"status": "done" if done else "none", "error": None,
+                        "courseId": course_id, "lessonId": lesson_id,
+                        "elapsed": 0, "events": [], "next": since})
+
+    @app.get("/api/generation-jobs")
+    def list_generation_jobs():
+        return jsonify({"jobs": [
+            {"courseId": j.course_id, "lessonId": j.lesson_id,
+             "status": j.status, "elapsed": j.snapshot()["elapsed"]}
+            for j in jobs.running()
+        ]})
 
     @app.post("/api/courses/<course_id>/lessons/<lesson_id>/grade")
     def grade_lesson(course_id, lesson_id):
