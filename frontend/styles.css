@@ -249,6 +249,10 @@ textarea{width:100%; resize:none; overflow-y:auto; max-height:320px; background:
 textarea.serif{font:15px/1.6 var(--serif); padding:14px; border-radius:14px}
 textarea:focus{border-color:var(--purple)}
 textarea::placeholder{color:#b3a994}
+/* The lesson exercise answer is the primary writing surface — it starts taller
+   than the shared default (a cramped 2 lines) and auto-grows further before the
+   internal-scroll cap kicks in. Scoped so chat/notes boxes keep the 320px cap. */
+.answer-box{min-height:132px; max-height:520px; margin:12px 0}
 
 /* gated hint */
 .hint-toggle{display:flex; align-items:center; gap:8px; width:100%; padding:11px 13px; cursor:pointer; text-align:left;

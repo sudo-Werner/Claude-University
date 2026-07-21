@@ -313,7 +313,7 @@ export function lessonHTML(lesson, state, nav = {}) {
       ${conceptChipsHTML(lesson, state.ws)}
       <button class="deepen" data-action="deepen-lesson">Rusty on this? Explain it more deeply</button>
       ${state.deepenError ? `<div class="grade grade-soft">${esc(state.deepenError)}</div>` : ""}
-      <textarea data-field="answer" placeholder="Write your update here…" style="min-height:64px; margin:12px 0">${state.answer}</textarea>
+      <textarea class="answer-box" data-field="answer" placeholder="Write your update here…">${state.answer}</textarea>
       <button class="check-answer" data-action="check-answer"${state.answer.trim() && !state.grading ? "" : " disabled"}>${state.grade && !state.grade.error ? "Check again" : "Check my answer"}</button>
       ${gradeBlock(state)}
       ${state.solutionRevealed ? "" : `<button class="btn-secondary" data-action="socratic-start" style="margin:10px 0 0">Work through it with Claude</button>`}
