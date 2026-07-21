@@ -1578,6 +1578,12 @@ export async function init({ window, fetch }) {
   }
 
   async function startGenerationFeed(lessonId, seq) {
+    // Defensive clear-on-entry (same reason as resetArcadePlay's timer clear):
+    // a pending tick or in-flight poll from the roaming chain must not append
+    // to the feed we are about to repaint — the POST's from-0 snapshot is the
+    // single source of truth for the backfill.
+    window.clearTimeout(ui.genPollTimer);
+    ui.genJob = null;
     ui.screen = "generating";
     const found = flatLessons().find((l) => l.id === lessonId);
     const view = root.querySelector("#view");
