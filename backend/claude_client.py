@@ -212,23 +212,37 @@ def progress_events(ev):
     feed shows what the model is DOING, the lesson view shows the result."""
     if not isinstance(ev, dict) or ev.get("type") != "assistant":
         return []
+    message = ev.get("message")
+    if not isinstance(message, dict):
+        return []
+    content = message.get("content", [])
+    if not isinstance(content, list):
+        return []
     lines = []
-    for block in ev.get("message", {}).get("content", []):
+    for block in content:
+        if not isinstance(block, dict):
+            continue
         btype = block.get("type")
         if btype == "tool_use":
             name = block.get("name")
             inp = block.get("input") or {}
-            if name == "WebSearch" and inp.get("query"):
-                lines.append({"kind": "search", "text": "Searching: " + _clip(inp["query"], 160)})
-            elif name == "WebFetch" and inp.get("url"):
-                host = urllib.parse.urlparse(inp["url"]).netloc or inp["url"]
+            if not isinstance(inp, dict):
+                continue
+            query = inp.get("query")
+            url = inp.get("url")
+            if name == "WebSearch" and isinstance(query, str) and query:
+                lines.append({"kind": "search", "text": "Searching: " + _clip(query, 160)})
+            elif name == "WebFetch" and isinstance(url, str) and url:
+                host = urllib.parse.urlparse(url).netloc or url
                 lines.append({"kind": "read", "text": "Reading: " + _clip(host, 160)})
         elif btype == "thinking":
-            text = (block.get("thinking") or "").strip()
+            thinking = block.get("thinking")
+            text = thinking.strip() if isinstance(thinking, str) else ""
             if text:
                 lines.append({"kind": "think", "text": _clip(text)})
         elif btype == "text":
-            text = (block.get("text") or "").strip()
+            raw = block.get("text")
+            text = raw.strip() if isinstance(raw, str) else ""
             if text and not text.startswith("{") and not text.startswith("```"):
                 lines.append({"kind": "say", "text": _clip(text)})
     return lines

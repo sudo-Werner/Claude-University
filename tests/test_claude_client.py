@@ -351,6 +351,31 @@ def test_progress_events_clips_long_text():
     assert line["text"].endswith("…")
 
 
+def test_progress_events_tolerates_malformed_stream_events():
+    # A malformed-but-plausible event must never raise — it must yield fewer/no
+    # lines instead. These four shapes are the exact ones that raised in the
+    # reviewed finding (AttributeError, TypeError, AttributeError, AttributeError
+    # inside urlparse respectively).
+    assert cc.progress_events({"type": "assistant", "message": None}) == []
+    assert cc.progress_events({"type": "assistant", "message": {"content": None}}) == []
+    assert cc.progress_events({"type": "assistant", "message": {"content": ["not-a-dict"]}}) == []
+    assert cc.progress_events(_assistant([
+        {"type": "tool_use", "name": "WebFetch", "input": {"url": 123}},
+    ])) == []
+
+
+def test_progress_events_skips_malformed_block_keeps_valid_sibling():
+    # One malformed block alongside one valid text block: only the valid line
+    # comes back — a translator drops what it can't understand, it doesn't abort.
+    ev = _assistant([
+        "not-a-dict",
+        {"type": "text", "text": "Let me check the hormone half-life numbers."},
+    ])
+    assert cc.progress_events(ev) == [
+        {"kind": "say", "text": "Let me check the hormone half-life numbers."},
+    ]
+
+
 # ---- run_sourced: on_event forwarding and timeout plumbing ----
 
 def test_run_sourced_forwards_parsed_events():
