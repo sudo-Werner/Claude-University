@@ -121,3 +121,76 @@ def test_a_new_job_can_start_after_a_failed_one():
     assert second is not first
     second.thread.join(2)
     assert second.snapshot()["status"] == "done"
+
+
+def test_exclusive_start_rejects_a_different_key_while_one_is_running():
+    release = threading.Event()
+    started = threading.Event()
+
+    def run(job):
+        started.set()
+        release.wait(5)
+
+    first = jobs.start("c1", "l1", run)
+    assert started.wait(2)
+
+    second = jobs.start("c1", "l2", run, exclusive=True)
+    assert second is None
+    assert jobs.get("c1", "l2") is None  # nothing registered for the rejected key
+
+    release.set()
+    first.thread.join(2)
+
+
+def test_exclusive_start_still_joins_the_same_key():
+    release = threading.Event()
+    started = threading.Event()
+    calls = []
+
+    def run(job):
+        calls.append(1)
+        started.set()
+        release.wait(5)
+
+    first = jobs.start("c1", "l1", run)
+    assert started.wait(2)
+
+    second = jobs.start("c1", "l1", run, exclusive=True)
+    assert second is first
+
+    release.set()
+    first.thread.join(2)
+    assert calls == [1]
+
+
+def test_exclusive_start_succeeds_once_the_other_job_releases():
+    release = threading.Event()
+    started = threading.Event()
+
+    def blocker(job):
+        started.set()
+        release.wait(5)
+
+    first = jobs.start("c1", "l1", blocker)
+    assert started.wait(2)
+
+    assert jobs.start("c1", "l2", lambda job: None, exclusive=True) is None
+
+    release.set()
+    first.thread.join(2)
+
+    third = jobs.start("c1", "l2", lambda job: None, exclusive=True)
+    assert third is not None
+    third.thread.join(2)
+    assert third.snapshot()["status"] == "done"
+
+
+def test_exclusive_start_is_not_blocked_by_a_finished_job():
+    done = jobs.start("c1", "l1", lambda job: None)
+    done.thread.join(2)
+    assert done.snapshot()["status"] == "done"
+
+    other = jobs.start("c1", "l2", lambda job: None, exclusive=True)
+    assert other is not None
+    other.thread.join(2)
+    assert other.snapshot()["status"] == "done"

@@ -46,12 +46,20 @@ class Job:
         }
 
 
-def start(course_id, lesson_id, run, describe_error=str):
+def start(course_id, lesson_id, run, describe_error=str, exclusive=False):
+    """`exclusive=True` gives the caller single-flight semantics enforced under
+    _lock: no new job is created while any OTHER key is running. This is checked
+    in the same critical section as the same-key join below, so there's no gap
+    between "is anything running?" and "reserve the slot" for a caller (like the
+    route) to race through — the old check-then-act at the call site had exactly
+    that TOCTOU window."""
     with _lock:
         _prune()
         existing = _jobs.get((course_id, lesson_id))
         if existing is not None and existing.status == "running":
             return existing
+        if exclusive and any(j.status == "running" for j in _jobs.values()):
+            return None
         job = Job(course_id, lesson_id)
         _jobs[(course_id, lesson_id)] = job
 

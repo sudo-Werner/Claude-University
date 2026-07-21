@@ -375,13 +375,10 @@ def create_app(db_path=None):
                             "lessonId": lesson_id, "elapsed": 0, "events": [], "next": 0})
         # One generation at a time: a single lesson measured ~556s on the Pi, so two
         # concurrent runs would likely both blow past the 1200s job timeout. A request
-        # for the SAME lesson that's already running still falls through to jobs.start,
-        # which joins it rather than duplicating.
-        if any((j.course_id, j.lesson_id) != (course_id, lesson_id) for j in jobs.running()):
-            return jsonify({
-                "error": "Another lesson is already generating — the Pi runs one at a "
-                         "time. It'll be ready soon; try again after.",
-            }), 409
+        # for the SAME lesson that's already running still joins it (jobs.start's
+        # same-key check) rather than duplicating; the single-flight reservation
+        # below is exclusive=True so it's made atomically under the registry lock
+        # instead of a separate check-then-act here.
         # Built on the request thread, before jobs.start: DB access belongs here, not
         # on the background worker thread.
         prof_data, performance, prior_knowledge, misconception_texts = \
@@ -418,7 +415,13 @@ def create_app(db_path=None):
                 raise RuntimeError("lesson disappeared from the course during generation")
             job.emit("stage", "Lesson saved.")
 
-        job = jobs.start(course_id, lesson_id, run, describe_error=_job_error_message)
+        job = jobs.start(course_id, lesson_id, run, describe_error=_job_error_message,
+                         exclusive=True)
+        if job is None:
+            return jsonify({
+                "error": "Another lesson is already generating — the Pi runs one at a "
+                         "time. It'll be ready soon; try again after.",
+            }), 409
         return jsonify(job.snapshot(0)), 202
 
     @app.get("/api/courses/<course_id>/lessons/<lesson_id>/generate")
