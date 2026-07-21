@@ -1574,7 +1574,11 @@ export async function init({ window, fetch }) {
       fetch, courseId: job.courseId, lessonId: job.lessonId, since: job.next,
     });
     if (ui.genJob !== job) return; // superseded while awaiting
-    if (snap.error) { scheduleGenPoll(); return; } // network blip — next tick retries
+    // A transport failure (network/HTTP) never carries a status field; a real
+    // snapshot always does, even for a failed job ({status: "error", error: "..."}).
+    // Testing snap.error here would swallow every real job failure as a retry-forever
+    // blip and make the error UX (re-auth, took-too-long, retry chip) unreachable.
+    if (!snap.status) { scheduleGenPoll(); return; } // network blip — next tick retries
     job.status = snap.status;
     job.elapsed = snap.elapsed;
     appendGenEvents(snap);
@@ -1599,7 +1603,9 @@ export async function init({ window, fetch }) {
     if (view) view.innerHTML = genFeedHTML(found ? found.title : lessonId);
     const snap = await startLessonGeneration({ fetch, courseId: ui.courseId, lessonId });
     if (ui.loadSeq !== seq) return; // navigated away — the job runs on regardless
-    if (snap.error) {
+    // Same rationale as pollGeneration: a POST rejection (network blip, or the
+    // 409 "another lesson is generating") arrives as {error} with no status field.
+    if (!snap.status) {
       ui.genRetry = { lessonId };
       if (view && view.isConnected) view.innerHTML = genErrorHTML(snap.error);
       return;

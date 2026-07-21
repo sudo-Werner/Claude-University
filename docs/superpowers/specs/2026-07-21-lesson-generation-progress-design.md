@@ -113,6 +113,7 @@ openLesson (uncached)
 | Model returns invalid lesson twice | Says exactly that + Retry |
 | Pi service restarts mid-job | Poll gets `none` → "interrupted on the server" + Retry |
 | Network blip while polling | Poll silently retries next tick; nothing is lost server-side |
+| Second lesson requested while one generates | Honest 409 message in the feed error card + Retry |
 
 ### Testing
 

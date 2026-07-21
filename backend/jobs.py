@@ -5,6 +5,7 @@ claude process anyway, so surviving rows could only ever say "interrupted"; the
 routes' `none` answer says that without the ceremony."""
 import threading
 import time
+import traceback
 
 _lock = threading.Lock()
 _jobs = {}
@@ -30,6 +31,7 @@ class Job:
             self._events.append({"n": len(self._events), "kind": kind, "text": text})
 
     def snapshot(self, since=0):
+        since = max(0, since)  # a negative cursor would slice-overlap events and produce an incoherent next
         with self._elock:
             events = self._events[since:]
         end = self.finished_at or time.time()
@@ -58,6 +60,9 @@ def start(course_id, lesson_id, run, describe_error=str):
             run(job)
             job.status = "done"
         except Exception as exc:
+            # The learner only ever sees the translated message below; the operator
+            # needs the real traceback in journalctl to diagnose what actually broke.
+            traceback.print_exc()
             job.error = describe_error(exc)
             job.status = "error"
         finally:

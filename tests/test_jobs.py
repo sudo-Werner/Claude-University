@@ -101,6 +101,16 @@ def test_finished_jobs_linger_then_prune(monkeypatch):
     assert jobs.get("c1", "l1") is None
 
 
+def test_negative_since_is_clamped_to_zero():
+    def run(job):
+        job.emit("stage", "one")
+        job.emit("say", "two")
+
+    job = jobs.start("c1", "l1", run)
+    job.thread.join(2)
+    assert job.snapshot(since=-5) == job.snapshot(since=0)
+
+
 def test_a_new_job_can_start_after_a_failed_one():
     def bad(job):
         raise RuntimeError("nope")

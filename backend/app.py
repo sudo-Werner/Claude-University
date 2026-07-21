@@ -373,6 +373,15 @@ def create_app(db_path=None):
         if courses.load_lesson(courses.CONTENT_DIR, course_id, lesson_id) is not None:
             return jsonify({"status": "done", "error": None, "courseId": course_id,
                             "lessonId": lesson_id, "elapsed": 0, "events": [], "next": 0})
+        # One generation at a time: a single lesson measured ~556s on the Pi, so two
+        # concurrent runs would likely both blow past the 1200s job timeout. A request
+        # for the SAME lesson that's already running still falls through to jobs.start,
+        # which joins it rather than duplicating.
+        if any((j.course_id, j.lesson_id) != (course_id, lesson_id) for j in jobs.running()):
+            return jsonify({
+                "error": "Another lesson is already generating — the Pi runs one at a "
+                         "time. It'll be ready soon; try again after.",
+            }), 409
         # Built on the request thread, before jobs.start: DB access belongs here, not
         # on the background worker thread.
         prof_data, performance, prior_knowledge, misconception_texts = \
@@ -397,11 +406,16 @@ def create_app(db_path=None):
                          else "Revising flagged issues…")
                 return claude_client.structured_generate(prompt, validate)
 
-            generation.ensure_lesson(
+            lesson = generation.ensure_lesson(
                 courses.CONTENT_DIR, course_id, lesson_id, prof_data,
                 generate=generate, performance=performance, verify_generate=verify,
                 prior_knowledge=prior_knowledge, misconceptions=misconception_texts,
             )
+            if lesson is None:
+                # The lesson vanished from the manifest mid-generation (e.g. edited
+                # away) — ensure_lesson returns None rather than a lesson dict.
+                # Emitting "Lesson saved." here would be a lie; fail honestly instead.
+                raise RuntimeError("lesson disappeared from the course during generation")
             job.emit("stage", "Lesson saved.")
 
         job = jobs.start(course_id, lesson_id, run, describe_error=_job_error_message)

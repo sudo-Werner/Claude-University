@@ -153,6 +153,70 @@ def test_unknown_ids_404(client):
     assert client.get("/api/courses/nope/lessons/x/generate").status_code == 404
 
 
+def test_post_returns_409_when_a_different_lesson_is_generating(client, tmp_path, monkeypatch):
+    import threading
+    root = tmp_path / "content"
+    _write_course(root, course_id="humanbody", lesson_id="humanbody-l1")
+    _write_course(root, course_id="chemistry", lesson_id="chem-l1")
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    release = threading.Event()
+
+    from backend import generation
+    monkeypatch.setattr(generation, "ensure_lesson", lambda *a, **k: release.wait(5))
+
+    resp1 = client.post("/api/courses/humanbody/lessons/humanbody-l1/generate")
+    assert resp1.status_code == 202
+
+    resp2 = client.post("/api/courses/chemistry/lessons/chem-l1/generate")
+    assert resp2.status_code == 409
+    assert "already generating" in resp2.get_json()["error"]
+    assert jobs.get("chemistry", "chem-l1") is None  # the second lesson never started
+
+    release.set()
+    jobs.get("humanbody", "humanbody-l1").thread.join(5)
+
+
+def test_post_same_lesson_still_joins_while_running(client, tmp_path, monkeypatch):
+    import threading
+    root = tmp_path / "content"
+    _write_course(root)
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    release = threading.Event()
+
+    from backend import generation
+    monkeypatch.setattr(generation, "ensure_lesson", lambda *a, **k: release.wait(5))
+
+    resp1 = client.post("/api/courses/humanbody/lessons/humanbody-l1/generate")
+    assert resp1.status_code == 202
+    first = jobs.get("humanbody", "humanbody-l1")
+
+    resp2 = client.post("/api/courses/humanbody/lessons/humanbody-l1/generate")
+    assert resp2.status_code == 202
+    assert jobs.get("humanbody", "humanbody-l1") is first
+
+    release.set()
+    first.thread.join(5)
+
+
+def test_run_wrapper_reports_error_when_lesson_vanishes_mid_generation(client, tmp_path, monkeypatch):
+    root = tmp_path / "content"
+    _write_course(root)
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+
+    from backend import generation
+    monkeypatch.setattr(generation, "ensure_lesson", lambda *a, **k: None)
+
+    client.post("/api/courses/humanbody/lessons/humanbody-l1/generate")
+    job = jobs.get("humanbody", "humanbody-l1")
+    job.thread.join(5)
+
+    resp = client.get("/api/courses/humanbody/lessons/humanbody-l1/generate")
+    body = resp.get_json()
+    assert body["status"] == "error"
+    texts = [e["text"] for e in body["events"]]
+    assert "Lesson saved." not in texts
+
+
 def test_generation_jobs_lists_running_only(client, tmp_path, monkeypatch):
     root = tmp_path / "content"
     _write_course(root)
