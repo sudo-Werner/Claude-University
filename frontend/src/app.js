@@ -1650,7 +1650,13 @@ export async function init({ window, fetch }) {
     if (!job) return;
     ui.genJob = null;
     paintGenChip();
-    if (ui.courseId !== job.courseId) await openCourse(job.courseId);
+    if (ui.courseId !== job.courseId) {
+      await openCourse(job.courseId);
+      // openCourse fails soft to showHome() on a manifest-load failure (no signal to
+      // the caller) — bail here instead of falling into openLesson -> showLesson,
+      // which dereferences ui.manifest.title and would crash on the null left behind.
+      if (!ui.manifest) return;
+    }
     openLesson(job.lessonId);
   }
 
