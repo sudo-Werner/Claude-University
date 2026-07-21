@@ -4,6 +4,7 @@ import signal
 import subprocess
 import tempfile
 import threading
+import urllib.parse
 
 DEFAULT_MODEL = "claude-sonnet-5"
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/home/werner/.local/bin/claude")
@@ -73,7 +74,8 @@ def _run_cli(args):
     return proc.stdout
 
 
-def _spawn_cli(args):
+def _spawn_cli(args, timeout=None):
+    wait = timeout or _STREAM_TIMEOUT
     with tempfile.TemporaryFile(mode="w+") as tmpfile:
         proc = subprocess.Popen(
             [CLAUDE_BIN, *args], stdout=subprocess.PIPE, stderr=tmpfile,
@@ -96,7 +98,7 @@ def _spawn_cli(args):
             timed_out.set()
             _kill_group()
 
-        watchdog = threading.Timer(_STREAM_TIMEOUT, _kill_on_timeout)
+        watchdog = threading.Timer(wait, _kill_on_timeout)
         watchdog.start()
         try:
             for line in proc.stdout:
@@ -106,7 +108,7 @@ def _spawn_cli(args):
             # returncode before wait() intermittently reads None on a successful run.
             proc.wait()
             if timed_out.is_set():
-                raise ClaudeError(f"claude stream timed out after {_STREAM_TIMEOUT}s")
+                raise ClaudeError(f"claude stream timed out after {wait}s")
             if proc.returncode != 0:
                 tmpfile.seek(0)
                 err = tmpfile.read() or ""
@@ -198,6 +200,40 @@ def _extract_stream_text(line):
     return ""
 
 
+def _clip(text, limit=200):
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def progress_events(ev):
+    """Translate one parsed stream-json event into 0..n user-facing feed lines
+    ({"kind", "text"}). Only assistant events carry anything worth narrating;
+    the model's JSON payload (the lesson itself) is deliberately dropped — the
+    feed shows what the model is DOING, the lesson view shows the result."""
+    if not isinstance(ev, dict) or ev.get("type") != "assistant":
+        return []
+    lines = []
+    for block in ev.get("message", {}).get("content", []):
+        btype = block.get("type")
+        if btype == "tool_use":
+            name = block.get("name")
+            inp = block.get("input") or {}
+            if name == "WebSearch" and inp.get("query"):
+                lines.append({"kind": "search", "text": "Searching: " + _clip(inp["query"], 160)})
+            elif name == "WebFetch" and inp.get("url"):
+                host = urllib.parse.urlparse(inp["url"]).netloc or inp["url"]
+                lines.append({"kind": "read", "text": "Reading: " + _clip(host, 160)})
+        elif btype == "thinking":
+            text = (block.get("thinking") or "").strip()
+            if text:
+                lines.append({"kind": "think", "text": _clip(text)})
+        elif btype == "text":
+            text = (block.get("text") or "").strip()
+            if text and not text.startswith("{") and not text.startswith("```"):
+                lines.append({"kind": "say", "text": _clip(text)})
+    return lines
+
+
 def stream(prompt, *, model=DEFAULT_MODEL, spawn=_spawn_cli, tools=None):
     args = ["-p", prompt]
     if tools:
@@ -232,10 +268,14 @@ def _collect_sources(obj, out, seen):
             _collect_sources(v, out, seen)
 
 
-def run_sourced(prompt, *, model=DEFAULT_MODEL, validate=None, spawn=_spawn_cli):
+def run_sourced(prompt, *, model=DEFAULT_MODEL, validate=None, spawn=None, timeout=None, on_event=None):
     """Web-search-grounded structured generation. Runs the CLI with WebSearch/WebFetch
     and stream-json, returning (parsed_final_json, captured_sources) where captured_sources
-    are the real {title, url} pairs retrieved from the actual search results."""
+    are the real {title, url} pairs retrieved from the actual search results.
+    on_event (if given) receives every parsed stream event — the progress feed's tap.
+    timeout overrides the module watchdog (a background job has no HTTP channel to race)."""
+    if spawn is None:
+        spawn = lambda a: _spawn_cli(a, timeout=timeout)
     args_for = lambda p: [
         "-p", p, "--allowedTools", "WebSearch", "WebFetch",
         "--output-format", "stream-json", "--verbose", "--model", model,
@@ -249,6 +289,8 @@ def run_sourced(prompt, *, model=DEFAULT_MODEL, validate=None, spawn=_spawn_cli)
                 continue
             if isinstance(ev, dict) and ev.get("api_error_status") in (401, 403):
                 raise ClaudeAuthError(ev.get("result") or "Claude authentication failed.")
+            if on_event is not None:
+                on_event(ev)
             _collect_sources(ev, sources, seen)
             if isinstance(ev, dict) and ev.get("type") == "result" and ev.get("result"):
                 result_text = ev["result"]

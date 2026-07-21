@@ -307,3 +307,68 @@ def test_spawn_cli_delivers_bursted_lines_without_returncode_race(monkeypatch, t
     monkeypatch.setattr(cc, "CLAUDE_BIN", str(script))
     for _ in range(10):
         assert list(cc._spawn_cli(["-p", "x"])) == ["a\n", "b\n", "c\n", "d\n"]
+
+
+# ---- progress_events: stream-json -> user-facing feed lines ----
+
+def _assistant(blocks):
+    return {"type": "assistant", "message": {"content": blocks}}
+
+
+def test_progress_events_translates_web_search():
+    ev = _assistant([{"type": "tool_use", "name": "WebSearch", "input": {"query": "hormone signaling speed"}}])
+    assert cc.progress_events(ev) == [{"kind": "search", "text": "Searching: hormone signaling speed"}]
+
+
+def test_progress_events_translates_web_fetch_to_host():
+    ev = _assistant([{"type": "tool_use", "name": "WebFetch", "input": {"url": "https://www.khanacademy.org/science/x1"}}])
+    assert cc.progress_events(ev) == [{"kind": "read", "text": "Reading: www.khanacademy.org"}]
+
+
+def test_progress_events_passes_narration_and_thinking():
+    ev = _assistant([
+        {"type": "thinking", "thinking": "The learner knows neurons already."},
+        {"type": "text", "text": "Let me check the hormone half-life numbers."},
+    ])
+    assert cc.progress_events(ev) == [
+        {"kind": "think", "text": "The learner knows neurons already."},
+        {"kind": "say", "text": "Let me check the hormone half-life numbers."},
+    ]
+
+
+def test_progress_events_drops_json_payload_and_noise():
+    assert cc.progress_events(_assistant([{"type": "text", "text": '{"id": "l4"}'}])) == []
+    assert cc.progress_events(_assistant([{"type": "text", "text": "```json\n{}\n```"}])) == []
+    assert cc.progress_events(_assistant([{"type": "text", "text": "   "}])) == []
+    assert cc.progress_events({"type": "result", "result": "{}"}) == []
+    assert cc.progress_events("not a dict") == []
+
+
+def test_progress_events_clips_long_text():
+    ev = _assistant([{"type": "text", "text": "x" * 500}])
+    (line,) = cc.progress_events(ev)
+    assert len(line["text"]) <= 200
+    assert line["text"].endswith("…")
+
+
+# ---- run_sourced: on_event forwarding and timeout plumbing ----
+
+def test_run_sourced_forwards_parsed_events():
+    seen = []
+    cc.run_sourced("p", spawn=lambda args: iter(_sourced_lines()), on_event=seen.append)
+    assert len(seen) == len([l for l in _sourced_lines()])
+    assert all(isinstance(e, dict) for e in seen)
+
+
+def test_run_sourced_default_spawn_carries_timeout(monkeypatch):
+    captured = {}
+
+    def fake_spawn_cli(args, timeout=None):
+        captured["timeout"] = timeout
+        line = '{"type": "result", "result": "{\\"ok\\": true}"}'
+        return iter([line])
+
+    monkeypatch.setattr(cc, "_spawn_cli", fake_spawn_cli)
+    obj, sources = cc.run_sourced("p", timeout=1200)
+    assert obj == {"ok": True}
+    assert captured["timeout"] == 1200
