@@ -150,7 +150,7 @@ def valid_prereq_graph(modules):
 
 
 def valid_compiled_course(obj):
-    if not isinstance(obj, dict) or obj.get("schemaVersion") != 2:
+    if not isinstance(obj, dict) or obj.get("schemaVersion") not in (2, 3):
         return False
     if not (isinstance(obj.get("title"), str) and obj["title"].strip()):
         return False

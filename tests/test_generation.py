@@ -1490,6 +1490,17 @@ def test_valid_compiled_course_rejects_missing_pieces():
     c = _compiled(); c["schemaVersion"] = 1; assert not generation.valid_compiled_course(c)
     c = _compiled(); c["modules"][0]["lessons"][0].pop("objectives"); assert not generation.valid_compiled_course(c)
 
+def test_valid_compiled_course_accepts_v2_and_v3_rejects_others():
+    c = _compiled()
+    c["schemaVersion"] = 2
+    assert generation.valid_compiled_course(c)
+    c["schemaVersion"] = 3
+    assert generation.valid_compiled_course(c)
+    c["schemaVersion"] = 1
+    assert not generation.valid_compiled_course(c)
+    c["schemaVersion"] = 4
+    assert not generation.valid_compiled_course(c)
+
 
 # ---- Task 3: intake-interview prompt + learnerBrief detection + brief SSE event ----
 
