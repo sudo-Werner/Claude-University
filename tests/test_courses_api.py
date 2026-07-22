@@ -384,6 +384,25 @@ def test_get_course_includes_mastery(client, tmp_path, monkeypatch):
     assert set(body["masteryCounts"].keys()) == {"attempted", "familiar", "proficient", "mastered"}
 
 
+def test_get_course_returns_embedded_objectives_for_v3(client, tmp_path, monkeypatch):
+    from backend import courses, objectives
+    root = tmp_path / "courses"
+    root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    wire = {**COMPILED, "id": "c-demo"}
+    disk = objectives.build_registry(wire)  # v3 registry shape, as persisted on disk
+    course_dir = root / "c-demo"
+    (course_dir / "lessons").mkdir(parents=True)
+    (course_dir / "course.json").write_text(json.dumps(disk))
+
+    resp = client.get("/api/courses/c-demo")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    lesson = body["modules"][0]["lessons"][0]
+    assert "objectives" in lesson
+    assert lesson["objectives"][0]["text"] == OBJ["text"]
+
+
 def test_lesson_route_returns_reauth_on_auth_error(client, tmp_path, monkeypatch):
     from backend import courses, claude_client, generation
     root = tmp_path / "courses"; root.mkdir()

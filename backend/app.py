@@ -3,7 +3,7 @@ import re as _re
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items, feedback, quiz, misconceptions, jobs
+from backend import db, events, profile, queries, courses, claude_client, generation, srs, mastery, notes, compiler, stats, exams, spine, remediation, transcript, capstone, review_items, feedback, quiz, misconceptions, jobs, objectives
 
 _ID_RE = _re.compile(r"^[a-z0-9-]+$")
 _IMAGE_FILENAME_RE = _re.compile(r"^[a-z0-9-]+-\d\.(jpg|png|webp)$")
@@ -266,7 +266,8 @@ def create_app(db_path=None):
             ex = exams.exam_status(conn, course_id, manifest)
         finally:
             conn.close()
-        return jsonify({**manifest, "mastery": m, "masteryCounts": mastery.mastery_counts(m),
+        return jsonify({**objectives.resolved_manifest(manifest), "mastery": m,
+                        "masteryCounts": mastery.mastery_counts(m),
                         "exams": ex, "coursePassed": exams.course_passed(ex, manifest)})
 
     @app.get("/api/courses/<course_id>/notes")
@@ -967,7 +968,7 @@ def create_app(db_path=None):
         verify = claude_client.structured_generate
         try:
             proposed = compiler.revise_course(
-                manifest, body.get("messages", []),
+                objectives.resolved_manifest(manifest), body.get("messages", []),
                 generate_sourced=generate_sourced, verify=verify,
             )
         except claude_client.ClaudeAuthError:
