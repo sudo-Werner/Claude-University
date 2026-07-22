@@ -1,7 +1,7 @@
 # Objective-Centric Learning Redesign — Design
 
 **Date:** 2026-07-22
-**Status:** Design draft for Werner's review (brainstorming). NOT yet approved; NOT committed.
+**Status:** Approved in principle by Werner (2026-07-22); committed to git (32ad9ab). Learner-experience layer (§4A) folded in 2026-07-22 after a dedicated brainstorm + two web-grounded evidence sweeps. Implementation not started — Phase 0 (objective-id backbone) is the first plan.
 **Provenance:** Synthesized from six research/design workflows this session — online-university lesson structure; Udemy + Dutch/European exam processes; traditional-university curriculum construction; whole-project audit + metrics; the objective-centric pipeline design + adversarial accuracy review; and SOTA curriculum construction (CBME/EPAs, learning engineering, Knowledge Space Theory). Findings tagged web-verified vs training-knowledge in the source workflow outputs.
 
 ---
@@ -92,6 +92,62 @@ Inverts the current compiler (which fixes lesson *titles* first, then pours obje
 
 ---
 
+## 4A. Learner experience layer (cross-cutting — enriches Stage 3 teaching & Stage 4 evaluation)
+
+Added 2026-07-22 after a dedicated brainstorm + two web-grounded multi-agent evidence sweeps (open-learner-models / calibration / SDT-vs-gamification / individual-differences; and curiosity-anticipation / open-loops / honest-return-mechanics). Answers "how do we help the learner understand how they learn, leverage their data, and look forward to the next lesson" — honestly. Lands mostly in Phase 2 (teaching) and Phase 4 (mastery/metrics).
+
+**Governing principle:** the *strong* evidence lives in the retrieval / FSRS / BKT / expertise-reversal engine. Everything in this layer is a plausibly-helpful, **lower-evidence** enhancement — build it lean, instrument whether it actually changes next-session behaviour, and be willing to conclude a given piece does little. Do not let dashboard/curiosity polish soak up effort the teaching engine deserves.
+
+### 4A.1 The open learner model — a mirror, not a dashboard (Werner: rich OLM)
+
+- **Shape:** coach-by-default, delivered *through the tutor* as a short **negotiated exchange**, not a static chart — negotiated/dialogic learner models beat passive inspectable ones (Bull & Kay) and stay active-retrieval-shaped ("you think you've mastered X; the model disagrees — prove it"). Every insight **terminates in an action**: because n=1, route straight from the data to the FSRS queue / next objective / re-teach, closing the "awareness-without-action" gap that is the dominant documented dashboard failure mode (Matcha/Gašević 2020; Verbert 2013).
+- **Centerpiece = the calibration _mismatch_** (confidence-given vs recall-shown), not a wall of mastery bars — improving calibration is the single best-evidenced thing an OLM reliably delivers.
+- **Frame:** progress-vs-your-earlier-self + distance-to-objective-completion (the one reference frame that survives at n=1; the CBME gate + BKT-over-time already compute it). NEVER cohort/percentile (no peers — would be a fake metric). Lead with trajectory and next action, never a red deficit map (demotivates even with no peers — Jivet 2018).
+- **Minimum-data gate:** no panel renders until it has enough observations to be honest (a calibration curve on ~3 answers is noise = a banned fake metric).
+- **Behavioural logs stay internal:** hint-use / solution-peek / latency feed adaptation silently; never rendered as scoreboard counts (Goodhart gaming; also satisfies the no-gamification rule).
+- **Honest ceiling:** dashboards-alone move achievement only ~g0.2 and OLM→SRL evidence is mixed/moderate (few RCTs, no pooled effect size). Never framed as tutoring-grade. Instrument it.
+
+### 4A.2 Confidence tap & calibration mechanics (refines the Stage-4 confidence tap)
+
+- **When:** collect confidence on **delayed/spaced reviews** (the FSRS due pass), NOT immediately post-lesson — immediate judgments are fluency-inflated and near-useless for calibration (delayed-JOL effect). Free, high-leverage.
+- **Where:** favour **conceptual / meaningfully-connected** objectives; be sparing on rote items (JOL reactivity g≈.32 for meaningful material, ~0-to-harmful for arbitrary — Double 2018). Don't tap reflexively.
+- **Hypercorrection routing:** a **high-confidence WRONG** answer is a golden event → richest corrective explanation (why the intuition failed) + aggressive FSRS reschedule. But the effect is largely a prior-knowledge proxy (Eich/Metcalfe 2012), so pair with BKT: high-confidence error on a **high-mastery** objective = the sweet spot (surgical correction of a near-miss); on a **low-mastery** objective = a genuine gap → re-teach. Never *manufacture* confidence to trigger it.
+- **Readout:** a **reliability curve** (predicted confidence vs observed accuracy across bins) with a minimum-data gate + visible uncertainty, framed as a diagnostic pointing at specific objectives. NEVER a single Brier number / gameable score. Consistent with §12 (guessing-correction internal; learner sees a clean 0–100%).
+- **Honest magnitude:** calibration *training* improves monitoring accuracy (g≈.46–.57) — it makes you better at *knowing what you know* (better restudy decisions), NOT a direct memory booster; the learning gains come from the retrieval + spacing already in the engine. n=1 caveat: hypercorrection has real individual/age variance — build it measurable-per-learner, don't assume the population effect.
+
+### 4A.3 Engagement & motivation — SDT, honestly (the gamification ban is evidence-backed, not taste)
+
+- **Why the ban holds:** overjustification is real (free-choice d≈-0.28 to -0.40; Deci/Koestner/Ryan 1999) and lands hardest on an already-intrinsically-motivated solo learner — ours. Gamification's own meta-analyses are small (g≈.26), heterogeneous, self-report-inflated, novelty-decaying (~4 wks). Streaks run on loss-aversion with no established learning benefit. No XP / points / badges / leagues / streaks.
+- **The levers that work** — the two SDT needs an AI tutor serves well:
+  - **Competence:** honest, specific, task-referenced feedback ("you retrieved this cold after 21 days, first try"). *Informational* feedback ENHANCES intrinsic motivation (d≈+.3); never let it become contingent/controlling ("do 5 more to unlock…") — that flips it to undermining.
+  - **Autonomy:** learner chooses objectives / order / pace; the system gives the *rationale* for recommendations ("here's why this next"), never orders.
+- **Relatedness is the weak leg — do NOT fake it.** No manufactured warmth, needy mascot, or parasocial persona; a broken illusion rebounds negatively. Keep an honest tutor voice; route genuine relatedness to real humans (let the learner share real progress with a person they choose).
+- **Adaptive difficulty = flow** (challenge-skill balance) — the one "fun-and-effective" driver needing zero fake metrics; BKT/FSRS hold items in the learner's zone. Present the flow→achievement link honestly (r≈.43, correlational, wildly heterogeneous — no "flow mode" marketing).
+- **Desirable-difficulty honesty framing (a motivational _risk_ to manage):** spacing/retrieval FEEL unproductive though they work best (spaced retrieval g≈.74). Failure mode: the learner concludes "this isn't working" and drifts to easy re-reading. Counter with honest reframing ("recall felt hard because that's what builds durable memory") + showing the real retrieval-success trend — NEVER by making it easier or papering over it with points.
+
+### 4A.4 No outbound reach (Werner)
+
+The app never reaches out — no notifications, no review-due pings, no streak-nags. All forward-pull lives *inside* the app (the content hooks in 4A.5 + the visible summit / distance-to-goal). This closes off the entire manipulative-retention surface by construction. (Considered and declined: an honest "ready to strengthen" review nudge and if-then planning prompts — both defensible, but Werner chose the purest no-interruption stance.)
+
+### 4A.5 Curiosity & anticipation hooks — "looking forward to the next lesson"
+
+- **Start-of-lesson prediction hook (the evidence-strong one):** pose the lesson's central question and have the learner commit a quick guess *before* any teaching, then reveal. Prequestion/guessing effect **g≈0.54 on the _targeted_ material** (preregistered meta-analysis, k=97; benefit grows to ~1 week). Rules: low-stakes, **unscored**, safe-to-be-wrong (errorful generation still helps); **pin it to the objective we most want mastered** (spillover to other material is ~0, g≈.04); **calibrate the gap to current BKT state** — just past the edge of mastery (zero prior knowledge → confusion, not curiosity; Loewenstein's inverted-U). Hold the gap open briefly (the prediction commit / a Socratic beat) so the anticipation state is occupied — an instant reveal wastes the effect. Fits the existing Socratic / explain-it-back modes.
+- **Optional between-lessons curiosity teaser (forward-pull):** a concrete "what's next" hook opening the specific question the next lesson answers — not "Lesson 6." **Honest caveat:** NO direct evidence that cross-session cliffhangers improve returning or retention; it's an extrapolation from within-session curiosity. Low-cost, worth doing, not oversold. **Manipulation line:** never hold a gap open across sessions to *force* a return — that's a retention hook, not a learning tool.
+- **Seductive-details bound (confirmed by both sweeps):** curiosity does NOT spill to nearby material and can actively *interfere* with adjacent complex/unrelated content. So every hook is **tethered to the current or next objective**; **random trivia is out** (transfer harm d≈-0.3 to -0.4; Rey 2012, Sundararajan & Adesope 2020). An optional end-of-lesson "go deeper" card is allowed only if relevant and placed *after* encoding — never mid-worked-example.
+- **Curiosity is a learning lever, not just engagement:** state curiosity improves memory for the *targeted* fact (~16pp, held at delay; Kang 2009, Gruber 2014) — the engagement boost and the memory boost are the same reward-anticipation state. Log which openers the learner rates high-interest (a natural extension of the confidence tap) so FSRS/BKT can weight those items.
+
+### 4A.6 What we adapt to — real, behaviour-measured signals (NOT learning styles)
+
+- **Learning styles are folklore and we say so.** In-app copy (defensible as written): *"Claude University does not use 'learning styles.' Matching lessons to a visual/auditory/kinesthetic preference has been tested and not supported (Pashler, McDaniel, Rohrer & Bjork 2008; Rogowsky, Calhoun & Tallal 2015). We adapt instead to what the evidence supports — your demonstrated mastery of each objective, your recall over time, and how you respond in the moment."* No style selector, ever. (Varying representation — text + diagram + example — for *everyone* is good design and is NOT learning styles.)
+- **The signals we DO adapt to** (all inferable from the existing event log; population effects treated as priors updated by this learner):
+  - **Prior knowledge → the worked-example fade** (expertise-reversal, pooled d≈-0.43; Tetzlaff 2025). Below a BKT-mastery threshold: full worked example; mid: faded/completion problem; high: problem-solving, support removed. Corroborate the BKT estimate with behaviour (fast correct, no hint/peek). The effect is asymmetric, so **default to MORE support when uncertain**. (Concretises Stage 3's faded worked examples.)
+  - **Individual forgetting → FSRS** (already handled): treat early n=1 intervals as uncertain (don't render as precise), and route chronically low-stability items back to **re-teaching**, not just more quizzing (low stability = poor encoding, not mere forgetting).
+  - **Calibration** — per 4A.2.
+  - **Gaming / help-seeking:** detect the signature (short pre-answer latency + repeated fast hints + solution-peek-before-attempt on not-yet-mastered steps) and respond by **re-routing** (gate the full solution behind ≥1 genuine attempt, slow hint cadence, re-teach + fresh isomorphic item) — never punish or gamify. Distinguish from healthy help-seeking, and flag the opposite failure (help-avoidance). **n=1 caution:** for one motivated adult, a gaming burst more likely signals fatigue/frustration than effort-avoidance — treat it as a prompt to offer a break, not a verdict.
+  - **Cognitive overload → a live signal, not a trait.** Do NOT estimate a working-memory "capacity" trait from logs (drifts toward the same trait-matching fallacy as learning styles). Treat co-occurring latency spikes + error bursts + hint/peek clusters + low confidence as overload *now* → add scaffolding; their absence at high mastery → strip it. Folds into the expertise-reversal fade.
+
+---
+
 ## 5. Decisions (Werner)
 
 - **Gating:** exams stay the hard gate; the aggregated per-objective BKT evidence is an **awareness/visibility layer**, not a gate.
@@ -161,6 +217,8 @@ Backward design (Wiggins/McTighe); constructive alignment (Biggs; Bloom-verb inv
 
 Quick honesty win deployable anytime, independent of the above: **replace the fake 90-minute session with the real per-lesson `estMinutes`** and add measured time-on-task.
 
+The **learner-experience layer (§4A)** is cross-cutting: its teaching hooks (start-of-lesson prediction opener, curiosity teasers, the BKT-wired expertise-reversal fade) land in **Phase 2**; its metacognition mirror, calibration mechanics, SDT engagement framing, and the "no outbound reach" stance land in **Phase 4**.
+
 ---
 
 ## 11. Risks & mitigations
@@ -182,3 +240,8 @@ Each risk carries a concrete plan, a verification, and an honest status (solved 
 - **Guessing-corrected score:** applied **internally only**; the learner sees a clean 0–100%.
 - **FSRS recall signal:** **graded** (answer latency + hint use + retry), not binary.
 - **Objective storage:** **single master copy (refs-canonical)** — one registry, one resolver; the Phase-0 cutover is atomic (§10). Chosen over the bridge for single-source-of-truth cleanliness, accepting a larger, more-coupled Phase 0.
+- **Open learner model:** build the **rich** learner-facing model, disciplined per §4A.1 — coach-by-default via the tutor, action-terminating, calibration-mismatch centerpiece, progress-framed, minimum-data-gated, behavioural logs internal.
+- **Outbound reach:** **none** — the app never notifies/pings/nags; all pull is in-app (§4A.4).
+- **Anticipation:** a **start-of-lesson prediction hook** (evidence-strong, g≈0.5 on target) + an optional **between-lessons curiosity teaser** (honest lower-evidence forward-pull); **no random-trivia pop-ups** (seductive-details harm). §4A.5.
+- **Confidence tap timing:** collected on **delayed/spaced reviews**, not immediately post-lesson (§4A.2).
+- **Learning styles:** explicitly **not used**; in-app copy says so, citing Pashler 2008 / Rogowsky 2015 (§4A.6).
