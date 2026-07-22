@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from backend import courses, events, fsutil, generation
+from backend import courses, events, fsutil, generation, objectives
 
 MODULE_EXAM_QUESTIONS = 10
 FINAL_EXAM_QUESTIONS = 18
@@ -44,7 +44,7 @@ def module_blueprint(manifest, module_id):
         return None
     per_lesson = []
     for lesson in module.get("lessons", []):
-        objs = [o for o in lesson.get("objectives", []) or []
+        objs = [o for o in objectives.for_lesson(manifest, lesson)
                 if isinstance(o, dict) and isinstance(o.get("text"), str) and o["text"].strip()]
         if not objs:
             objs = [_fallback_objective(lesson.get("title", ""))]
@@ -71,7 +71,7 @@ def final_blueprint(manifest):
     for module in manifest.get("modules", []):
         higher, lower = [], []
         for lesson in module.get("lessons", []):
-            for o in lesson.get("objectives", []) or []:
+            for o in objectives.for_lesson(manifest, lesson):
                 if not (isinstance(o, dict) and isinstance(o.get("text"), str) and o["text"].strip()):
                     continue
                 (higher if o.get("bloom") in HIGHER_BLOOMS else lower).append((lesson.get("id", ""), o))

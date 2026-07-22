@@ -57,6 +57,15 @@ def test_module_blueprint_unknown_module_is_none():
     assert exams.module_blueprint(_manifest(), "nope") is None
 
 
+def test_module_blueprint_resolves_registry_refs():
+    from backend import objectives
+    m = objectives.build_registry(_manifest())   # v3 disk: lessons have objectiveIds
+    slots = exams.blueprint(m, "m1")
+    # blueprint still yields slots with objectiveText resolved from the registry
+    assert slots and all(s["objectiveText"] for s in slots)
+    assert any(s["objectiveText"] == "o1a" for s in slots)
+
+
 def test_final_blueprint_covers_every_module_exactly_eighteen():
     slots = exams.final_blueprint(_manifest())
     assert len(slots) == exams.FINAL_EXAM_QUESTIONS == 18
