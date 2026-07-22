@@ -204,6 +204,21 @@ def test_flatten_lessons_includes_objectives():
     assert flat[0]["objectives"] == [OBJ] and flat[1]["objectives"] == []
 
 
+def test_flatten_lessons_resolves_registry_refs():
+    from backend import courses, objectives
+    OBJ = {"text": "Calculate the result", "bloom": "apply", "knowledge": "procedural"}
+    wire = {
+        "schemaVersion": 3, "id": "demo", "title": "T",
+        "modules": [{"id": "m1", "title": "M1", "lessons": [
+            {"id": "demo-l1", "title": "L1", "estMinutes": 30, "prereqs": [], "objectives": [OBJ]},
+        ]}],
+    }
+    disk = objectives.build_registry(wire)   # refs shape, no embedded objectives
+    flat = courses.flatten_lessons(disk)
+    assert flat[0]["objectives"][0]["text"] == "Calculate the result"
+    assert flat[0]["objectives"][0]["id"] == "demo-o1"
+
+
 def test_completed_counts_reviewed_events(conn, tmp_path):
     from backend import courses, events
     root = tmp_path / "courses"

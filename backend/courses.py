@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from backend import fsutil, spine
+from backend import fsutil, objectives, spine
 
 CONTENT_DIR = Path(__file__).resolve().parent.parent / "content" / "courses"
 
@@ -36,7 +36,7 @@ def flatten_lessons(manifest):
                 "id": lesson["id"],
                 "title": lesson["title"],
                 "moduleTitle": module["title"],
-                "objectives": lesson.get("objectives", []),
+                "objectives": objectives.for_lesson(manifest, lesson),
             })
     return out
 
