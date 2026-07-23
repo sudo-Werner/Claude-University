@@ -4,7 +4,7 @@ import re as _re
 import threading
 from pathlib import Path
 
-from backend import claude_client, courses, figures, fsutil, images, spine
+from backend import claude_client, courses, figure_telemetry, figures, fsutil, images, spine
 
 # Single-flight: expensive generations (a lesson is ~110s of Max-plan web search) must
 # never run twice concurrently for the same artifact. The second caller blocks on the
@@ -1357,7 +1357,8 @@ def _generate_and_store_lesson(content_dir, course_id, lesson_id, profile, *, ge
     if isinstance(slots, list) and slots:
         try:
             resolved = images.process_slots(course_id, lesson_id, slots, content_dir=content_dir,
-                                             resolve_images_fn=resolve_images)
+                                             resolve_images_fn=resolve_images,
+                                             on_event=lambda ev: figure_telemetry.record(content_dir, ev))
         except Exception:
             resolved = []
     lesson["images"] = resolved

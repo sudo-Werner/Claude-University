@@ -990,6 +990,23 @@ def test_backfill_course_mermaid_slot_stores_without_network_call(tmp_path, monk
     assert "[[figure:1]]" in saved["promptHtml"]
 
 
+def test_backfill_course_writes_figure_telemetry(tmp_path):
+    from backend import figure_telemetry
+    content_dir = tmp_path / "courses"
+    lessons_dir = content_dir / "demo" / "lessons"
+    lessons_dir.mkdir(parents=True)
+    (lessons_dir / "demo-l1.json").write_text(json.dumps(
+        {"promptHtml": "<p>Body</p>", "title": "L1"}))
+
+    def fake_generate(prompt, validate):
+        return {"promptHtml": "<p>Body</p>[[figure:1]]",
+                "images": [{"type": "mermaid", "code": "pie", "caption": "m"}]}
+
+    images.backfill_course(content_dir, "demo", generate=fake_generate)
+    rows = figure_telemetry.read(content_dir)
+    assert any(r["requested_type"] == "mermaid" and r["outcome"] == "rendered" for r in rows)
+
+
 def test_backfill_course_svg_rejection_strips_token_and_continues(tmp_path):
     content_dir = tmp_path / "courses"
     lessons_dir = content_dir / "demo" / "lessons"

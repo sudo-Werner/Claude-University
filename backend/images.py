@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from backend import claude_client, figures, fsutil
+from backend import claude_client, figure_telemetry, figures, fsutil
 
 USER_AGENT = "ClaudeUniversity/1.0 (personal learning app; wernerpvanellewee@gmail.com)"
 
@@ -560,7 +560,8 @@ def backfill_course(content_dir, course_id, *, generate):
             continue  # never block the batch on one flaky lesson
         lesson["promptHtml"] = proposal["promptHtml"]
         try:
-            resolved = process_slots(course_id, lesson_id, proposal["images"], content_dir=content_dir)
+            resolved = process_slots(course_id, lesson_id, proposal["images"], content_dir=content_dir,
+                                      on_event=lambda ev: figure_telemetry.record(content_dir, ev))
         except Exception:
             resolved = []
         lesson["images"] = resolved
