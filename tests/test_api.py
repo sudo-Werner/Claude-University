@@ -160,6 +160,7 @@ def test_csp_header_on_index(client):
     assert "script-src 'self';" in csp        # script-src is exactly 'self' — no unsafe-inline
     assert "object-src 'none'" in csp
     assert "base-uri 'none'" in csp
+    assert "frame-ancestors 'none'" in csp
 
 
 def test_csp_header_on_api(client):

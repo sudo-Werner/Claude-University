@@ -4,10 +4,13 @@
 // Adds only the animateTransform/animateMotion subset to the advisory
 // allowlists; the FORBID lists are operative and kill the dangerous animation
 // elements and href even if a future DOMPurify default promotes them.
+// `style` is FORBID_ATTR here too, matching backend/figures.py (which strips it
+// before caching): DOMPurify's svg profile (from USE_PROFILES) would otherwise
+// let a `style` attribute survive client-side even though the server never does.
 export const SVG_ANIM_SANITIZE_CONFIG = {
   USE_PROFILES: { svg: true, svgFilters: true },
   ALLOWED_TAGS: ["svg","g","rect","circle","ellipse","line","polyline","polygon","path","text","tspan","title","defs","marker","animateTransform","animateMotion"],
   ALLOWED_ATTR: ["viewBox","x","y","x1","y1","x2","y2","cx","cy","r","rx","ry","width","height","d","points","transform","fill","stroke","stroke-width","stroke-dasharray","stroke-linecap","stroke-linejoin","font-size","font-family","font-weight","text-anchor","dominant-baseline","opacity","fill-opacity","marker-end","marker-start","id","class","attributeName","type","dur","begin","repeatCount","values","additive","accumulate","path","keyPoints","rotate"],
   FORBID_TAGS: ["animate","set","mpath","animateColor","discard","style","image","use","a","foreignObject","script"],
-  FORBID_ATTR: ["href","xlink:href"],
+  FORBID_ATTR: ["href","xlink:href","style"],
 };

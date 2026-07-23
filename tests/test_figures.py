@@ -228,7 +228,14 @@ def _drop(inner):
 def test_anim_rejects_set_and_animate_and_mpath():
     assert _drop('<set attributeName="href" to="javascript:alert(1)"/>')
     assert _drop('<animate attributeName="href" values="a;b" dur="2s"/>')
-    assert _drop('<animateMotion><mpath xlink:href="#p"/></animateMotion>')
+    # SVG2 plain-`href` form (no unbound xlink: prefix) so this actually PARSES and is
+    # dropped by the child-rejection branch (figures.py: "for _child in el: return False"),
+    # not by a ParseError on an unbound namespace prefix — the previous `xlink:href` form
+    # here never reached that branch at all.
+    assert _drop('<circle r="3"><animateMotion dur="2s"><mpath href="#p"/></animateMotion></circle>')
+    # Locks the child-rejection branch independently of mpath specifically: any child at
+    # all under an animation element must be dropped, even a benign-looking one.
+    assert _drop('<circle r="3"><animateMotion dur="2s"><rect/></animateMotion></circle>')
 
 def test_anim_rejects_bad_attributename_and_type_and_events():
     assert _drop('<rect width="9" height="9"><animateTransform attributeName="x" '

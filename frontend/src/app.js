@@ -1903,12 +1903,15 @@ export async function init({ window, fetch }) {
   // (image/style/use/a/foreignObject/script and href/xlink:href) on top of DOMPurify's
   // core stripping of on* handlers and javascript: URLs. Effective client filter is thus
   // the hardened svg profile — intentionally broader than the server's strict allowlist.
+  // `style` is FORBID_ATTR here too, matching backend/figures.py (which strips it before
+  // caching): DOMPurify's svg profile would otherwise let a `style` attribute survive
+  // client-side even though the server never does.
   const SVG_SANITIZE_CONFIG = {
     USE_PROFILES: { svg: true, svgFilters: true },
     ALLOWED_TAGS: ["svg","g","rect","circle","ellipse","line","polyline","polygon","path","text","tspan","title","defs","marker"],
     ALLOWED_ATTR: ["viewBox","x","y","x1","y1","x2","y2","cx","cy","r","rx","ry","width","height","d","points","transform","fill","stroke","stroke-width","stroke-dasharray","stroke-linecap","stroke-linejoin","font-size","font-family","font-weight","text-anchor","dominant-baseline","opacity","fill-opacity","marker-end","marker-start","id","class"],
     FORBID_TAGS: ["style","image","use","a","foreignObject","script"],
-    FORBID_ATTR: ["href","xlink:href"],
+    FORBID_ATTR: ["href","xlink:href","style"],
   };
 
   // Hydrates every svg/mermaid figure placeholder currently painted in `view`. Called

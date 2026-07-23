@@ -49,6 +49,10 @@ export function attachFigurePlayer(fig, { reducedMotion = false, win = window } 
     playBtn.setAttribute("aria-pressed", String(playing));
   }
   function frame(ts) {
+    if (!fig.isConnected) {           // figure was detached by a lesson repaint -> stop leaking
+      if (observer) observer.disconnect();
+      return;                          // do NOT reschedule -> the rAF loop ends
+    }
     if (last === null) last = ts;
     const dt = (ts - last) / 1000;
     last = ts;
