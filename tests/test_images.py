@@ -978,6 +978,29 @@ def test_process_slots_records_svg_rendered_and_rejected(tmp_path):
     assert by_n[3]["requested_type"] == "mermaid" and by_n[3]["outcome"] == "rendered"
 
 
+def test_process_slots_svg_animated_rendered(tmp_path):
+    evs, on_event = _events_capture()
+    code = ('<svg viewBox="0 0 800 500"><circle r="4" fill="#d6557e">'
+            '<animateMotion path="M0,0 L200,0" dur="3s" repeatCount="indefinite"/></circle></svg>')
+    result = images.process_slots("demo", "demo-l1",
+        [{"type": "svg-animated", "code": code, "caption": "flow"}],
+        content_dir=tmp_path / "courses", resolve_images_fn=lambda *a, **k: [],
+        on_event=on_event)
+    assert result[0]["type"] == "svg-animated" and "animateMotion" in result[0]["code"]
+    assert evs[0]["requested_type"] == "svg-animated" and evs[0]["outcome"] == "rendered"
+
+
+def test_process_slots_svg_animated_rejected_drops(tmp_path):
+    evs, on_event = _events_capture()
+    bad = '<svg viewBox="0 0 800 500"><animate attributeName="href" values="a;b" dur="2s"/></svg>'
+    result = images.process_slots("demo", "demo-l1",
+        [{"type": "svg-animated", "code": bad, "caption": "x"}],
+        content_dir=tmp_path / "courses", resolve_images_fn=lambda *a, **k: [],
+        on_event=on_event)
+    assert result == []
+    assert evs[0]["drop_reason"] == "sanitizer-rejected"
+
+
 def test_process_slots_threads_on_event_to_resolver(tmp_path):
     evs, on_event = _events_capture()
     content_dir = tmp_path / "courses"

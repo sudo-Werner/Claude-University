@@ -457,6 +457,15 @@ def process_slots(course_id, lesson_id, slots, *, content_dir, resolve_images_fn
             else:
                 emit(i, "svg", "dropped", "sanitizer-rejected")
             web_image_slots.append(None)
+        elif kind == "svg-animated":
+            sanitized = figures.sanitize_svg(slot.get("code", ""), allow_animation=True)
+            if sanitized is not None:
+                local_entries.append({"n": i, "type": "svg-animated", "code": sanitized,
+                                       "caption": slot.get("caption", "")})
+                emit(i, "svg-animated", "rendered")
+            else:
+                emit(i, "svg-animated", "dropped", "sanitizer-rejected")
+            web_image_slots.append(None)
         elif kind == "mermaid":
             local_entries.append({"n": i, "type": "mermaid", "code": slot.get("code", ""),
                                    "caption": slot.get("caption", "")})
