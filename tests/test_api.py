@@ -172,3 +172,14 @@ def test_style_src_allows_inline_but_script_src_does_not(client):
     script_dir = [d for d in csp.split(";") if "script-src" in d][0]
     assert "unsafe-inline" in style_dir
     assert "unsafe-inline" not in script_dir
+
+
+def test_img_src_allows_data_uri_for_inline_svg_icons(client):
+    # The .logo::after brand glyph is an inline data: SVG background (styles.css);
+    # img-src must allow data: or the logo is CSP-blocked. data: images are
+    # script-inert, so this does not weaken script-src (which stays exactly 'self').
+    csp = client.get("/").headers["Content-Security-Policy"]
+    img_dir = [d for d in csp.split(";") if "img-src" in d][0]
+    assert "data:" in img_dir
+    script_dir = [d for d in csp.split(";") if "script-src" in d][0]
+    assert "data:" not in script_dir  # data: is IMG-only, never scripts

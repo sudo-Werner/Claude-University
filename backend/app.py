@@ -1131,8 +1131,11 @@ def create_app(db_path=None):
             return jsonify({"error": "not found"}), 404
         return send_from_directory(frontend_dir / "icons", filename)
 
+    # img-src allows data: because the .logo::after brand glyph (styles.css) is an
+    # inline data: SVG background; data: images can't execute scripts, so this
+    # doesn't weaken script-src (which stays exactly 'self').
     _CSP = ("default-src 'self'; script-src 'self'; "
-            "style-src 'self' 'unsafe-inline'; img-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
             "object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 
     @app.after_request
