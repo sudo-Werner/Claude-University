@@ -289,3 +289,16 @@ def test_valid_image_slot_accepts_svg_animated():
         {"type": "svg-animated", "code": "<svg/>", "caption": "watch the flow"}) is True
     assert figures.valid_image_slot(
         {"type": "svg-animated", "code": "", "caption": "c"}) is False
+
+
+def test_svg_animated_worked_example_survives_and_stills():
+    import re as _re
+    src = ('<svg viewBox="0 0 800 500">'
+           '<path d="M100 50 Q 300 20 500 50" fill="none" stroke="#4fa3e8" stroke-width="6"/>'
+           '<circle r="6" fill="#4fa3e8"><animateMotion path="M100,50 Q300,20 500,50" '
+           'dur="3s" repeatCount="indefinite"/></circle>'
+           '<text x="90" y="90" font-size="16" fill="#241f1a">Deoxygenated blood</text>'
+           '</svg>')
+    assert figures.sanitize_svg(src, allow_animation=True) is not None
+    still = _re.sub(r'<animateMotion\b[^>]*/>', '', src)
+    assert figures.sanitize_svg(still) is not None  # correct labelled still remains

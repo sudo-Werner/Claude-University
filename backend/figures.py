@@ -70,6 +70,18 @@ DRAWN_FIGURE_GUIDANCE = (
     '#7c6aff and its soft tint for structure — EXCEPT where a colour itself carries the '
     'meaning (arterial-red vs venous-blue, hot vs cold, acid vs base): there use the '
     'established domain convention, not the brand colour.\n'
+    '  An svg-animated slot: {"type": "svg-animated", "code": "<svg ...>...</svg>", '
+    '"caption": "<one sentence saying what to NOTICE>"}. Use ONLY when the meaning IS '
+    "change over time (a flow, cycle, or process in motion) — a static frame with arrows "
+    "cannot carry it. Hard rules: the drawing must be a correct, fully-labelled diagram "
+    "with the animation REMOVED — base positions equal the start state and motion is "
+    "expressed relatively (paths from M0,0), so stripping the animation leaves a sensible "
+    "still. Prefer animateMotion (a <circle> travelling a path). Allowed animation is "
+    "animateTransform (attributeName=\"transform\", type translate/scale/rotate/skewX/skewY) "
+    "and animateMotion only; no other animation elements, no <style>, no href. Keep it "
+    "under 30 drawn and 8 animation elements, each dur 1-20s; at most ONE animated figure "
+    "per lesson. Labels stay fixed. Colours from the brand palette, except where a colour "
+    "carries meaning (arterial-red vs venous-blue).\n"
     '  A web-image slot may also state "type": "web-image" explicitly (omitting type '
     "still defaults to web-image).\n"
 )
