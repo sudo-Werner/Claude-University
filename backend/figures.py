@@ -23,7 +23,7 @@ ALLOWED_ELEMENTS = {
 ALLOWED_ATTRS = {
     "viewBox", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry",
     "width", "height", "d", "points", "transform", "fill", "stroke",
-    "stroke-width", "stroke-dasharray", "font-size", "font-family",
+    "stroke-width", "stroke-dasharray", "stroke-linecap", "stroke-linejoin", "font-size", "font-family",
     "font-weight", "text-anchor", "dominant-baseline", "opacity",
     "fill-opacity", "marker-end", "marker-start", "id", "class",
 }

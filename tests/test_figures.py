@@ -192,3 +192,11 @@ def test_sanitize_svg_accepts_style_guide_exemplar():
         '</svg>'
     )
     assert figures.sanitize_svg(src) is not None
+
+
+def test_sanitize_svg_accepts_stroke_linecap_and_linejoin():
+    src = ('<svg viewBox="0 0 800 500"><path d="M10 10 L90 90" stroke="#333" '
+           'stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>')
+    out = figures.sanitize_svg(src)
+    assert out is not None
+    assert "stroke-linecap" in out and "stroke-linejoin" in out
