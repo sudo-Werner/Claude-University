@@ -317,7 +317,7 @@ def test_ensure_lesson_resolves_images_and_strips_unresolved_tokens(tmp_path):
     made["spine"] = _ok_spine()
     made["images"] = [{"query": "q1", "caption": "c1"}, {"query": "q2", "caption": "c2"}]
 
-    def fake_resolver(course_id, lesson_id, slots, *, content_dir):
+    def fake_resolver(course_id, lesson_id, slots, *, content_dir, **kwargs):
         return [{"n": 1, "type": "web-image", "file": "demo-l1-1.jpg", "caption": "c1",
                  "credit": "cred", "license": "CC BY 4.0", "licenseUrl": "https://x",
                  "sourceUrl": "https://y"}]
@@ -382,7 +382,7 @@ def test_deepen_lesson_re_resolves_images(tmp_path):
     path.write_text(_json.dumps(original))
 
     calls = []
-    def fake_resolver(course_id, lesson_id, slots, *, content_dir):
+    def fake_resolver(course_id, lesson_id, slots, *, content_dir, **kwargs):
         calls.append(slots)
         return [{"n": 1, "type": "web-image", "file": f"{lid}-1.jpg", "caption": "new",
                  "credit": "c2", "license": "CC0", "licenseUrl": None, "sourceUrl": "https://z2"}]
@@ -1375,7 +1375,7 @@ def test_verification_preserves_original_images(tmp_path):
     # a rewrite that omits images (review reply has no images key) must preserve them
     fixed = _full_lesson(solutionAns="reconciled")  # note: no images key
 
-    def fake_resolve(course_id, lesson_id, slots, *, content_dir):
+    def fake_resolve(course_id, lesson_id, slots, *, content_dir, **kwargs):
         # Return resolved images with the same captions from the slots
         return [{"n": s["n"], "type": "web-image", "caption": s.get("caption"),
                 "file": f"{lesson_id}-{s['n']}.png"} for s in slots if isinstance(s, dict)]
@@ -2170,7 +2170,7 @@ def test_ensure_lesson_splits_mixed_type_slots_preserving_original_n(tmp_path):
         {"query": "cells", "caption": "w"},
     ]
 
-    def fake_resolver(course_id, lesson_id, slots, *, content_dir):
+    def fake_resolver(course_id, lesson_id, slots, *, content_dir, **kwargs):
         # only the web-image slot (index 3, others None) should be passed through
         assert slots[0] is None and slots[1] is None
         assert slots[2] == {"query": "cells", "caption": "w"}

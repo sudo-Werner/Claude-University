@@ -406,7 +406,8 @@ def resolve_images(course_id, lesson_id, slots, *, content_dir, http_get=_http_g
     return resolved
 
 
-def process_slots(course_id, lesson_id, slots, *, content_dir, resolve_images_fn=None):
+def process_slots(course_id, lesson_id, slots, *, content_dir, resolve_images_fn=None,
+                  on_event=None):
     """Shared by the generation hook (backend/generation.py's
     `_generate_and_store_lesson`) and `backfill_course` below: splits typed image
     slots by type, processes mermaid/svg locally (svg sanitized via
@@ -419,7 +420,16 @@ def process_slots(course_id, lesson_id, slots, *, content_dir, resolve_images_fn
     resolve_images exception drops only the web-image entries — already-processed
     local (mermaid/svg) entries are kept. `resolve_images_fn` is the same
     dependency-injection seam tests already use (defaults to this module's own
-    `resolve_images`)."""
+    `resolve_images`). `on_event`, if given, receives exactly one record per slot
+    (see Task A) — local svg/mermaid records emitted here, web-image records from
+    the resolver."""
+
+    def emit(n, requested_type, outcome, drop_reason=None):
+        if on_event:
+            on_event({"course_id": course_id, "lesson_id": lesson_id, "n": n,
+                      "requested_type": requested_type, "outcome": outcome,
+                      "drop_reason": drop_reason, "query": None})
+
     if not isinstance(slots, list):
         return []
     local_entries = []
@@ -427,6 +437,7 @@ def process_slots(course_id, lesson_id, slots, *, content_dir, resolve_images_fn
     for i, slot in enumerate(slots, start=1):
         if not isinstance(slot, dict):
             web_image_slots.append(None)
+            emit(i, "web-image", "dropped", "malformed-slot")
             continue
         kind = slot.get("type", "web-image")
         if kind == "svg":
@@ -434,10 +445,14 @@ def process_slots(course_id, lesson_id, slots, *, content_dir, resolve_images_fn
             if sanitized is not None:
                 local_entries.append({"n": i, "type": "svg", "code": sanitized,
                                        "caption": slot.get("caption", "")})
+                emit(i, "svg", "rendered")
+            else:
+                emit(i, "svg", "dropped", "sanitizer-rejected")
             web_image_slots.append(None)
         elif kind == "mermaid":
             local_entries.append({"n": i, "type": "mermaid", "code": slot.get("code", ""),
                                    "caption": slot.get("caption", "")})
+            emit(i, "mermaid", "rendered")
             web_image_slots.append(None)
         else:
             web_image_slots.append(slot)
@@ -445,7 +460,8 @@ def process_slots(course_id, lesson_id, slots, *, content_dir, resolve_images_fn
     web_resolved = []
     if any(s is not None for s in web_image_slots):
         try:
-            web_resolved = resolver(course_id, lesson_id, web_image_slots, content_dir=content_dir)
+            web_resolved = resolver(course_id, lesson_id, web_image_slots,
+                                    content_dir=content_dir, on_event=on_event)
         except Exception:
             web_resolved = []
     return sorted(local_entries + web_resolved, key=lambda e: e["n"])

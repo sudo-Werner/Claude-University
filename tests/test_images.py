@@ -805,7 +805,7 @@ def test_backfill_course_resolves_and_rewrites_pending_lesson(tmp_path, monkeypa
         assert validate(obj)
         return obj
 
-    def fake_resolve(course_id, lesson_id, slots, *, content_dir):
+    def fake_resolve(course_id, lesson_id, slots, *, content_dir, **kwargs):
         return [{"n": 1, "type": "web-image", "file": "demo-l1-1.jpg", "caption": "c",
                  "credit": "cred", "license": "CC0", "licenseUrl": None, "sourceUrl": "https://x"}]
     monkeypatch.setattr(images, "resolve_images", fake_resolve)
@@ -895,7 +895,7 @@ def test_process_slots_mixed_types(tmp_path):
         {"type": "mermaid", "code": "pie", "caption": "m"},
     ]
 
-    def fake_resolver(course_id, lesson_id, slots_arg, *, content_dir):
+    def fake_resolver(course_id, lesson_id, slots_arg, *, content_dir, **kwargs):
         assert slots_arg[0] == {"query": "q", "caption": "c"}
         assert slots_arg[1] is None and slots_arg[2] is None
         return [{"n": 1, "type": "web-image", "file": "demo-l1-1.jpg", "caption": "c",
@@ -917,6 +917,39 @@ def test_process_slots_never_raises_on_resolver_exception(tmp_path):
     result = images.process_slots("demo", "demo-l1", slots, content_dir=content_dir, resolve_images_fn=boom)
     # local mermaid entry survives even though the web-image resolver blew up
     assert result == [{"n": 1, "type": "mermaid", "code": "pie", "caption": "m"}]
+
+
+def test_process_slots_records_svg_rendered_and_rejected(tmp_path):
+    evs, on_event = _events_capture()
+    content_dir = tmp_path / "courses"
+    slots = [
+        {"type": "svg", "code": '<svg viewBox="0 0 800 500"><rect width="10" height="10"/></svg>', "caption": "s"},
+        {"type": "svg", "code": '<svg viewBox="0 0 800 500"><script>x</script></svg>', "caption": "bad"},
+        {"type": "mermaid", "code": "pie", "caption": "m"},
+    ]
+    images.process_slots("demo", "demo-l1", slots, content_dir=content_dir,
+                         resolve_images_fn=lambda *a, **k: [], on_event=on_event)
+    by_n = {e["n"]: e for e in evs}
+    assert by_n[1]["requested_type"] == "svg" and by_n[1]["outcome"] == "rendered"
+    assert by_n[2]["outcome"] == "dropped" and by_n[2]["drop_reason"] == "sanitizer-rejected"
+    assert by_n[3]["requested_type"] == "mermaid" and by_n[3]["outcome"] == "rendered"
+
+
+def test_process_slots_threads_on_event_to_resolver(tmp_path):
+    evs, on_event = _events_capture()
+    content_dir = tmp_path / "courses"
+    slots = [{"query": "q", "caption": "c"}]
+
+    def fake_resolver(course_id, lesson_id, slots_arg, *, content_dir, on_event=None):
+        if on_event:
+            on_event({"course_id": course_id, "lesson_id": lesson_id, "n": 1,
+                      "requested_type": "web-image", "outcome": "rendered",
+                      "drop_reason": None, "query": "q"})
+        return []
+
+    images.process_slots("demo", "demo-l1", slots, content_dir=content_dir,
+                         resolve_images_fn=fake_resolver, on_event=on_event)
+    assert evs and evs[0]["requested_type"] == "web-image"
 
 
 def test_valid_images_slots_backfill_accepts_typed_slots():
