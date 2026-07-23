@@ -111,7 +111,7 @@ def test_download_verified_rejects_svg_named_png():
 
 
 def test_download_verified_rejects_oversize():
-    big = _JPEG_BYTES + b"0" * (400 * 1024)
+    big = _JPEG_BYTES + b"0" * (2 * 1024 * 1024 + 1)
     result = images.download_verified("https://x/img", http_get=lambda url: big)
     assert result is None
 
@@ -137,6 +137,27 @@ def test_download_verified_reports_bad_magic(monkeypatch):
                                    on_fail=reasons.append)
     assert out is None
     assert reasons == ["download-bad-magic"]
+
+
+def test_download_verified_accepts_1_5mb_png():
+    data = b"\x89PNG\r\n\x1a\n" + b"x" * (1_500_000)
+    assert len(data) > 400 * 1024  # would have failed under the old 400KB cap
+    out = images.download_verified("http://x/y.png", http_get=lambda u: data)
+    assert out is not None and out[1] == "png"
+
+
+def test_download_verified_still_rejects_over_2mb():
+    data = b"\x89PNG\r\n\x1a\n" + b"x" * (2 * 1024 * 1024 + 1)
+    assert images.download_verified("http://x/y.png", http_get=lambda u: data) is None
+
+
+def test_commons_search_requests_1600px_rendition():
+    seen = {}
+    def http_get(url):
+        seen["url"] = url
+        return b"{}"
+    images.commons_search("heart", http_get=http_get)
+    assert "iiurlwidth=1600" in seen["url"]
 
 
 def test_download_verified_reports_http_error(monkeypatch):
@@ -223,7 +244,7 @@ def test_commons_search_builds_correct_request():
     assert "gsrlimit=8" in decoded
     assert "prop=imageinfo" in decoded
     assert "iiprop=url|extmetadata" in decoded
-    assert "iiurlwidth=800" in decoded
+    assert "iiurlwidth=1600" in decoded
     assert "iiextmetadatafilter=LicenseShortName|LicenseUrl|Artist|AttributionRequired|Credit|UsageTerms" in decoded
     assert "format=json" in decoded
 

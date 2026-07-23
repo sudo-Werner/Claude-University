@@ -21,7 +21,7 @@ from backend import claude_client, figure_telemetry, figures, fsutil
 
 USER_AGENT = "ClaudeUniversity/1.0 (personal learning app; wernerpvanellewee@gmail.com)"
 
-MAX_BYTES = 400 * 1024
+MAX_BYTES = 2 * 1024 * 1024
 MAX_DOWNLOADS_PER_SLOT = 4
 MAX_SLOTS = 3
 
@@ -81,7 +81,7 @@ def commons_search(query, *, http_get):
         ("gsrlimit", "8"),
         ("prop", "imageinfo"),
         ("iiprop", "url|extmetadata"),
-        ("iiurlwidth", "800"),
+        ("iiurlwidth", "1600"),
         ("iiextmetadatafilter",
          "LicenseShortName|LicenseUrl|Artist|AttributionRequired|Credit|UsageTerms"),
         ("format", "json"),
