@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { shellHTML, feedbackBarHTML, feedbackEntryHTML } from "../src/views/shell.js";
 import { dashboardHTML } from "../src/views/dashboard.js";
 import { lessonHTML, ratingLocked, suggestedQuality, expandFigureTokens, lessonSideClass } from "../src/views/lesson.js";
@@ -913,6 +914,45 @@ test("syllabusHTML labels a single course, not a program", () => {
 test("syllabusHTML escapes learner-derived text", () => {
   const evil = { ...COURSE, title: "<img src=x onerror=alert(1)>" };
   assert.ok(!syllabusHTML(evil).includes("<img src=x"));
+});
+
+// Mirrors the contract-building expression in app.js's sessionData() (the gate at
+// app.js:478): a migrated schemaVersion-3 course must populate the dashboard's
+// level/hours/skills contract block identically to a schemaVersion-2 course —
+// this is the one spot a v3 course would otherwise silently lose that UI.
+// This mirror only proves dashboardHTML renders a v3-shaped contract correctly;
+// it can't detect a regression of the real app.js line (nothing connects the
+// two but this comment) — the sibling test below reads app.js's actual source
+// and pins the real gate expression, so a revert to `=== 2` fails the suite.
+function buildContract(manifest) {
+  return (manifest && manifest.schemaVersion >= 2) ? {
+    level: (manifest.level && (manifest.level.label || manifest.level.code)) || "",
+    hours: manifest.targetHours || null,
+    skills: manifest.skills || [],
+  } : null;
+}
+
+test("sessionData contract is populated for schemaVersion 3 courses", () => {
+  const seed = { topic: "T", sub: "S", durationMin: 90, progressPct: 5, lessonsDone: 1, lessonsTotal: 22, reviewsDue: 0 };
+  const v2 = dashboardHTML({ ...seed, contract: buildContract({ ...COURSE, schemaVersion: 2 }) }, idleTimer);
+  const v3 = dashboardHTML({ ...seed, contract: buildContract({ ...COURSE, schemaVersion: 3 }) }, idleTimer);
+
+  assert.match(v3, /class="level-badge">Bachelor Year 2-equivalent</);
+  assert.match(v3, /~130 h total effort/);
+  assert.match(v3, /<li>train a model<\/li>/);
+  assert.match(v3, /<li>evaluate a model<\/li>/);
+  assert.equal(v3, v2); // renders exactly as it does for schemaVersion 2
+});
+
+test("app.js's real contract gate accepts schemaVersion >= 2 (pins the shipped line)", () => {
+  // The rendering test above only exercises a same-shape mirror of app.js:478 —
+  // it can't catch someone reverting the real gate back to `=== 2`. Read the
+  // actual source and assert the contract ternary uses `>= 2`, whitespace-tolerant.
+  const appSrc = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  assert.match(
+    appSrc,
+    /contract:\s*\(ui\.manifest\s*&&\s*ui\.manifest\.schemaVersion\s*>=\s*2\)\s*\?/,
+  );
 });
 
 // ---- revisionHTML ----

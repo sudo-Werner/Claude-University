@@ -475,7 +475,7 @@ export async function init({ window, fetch }) {
       reviewsDue: ui.summary ? ui.summary.reviewsDue : 0,
       complete: !next,
       masteryCounts: (ui.manifest && ui.manifest.masteryCounts) || {},
-      contract: (ui.manifest && ui.manifest.schemaVersion === 2) ? {
+      contract: (ui.manifest && ui.manifest.schemaVersion >= 2) ? {
         level: (ui.manifest.level && (ui.manifest.level.label || ui.manifest.level.code)) || "",
         hours: ui.manifest.targetHours || null,
         skills: ui.manifest.skills || [],
