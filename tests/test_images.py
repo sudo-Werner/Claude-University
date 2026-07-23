@@ -654,6 +654,106 @@ def test_resolve_images_caps_download_attempts_not_successes(tmp_path):
     assert download_calls["count"] <= images.MAX_DOWNLOADS_PER_SLOT
 
 
+def _events_capture():
+    evs = []
+    return evs, evs.append
+
+
+def test_resolve_images_records_rendered(tmp_path):
+    evs, on_event = _events_capture()
+    content_dir = tmp_path / "courses"
+    slots = [{"query": "human heart", "caption": "notice the four chambers"}]
+
+    def http_get(url):
+        if "commons" in url:
+            return json.dumps({"query": {"pages": {"1": {"title": "File:Heart.jpg",
+                "imageinfo": [{"thumburl": "http://img/heart.jpg",
+                "descriptionurl": "http://src", "extmetadata": {
+                "LicenseShortName": {"value": "CC BY-SA 4.0"}}}]}}}}).encode()
+        return b"\xff\xd8\xff" + b"jpegbytes"
+
+    images.resolve_images("demo", "demo-l1", slots, content_dir=content_dir,
+                          http_get=http_get, structured=lambda *a, **k: {"pick": 1},
+                          on_event=on_event)
+    assert len(evs) == 1
+    assert evs[0]["outcome"] == "rendered"
+    assert evs[0]["requested_type"] == "web-image"
+    assert evs[0]["n"] == 1 and evs[0]["query"] == "human heart"
+
+
+def test_resolve_images_records_license_filtered(tmp_path):
+    evs, on_event = _events_capture()
+    content_dir = tmp_path / "courses"
+    slots = [{"query": "q", "caption": "c"}]
+
+    def http_get(url):
+        # one candidate, but NC license -> filtered out, none valid
+        return json.dumps({"query": {"pages": {"1": {"title": "t",
+            "imageinfo": [{"thumburl": "http://img/x.jpg", "descriptionurl": "http://s",
+            "extmetadata": {"LicenseShortName": {"value": "CC BY-NC 4.0"}}}]}}}}).encode()
+
+    images.resolve_images("demo", "demo-l1", slots, content_dir=content_dir,
+                          http_get=http_get, structured=lambda *a, **k: {"pick": 1},
+                          on_event=on_event)
+    assert evs[0]["outcome"] == "dropped"
+    assert evs[0]["drop_reason"] == "license-filtered"
+
+
+def test_resolve_images_records_vision_rejected(tmp_path):
+    evs, on_event = _events_capture()
+    content_dir = tmp_path / "courses"
+    slots = [{"query": "q", "caption": "c"}]
+
+    def http_get(url):
+        if "commons" in url:
+            return json.dumps({"query": {"pages": {"1": {"title": "t",
+                "imageinfo": [{"thumburl": "http://img/x.jpg", "descriptionurl": "http://s",
+                "extmetadata": {"LicenseShortName": {"value": "CC0"}}}]}}}}).encode()
+        return b"\xff\xd8\xffjpeg"
+
+    images.resolve_images("demo", "demo-l1", slots, content_dir=content_dir,
+                          http_get=http_get, structured=lambda *a, **k: {"pick": None},
+                          on_event=on_event)
+    assert evs[0]["drop_reason"] == "vision-rejected"
+
+
+def test_resolve_images_records_deadline_for_all_remaining(tmp_path):
+    evs, on_event = _events_capture()
+    content_dir = tmp_path / "courses"
+    slots = [{"query": "a", "caption": "c"}, {"query": "b", "caption": "c"}]
+    images.resolve_images("demo", "demo-l1", slots, content_dir=content_dir,
+                          http_get=lambda u: b"", structured=lambda *a, **k: {"pick": 1},
+                          deadline_seconds=-1, on_event=on_event)
+    assert [e["drop_reason"] for e in evs] == ["deadline", "deadline"]
+    assert [e["n"] for e in evs] == [1, 2]
+
+
+def test_resolve_images_no_double_emit_when_build_raises(tmp_path, monkeypatch):
+    evs, on_event = _events_capture()
+    content_dir = tmp_path / "courses"
+    slots = [{"query": "q", "caption": "c"}]
+
+    def http_get(url):
+        if "commons" in url:
+            return json.dumps({"query": {"pages": {"1": {"title": "t",
+                "imageinfo": [{"thumburl": "http://img/x.jpg", "descriptionurl": "http://s",
+                "extmetadata": {"LicenseShortName": {"value": "CC0"}}}]}}}}).encode()
+        return b"\xff\xd8\xffjpeg"
+
+    def boom(candidate):
+        raise AttributeError("title not a string")
+    monkeypatch.setattr(images, "build_credit", boom)
+
+    images.resolve_images("demo", "demo-l1", slots, content_dir=content_dir,
+                          http_get=http_get, structured=lambda *a, **k: {"pick": 1},
+                          on_event=on_event)
+    # build_credit raises AFTER the candidate is picked; the slot must still get
+    # exactly ONE telemetry record, not a "rendered" followed by an "error".
+    assert len(evs) == 1
+    assert evs[0]["outcome"] == "dropped"
+    assert evs[0]["drop_reason"] == "error"
+
+
 def test_backfill_prompt_includes_lesson_body_and_shape_instructions():
     lesson = {"topic": "Cells", "promptHtml": "<p>Cells divide.</p>"}
     p = images.backfill_prompt(lesson)

@@ -294,40 +294,56 @@ def vision_pick(candidates, topic, caption, *, structured, workdir):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def _resolve_one_slot(n, slot, course_id, lesson_id, *, images_dir, http_get, structured):
+def _resolve_one_slot(n, slot, course_id, lesson_id, *, images_dir, http_get,
+                      structured, on_event=None):
     query = slot.get("query")
     caption = slot.get("caption")
-    if not (isinstance(query, str) and query.strip() and isinstance(caption, str) and caption.strip()):
+
+    def drop(reason):
+        if on_event:
+            on_event({"course_id": course_id, "lesson_id": lesson_id, "n": n,
+                      "requested_type": "web-image", "outcome": "dropped",
+                      "drop_reason": reason,
+                      "query": query if isinstance(query, str) else None})
         return None
+
+    if not (isinstance(query, str) and query.strip() and isinstance(caption, str) and caption.strip()):
+        return drop("malformed-slot")
     commons = commons_search(query, http_get=http_get)
     valid = [c for c in commons if license_allowed(c.get("licenseShort"))]
+    openverse = []
     if len(valid) < 2:
         openverse = openverse_search(query, http_get=http_get)
         valid = valid + [c for c in openverse if license_allowed(c.get("licenseShort"))]
+    if not valid:
+        # distinguish "search found nothing" from "found but all filtered out"
+        return drop("no-candidates" if not (commons or openverse) else "license-filtered")
     downloaded = []
     attempts = 0
+    last_fail = ["download-bad-magic"]
     for candidate in valid:
         if attempts >= MAX_DOWNLOADS_PER_SLOT:
             break
         attempts += 1
-        result = download_verified(candidate["thumbUrl"], http_get=http_get)
+        result = download_verified(candidate["thumbUrl"], http_get=http_get,
+                                   on_fail=lambda r: last_fail.__setitem__(0, r))
         if result is None:
             continue
         data, ext = result
         downloaded.append((candidate, data, ext))
     if not downloaded:
-        return None
+        return drop(last_fail[0])
     pick = vision_pick(
         [(data, ext) for _, data, ext in downloaded], query, caption,
         structured=structured, workdir=tempfile.mkdtemp,
     )
     if pick is None:
-        return None
+        return drop("vision-rejected")
     candidate, data, ext = downloaded[pick]
     images_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{lesson_id}-{n}.{ext}"
     fsutil.write_bytes_atomic(images_dir / filename, data)
-    return {
+    entry = {
         "n": n,
         "type": "web-image",
         "file": filename,
@@ -337,6 +353,11 @@ def _resolve_one_slot(n, slot, course_id, lesson_id, *, images_dir, http_get, st
         "licenseUrl": candidate.get("licenseUrl"),
         "sourceUrl": candidate.get("sourceUrl") or "",
     }
+    if on_event:
+        on_event({"course_id": course_id, "lesson_id": lesson_id, "n": n,
+                  "requested_type": "web-image", "outcome": "rendered",
+                  "drop_reason": None, "query": query})
+    return entry
 
 
 def _default_structured(prompt, *, validate=None, tools=None):
@@ -344,33 +365,42 @@ def _default_structured(prompt, *, validate=None, tools=None):
 
 
 def resolve_images(course_id, lesson_id, slots, *, content_dir, http_get=_http_get,
-                    structured=_default_structured, deadline_seconds=120):
+                   structured=_default_structured, deadline_seconds=120, on_event=None):
     """Orchestrate the whole resolver for one lesson's image slots (0-3
-    {query, caption} dicts). Per slot: Commons-first, top up from Openverse
-    only if Commons yields <2 license-valid candidates (skipped entirely on a
-    429), download+verify up to 4 candidates combined, one vision pick, atomic
-    write to content_dir/course_id/images/<lesson_id>-<n>.<ext>. Returns the
-    resolved entries list. Every failure path — network, license, download,
-    vision, filesystem — drops that slot; this function never raises. The
-    120s deadline is checked once per slot (between per-slot operations); on
-    overrun, remaining slots are skipped (fail open)."""
+    {query, caption} dicts). See module docstring for the fail-open contract.
+    `on_event`, if given, receives exactly one record per web-image slot (see
+    _resolve_one_slot); remaining slots skipped by the deadline each emit a
+    'deadline' drop record so population metrics see them."""
     if not isinstance(slots, list):
         return []
     start = time.monotonic()
     images_dir = Path(content_dir) / course_id / "images"
     resolved = []
-    for i, slot in enumerate(slots[:MAX_SLOTS], start=1):
+    slice_ = slots[:MAX_SLOTS]
+    for i, slot in enumerate(slice_, start=1):
         if time.monotonic() - start > deadline_seconds:
+            if on_event:
+                for j, rem in enumerate(slice_[i - 1:], start=i):
+                    if isinstance(rem, dict):
+                        on_event({"course_id": course_id, "lesson_id": lesson_id, "n": j,
+                                  "requested_type": "web-image", "outcome": "dropped",
+                                  "drop_reason": "deadline",
+                                  "query": rem.get("query") if isinstance(rem.get("query"), str) else None})
             break
         if not isinstance(slot, dict):
             continue
         try:
             entry = _resolve_one_slot(
                 i, slot, course_id, lesson_id, images_dir=images_dir,
-                http_get=http_get, structured=structured,
+                http_get=http_get, structured=structured, on_event=on_event,
             )
         except Exception:
             entry = None
+            if on_event:
+                on_event({"course_id": course_id, "lesson_id": lesson_id, "n": i,
+                          "requested_type": "web-image", "outcome": "dropped",
+                          "drop_reason": "error",
+                          "query": slot.get("query") if isinstance(slot.get("query"), str) else None})
         if entry is not None:
             resolved.append(entry)
     return resolved
