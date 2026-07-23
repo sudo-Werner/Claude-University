@@ -11,15 +11,6 @@
   </head>
   <body>
     <div class="page"><main class="app" id="app">Loading…</main></div>
-    <script type="module">
-      import { init } from "/src/app.js";
-      init({ window, fetch: window.fetch.bind(window) });
-      if ("serviceWorker" in navigator) {
-        // Registration requires a secure context (HTTPS, or localhost) — it
-        // rejects on plain-HTTP LAN access until the Tailscale HTTPS origin
-        // is set up (docs/INSTALL.md). That's expected there, not an error.
-        window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
-      }
-    </script>
+    <script type="module" src="/src/boot.js"></script>
   </body>
 </html>

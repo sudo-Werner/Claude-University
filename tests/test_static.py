@@ -7,8 +7,11 @@ def test_root_serves_platform_html(client):
 def test_root_html_wires_up_pwa_install(client):
     body = client.get("/").get_data(as_text=True)
     assert 'rel="manifest" href="/manifest.json"' in body
-    assert 'navigator.serviceWorker.register("/sw.js")' in body
     assert 'name="theme-color"' in body
+    # SW registration moved out of the inline page script into /src/boot.js
+    # (keeps platform.html free of an inline script body for CSP purposes).
+    boot = client.get("/src/boot.js").get_data(as_text=True)
+    assert 'navigator.serviceWorker.register("/sw.js")' in boot
 
 
 def test_src_module_served(client):
@@ -84,3 +87,10 @@ def test_icons_served(client):
 def test_icons_404_outside_the_allowed_filenames(client):
     assert client.get("/icons/../app.py").status_code == 404
     assert client.get("/icons/not-a-real-icon.png").status_code == 404
+
+
+def test_platform_html_has_no_inline_script_body():
+    from pathlib import Path
+    html = Path("frontend/platform.html").read_text()
+    assert 'src="/src/boot.js"' in html
+    assert "import { init }" not in html  # boot logic moved out of the page
