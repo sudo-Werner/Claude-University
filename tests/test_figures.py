@@ -175,3 +175,20 @@ def test_sanitize_svg_regression_canonical_labeled_schematic():
     out = figures.sanitize_svg(src)
     assert out == ('<svg viewBox="0 0 800 500"><rect x="10" y="10" width="80" height="40" '
                     'fill="#eee" stroke="#333" /><text x="20" y="35" font-size="14">Pump</text></svg>')
+
+
+# Contract lock: a figure authored to the on-brand SVG style guide (flat fill +
+# fill-opacity tint for depth, a <polygon> arrowhead, an in-drawing <text> label) must
+# stay sanitizer-legal. Guards DRAWN_FIGURE_GUIDANCE's documented style against a future
+# allowlist change silently breaking it.
+def test_sanitize_svg_accepts_style_guide_exemplar():
+    src = (
+        '<svg viewBox="0 0 800 500">'
+        '<rect x="40" y="40" width="200" height="120" fill="#7c6aff" fill-opacity="0.14" '
+        'stroke="#7c6aff" stroke-width="2"/>'
+        '<polygon points="300,90 340,100 300,110" fill="#241f1a"/>'
+        '<line x1="240" y1="100" x2="300" y2="100" stroke="#241f1a" stroke-width="2"/>'
+        '<text x="60" y="105" font-size="16" fill="#241f1a">Left atrium</text>'
+        '</svg>'
+    )
+    assert figures.sanitize_svg(src) is not None

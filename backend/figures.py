@@ -44,10 +44,15 @@ DRAWN_FIGURE_GUIDANCE = (
     '  A mermaid slot: {"type": "mermaid", "code": "<mermaid source>", "caption": '
     '"<one sentence saying what to NOTICE>"}.\n'
     '  An svg slot: {"type": "svg", "code": "<svg ...>...</svg>", "caption": "<one '
-    'sentence saying what to NOTICE>"}. SVG authoring rules: fixed viewBox="0 0 800 '
-    '500"; label every part with a <text> element INSIDE the drawing itself, never a '
-    "separate legend; font-size at least 14px; use simple flat colors that read clearly "
-    "on a light card.\n"
+    'sentence saying what to NOTICE>"}. SVG style contract (stay inside the sanitizer '
+    'allowlist): fixed viewBox="0 0 800 500"; NO gradients, NO filter/blur/shadow, NO '
+    '<style> (all banned) — use flat fill plus fill-opacity tints for depth; draw '
+    'arrowheads as <polygon> triangles (marker sizing attrs are not allowed); label '
+    'every part with a <text> element (font-size at least 14px) ON the drawing, never a '
+    'separate legend. Use the brand palette — ink #241f1a for labels/strokes, purple '
+    '#7c6aff and its soft tint for structure — EXCEPT where a colour itself carries the '
+    'meaning (arterial-red vs venous-blue, hot vs cold, acid vs base): there use the '
+    'established domain convention, not the brand colour.\n'
     '  A web-image slot may also state "type": "web-image" explicitly (omitting type '
     "still defaults to web-image).\n"
 )
