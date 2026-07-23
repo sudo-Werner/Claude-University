@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>running…</title>
+<script src="/vendor/purify.min.js"></script>
+<h1>Animated-figure client sanitizer verification</h1>
+<ul id="results"></ul>
+<h2>Observations (non-gating)</h2>
+<ul id="observations"></ul>
+<script type="module">
+  import { SVG_ANIM_SANITIZE_CONFIG } from "/src/figureconfig.js";
+  const S = (c) => DOMPurify.sanitize(c, SVG_ANIM_SANITIZE_CONFIG).toLowerCase();
+  // Hard corpus: every case must PASS. Verifies the OPERATIVE filter
+  // (FORBID_TAGS / FORBID_ATTR) — the only thing that actually restricts, because
+  // USE_PROFILES{svg,svgFilters} discards the config's explicit ALLOWED_* and makes
+  // DOMPurify's svg profile the allow-set (DOMPurify 3.4.12).
+  const cases = [
+    // must-keep: the two permitted animation elements survive
+    ["keeps animateTransform", '<svg viewBox="0 0 8 8"><rect width="4" height="4"><animateTransform attributeName="transform" type="translate" values="0 0;4 0" dur="2s"/></rect></svg>', o => o.includes("animatetransform")],
+    ["keeps animateMotion", '<svg viewBox="0 0 8 8"><circle r="2"><animateMotion path="M0,0 L4,0" dur="2s"/></circle></svg>', o => o.includes("animatemotion")],
+    // must-strip: every dangerous SMIL element (FORBID_TAGS completeness)
+    ["strips animate", '<svg viewBox="0 0 8 8"><rect width="4" height="4"><animate attributeName="x" values="0;4" dur="2s"/></rect></svg>', o => !o.includes("<animate")],
+    ["strips set", '<svg viewBox="0 0 8 8"><rect width="4" height="4"><set attributeName="x" to="4"/></rect></svg>', o => !o.includes("<set")],
+    ["strips animateColor", '<svg viewBox="0 0 8 8"><rect width="4" height="4"><animateColor attributeName="fill" values="#f00;#0f0" dur="2s"/></rect></svg>', o => !o.includes("animatecolor")],
+    ["strips discard", '<svg viewBox="0 0 8 8"><rect width="4" height="4"/><discard begin="1s"/></svg>', o => !o.includes("<discard")],
+    ["strips mpath (xlink bypass vector)", '<svg viewBox="0 0 8 8"><circle r="2"><animateMotion dur="2s"><mpath xlink:href="#p"/></animateMotion></circle></svg>', o => !o.includes("mpath")],
+    // must-strip: dangerous static elements
+    ["strips style", '<svg viewBox="0 0 8 8"><style>*{fill:red}</style><rect width="4" height="4"/></svg>', o => !o.includes("<style")],
+    ["strips foreignObject", '<svg viewBox="0 0 8 8"><foreignObject width="8" height="8"><div>x</div></foreignObject></svg>', o => !o.includes("foreignobject")],
+    ["strips script", '<svg viewBox="0 0 8 8"><script>alert(1)<\/script><rect width="4" height="4"/></svg>', o => !o.includes("<script")],
+    ["strips use", '<svg viewBox="0 0 8 8"><use xlink:href="#x"/><rect width="4" height="4"/></svg>', o => !o.includes("<use")],
+    // must-strip: dangerous attributes (FORBID_ATTR)
+    ["strips href (javascript: via <a>)", '<svg viewBox="0 0 8 8"><a href="javascript:alert(1)"><rect width="4" height="4"/></a></svg>', o => !o.includes("javascript")],
+    ["strips xlink:href", '<svg viewBox="0 0 8 8"><rect width="4" height="4" xlink:href="javascript:alert(1)"/></svg>', o => !o.includes("xlink")],
+  ];
+  const ul = document.getElementById("results");
+  let ok = true;
+  for (const [name, code, check] of cases) {
+    let pass;
+    try { pass = check(S(code)); } catch (e) { pass = false; }
+    ok = ok && pass;
+    const li = document.createElement("li");
+    li.textContent = (pass ? "PASS: " : "FAIL: ") + name;
+    ul.appendChild(li);
+  }
+  // Observations (non-gating): the client layer does NOT strip inert interpolation
+  // attrs (from/to/calcMode) — DOMPurify's svg profile allows them and they are not
+  // a client-layer XSS concern. The SERVER sanitizer (_valid_anim_attr) pins the
+  // values-only contract and drops such figures before storage. Recorded so the
+  // two-layer split is explicit, not silently assumed.
+  const obsUl = document.getElementById("observations");
+  const fromTo = S('<svg viewBox="0 0 8 8"><rect width="4" height="4"><animateTransform attributeName="transform" type="translate" from="0 0" to="4 0" calcMode="linear" dur="2s"/></rect></svg>');
+  for (const attr of ["from=", " to=", "calcmode"]) {
+    const li = document.createElement("li");
+    li.textContent = "client keeps '" + attr.trim() + "': " + fromTo.includes(attr) + " (server enforces values-only)";
+    obsUl.appendChild(li);
+  }
+  document.title = ok ? "ALL PASS" : "HAS FAIL";
+</script>
