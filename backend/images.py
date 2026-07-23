@@ -157,19 +157,27 @@ def openverse_search(query, *, http_get):
 
 
 def license_allowed(value):
-    """Fail-closed allowlist covering BOTH sources' license vocabularies (they
-    never collide): Commons LicenseShortName case-insensitive equals "public
-    domain"/"cc0", or starts with "cc by " / "cc by-sa " (space-terminated so
-    NC/ND variants can never pass); Openverse license slug in
-    {cc0, pdm, by, by-sa}."""
+    """Fail-closed allowlist across BOTH sources' license vocabularies. Accepts
+    public-domain / CC0 / PDM, Openverse slugs {cc0, pdm, by, by-sa}, and any
+    CC-BY or CC-BY-SA spelling regardless of separators or version/'Migrated'
+    suffix (Commons ships 'CC-BY-SA-4.0', 'CC BY-SA 3.0 Migrated', etc.). Any
+    NC or ND term is rejected."""
     if not isinstance(value, str) or not value.strip():
         return False
     lowered = value.strip().lower()
-    if lowered in ("public domain", "cc0"):
+    if lowered in ("public domain", "cc0", "pdm"):
         return True
-    if lowered.startswith("cc by ") or lowered.startswith("cc by-sa "):
+    if lowered in _OPENVERSE_ALLOWED:
         return True
-    return lowered in _OPENVERSE_ALLOWED
+    # Normalise separators so 'cc-by-sa-4.0' and 'cc by-sa 4.0' compare alike.
+    parts = re.sub(r"[-\s]+", " ", lowered).split()
+    if "nc" in parts or "nd" in parts:
+        return False
+    if parts[:3] == ["cc", "by", "sa"]:
+        return True
+    if parts[:2] == ["cc", "by"]:
+        return True
+    return False
 
 
 def strip_html(text):

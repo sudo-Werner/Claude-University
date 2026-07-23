@@ -70,6 +70,28 @@ def test_license_allowed_rejects_non_string_and_empty():
     assert images.license_allowed("   ") is False
 
 
+def test_license_allowed_accepts_hyphenated_and_migrated_forms():
+    assert images.license_allowed("CC-BY-SA-4.0") is True
+    assert images.license_allowed("CC BY-SA 3.0 Migrated") is True
+    assert images.license_allowed("CC BY 2.0") is True
+    assert images.license_allowed("CC-BY-4.0") is True
+
+
+def test_license_allowed_still_rejects_nc_nd_and_junk():
+    assert images.license_allowed("CC BY-NC 4.0") is False
+    assert images.license_allowed("CC-BY-ND-4.0") is False
+    assert images.license_allowed("CC BY-NC-SA 4.0") is False
+    assert images.license_allowed("GFDL") is False
+    assert images.license_allowed("") is False
+
+
+def test_license_allowed_keeps_public_domain_cc0_and_openverse_slugs():
+    assert images.license_allowed("Public Domain") is True
+    assert images.license_allowed("CC0") is True
+    assert images.license_allowed("pdm") is True
+    assert images.license_allowed("by-sa") is True  # openverse slug
+
+
 # ---- strip_html / build_credit ----
 
 def test_strip_html_removes_tags_and_trims():
