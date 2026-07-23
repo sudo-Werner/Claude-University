@@ -58,6 +58,24 @@ DRAWN_FIGURE_GUIDANCE = (
 )
 
 
+def valid_image_slot(slot):
+    """Per-slot shape check shared by generation.valid_images and
+    images._valid_images_slots (single source of truth). web-image (or no type):
+    non-empty query + caption. mermaid/svg: non-empty code (<=8192 chars) +
+    caption. Any other type is invalid."""
+    if not isinstance(slot, dict):
+        return False
+    kind = slot.get("type", "web-image")
+    if kind == "web-image":
+        return all(isinstance(slot.get(f), str) and slot[f].strip() for f in ("query", "caption"))
+    if kind in ("mermaid", "svg"):
+        code = slot.get("code")
+        if not (isinstance(code, str) and code.strip() and len(code) <= 8192):
+            return False
+        return isinstance(slot.get("caption"), str) and bool(slot["caption"].strip())
+    return False
+
+
 def _local_name(tag):
     """Strip a Clark-notation namespace (e.g. '{http://www.w3.org/2000/svg}rect' ->
     ('rect', 'http://www.w3.org/2000/svg')) so the allowlist check is namespace-aware

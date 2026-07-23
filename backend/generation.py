@@ -222,20 +222,7 @@ def valid_images(images_val):
     if not (isinstance(images_val, list) and len(images_val) <= 3):
         return False
     for slot in images_val:
-        if not isinstance(slot, dict):
-            return False
-        kind = slot.get("type", "web-image")
-        if kind == "web-image":
-            for field in ("query", "caption"):
-                if not (isinstance(slot.get(field), str) and slot[field].strip()):
-                    return False
-        elif kind in ("mermaid", "svg"):
-            code = slot.get("code")
-            if not (isinstance(code, str) and code.strip() and len(code) <= 8192):
-                return False
-            if not (isinstance(slot.get("caption"), str) and slot["caption"].strip()):
-                return False
-        else:
+        if not figures.valid_image_slot(slot):
             return False
     return True
 

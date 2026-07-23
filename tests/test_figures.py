@@ -200,3 +200,14 @@ def test_sanitize_svg_accepts_stroke_linecap_and_linejoin():
     out = figures.sanitize_svg(src)
     assert out is not None
     assert "stroke-linecap" in out and "stroke-linejoin" in out
+
+
+def test_valid_image_slot_shared_helper():
+    from backend import figures
+    assert figures.valid_image_slot({"query": "q", "caption": "c"}) is True
+    assert figures.valid_image_slot({"type": "svg", "code": "<svg/>", "caption": "c"}) is True
+    assert figures.valid_image_slot({"type": "mermaid", "code": "pie", "caption": "c"}) is True
+    assert figures.valid_image_slot({"type": "svg", "code": "", "caption": "c"}) is False
+    assert figures.valid_image_slot({"type": "web-image", "query": "", "caption": "c"}) is False
+    assert figures.valid_image_slot({"type": "bogus", "code": "x", "caption": "c"}) is False
+    assert figures.valid_image_slot("not a dict") is False
