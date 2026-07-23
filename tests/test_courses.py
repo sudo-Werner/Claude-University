@@ -184,15 +184,37 @@ def test_write_course_compiled_shape_slugs_ids_and_remaps_prereqs(tmp_path):
             {"id": "l1", "title": "A", "estMinutes": 90, "objectives": [OBJ], "prereqs": []},
             {"id": "l2", "title": "B", "estMinutes": 60, "objectives": [OBJ], "prereqs": ["l1"]}]}]}
     m = courses.write_course(tmp_path, compiled)
-    assert m["schemaVersion"] == 2 and m["level"]["code"] == "master" and m["targetHours"] == 130
+    # write_course lifts embedded objectives into a registry (v3 disk shape) for a compiled course.
+    assert m["schemaVersion"] == 3 and m["level"]["code"] == "master" and m["targetHours"] == 130
     lessons = m["modules"][0]["lessons"]
     assert [l["id"] for l in lessons] == ["deep-ml-l1", "deep-ml-l2"]
     assert lessons[1]["prereqs"] == ["deep-ml-l1"]                 # prereq remapped to slugged id
-    assert lessons[0]["objectives"] == [OBJ] and lessons[0]["estMinutes"] == 90
+    assert lessons[0]["objectiveIds"] == ["deep-ml-o1"] and lessons[0]["estMinutes"] == 90
+    assert "objectives" not in lessons[0]
     # persisted file matches the returned manifest
     import json
     on_disk = json.loads((tmp_path / "deep-ml" / "course.json").read_text())
     assert on_disk == m
+
+
+def test_write_course_compiled_builds_registry_and_refs(tmp_path):
+    from backend import courses
+    OBJ = {"text": "Calculate X", "bloom": "apply", "knowledge": "procedural"}
+    compiled = {"schemaVersion": 2, "title": "C", "subtitle": "", "brief": "",
+                "level": {"code": "bachelor-y1", "label": "B"}, "targetHours": 5,
+                "skills": ["s"], "outcomes": [OBJ], "groundingSources": [],
+                "modules": [{"id": "m1", "title": "M", "outcomes": [OBJ], "lessons": [
+                    {"id": "l1", "title": "L1", "estMinutes": 30, "objectives": [OBJ], "prereqs": []},
+                ]}]}
+    m = courses.write_course(tmp_path, compiled)
+    assert m["schemaVersion"] == 3
+    assert [o["id"] for o in m["objectives"]] == [f'{m["id"]}-o1']
+    lesson = m["modules"][0]["lessons"][0]
+    assert lesson["objectiveIds"] == [f'{m["id"]}-o1']
+    assert "objectives" not in lesson
+    # module/course outcomes remain embedded, untouched
+    assert m["outcomes"] == [OBJ]
+    assert m["modules"][0]["outcomes"] == [OBJ]
 
 
 def test_flatten_lessons_includes_objectives():
@@ -248,7 +270,8 @@ def test_apply_revision_writes_in_place_backs_up_and_preserves_bodies(tmp_path):
     assert out is not None
     on_disk = json.loads((course / "course.json").read_text())
     ids = [l.get("id") for m in on_disk.get("modules", []) for l in m.get("lessons", [])]
-    assert on_disk["schemaVersion"] == 2 and ids  # written in place
+    # apply_revision builds the registry (v3 disk shape) from the wire-shape proposal.
+    assert on_disk["schemaVersion"] == 3 and ids  # written in place
     assert (course / "course.json.pre-revise-20260709T120000Z").exists()        # backup made
     assert (course / "lessons" / "c-l1.json").exists()                           # body preserved
 
@@ -328,6 +351,36 @@ def test_apply_revision_prunes_dropped_module_remediation(tmp_path):
     assert (rem_dir / "m1.json").exists()
     assert (rem_dir / "final.json").exists()
     assert not (rem_dir / "m2.json").exists()
+
+
+def test_apply_revision_preserves_retained_lesson_objective_id(tmp_path):
+    from backend import courses, objectives
+    cdir = tmp_path
+    course = cdir / "c"
+    (course / "lessons").mkdir(parents=True)
+    # "current" on disk is already v3 (registry + objectiveIds).
+    disk = objectives.build_registry(_valid_compiled("c"))
+    (course / "course.json").write_text(json.dumps(disk))
+    (course / "lessons" / "c-l1.json").write_text('{"id": "c-l1"}')
+    kept_id = disk["modules"][0]["lessons"][0]["objectiveIds"][0]
+
+    # Revise-shape proposal (wire, as compiler.revise_course would emit it): the retained
+    # lesson's objectives come back embedded, carrying their id (decision #4 -- the
+    # compiler copies a retained lesson's objectives verbatim by id) -- no objectiveIds
+    # ref, since that key never appears on real compiler output.
+    kept_lesson = disk["modules"][0]["lessons"][0]
+    retained_lesson = {k: v for k, v in kept_lesson.items() if k != "objectiveIds"}
+    retained_lesson["objectives"] = objectives.for_lesson(disk, kept_lesson)
+    proposal = {**disk, "modules": [{
+        **disk["modules"][0],
+        "lessons": [retained_lesson],
+    }]}
+    out = courses.apply_revision(cdir, "c", proposal, now="20260723T000000Z")
+    assert out is not None
+    on_disk = json.loads((course / "course.json").read_text())
+    retained = on_disk["modules"][0]["lessons"][0]
+    assert retained["objectiveIds"] == [kept_id]   # id preserved across the revise write
+    assert "objectives" not in retained            # persisted in v3 disk shape, not embedded
 
 
 def test_list_courses_includes_passed_flag(conn, tmp_path):

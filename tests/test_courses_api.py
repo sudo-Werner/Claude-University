@@ -38,7 +38,10 @@ def test_post_courses_writes_compiled(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     resp = client.post("/api/courses", json=COMPILED)
     assert resp.status_code == 201
-    assert resp.get_json()["course"]["schemaVersion"] == 2
+    # write_course builds the registry for a compiled proposal, so the persisted (and
+    # returned) manifest is v3 disk shape -- the browser never reads this response's
+    # objectives, it re-fetches via GET /api/courses/<id>, which resolves them (Task 5).
+    assert resp.get_json()["course"]["schemaVersion"] == 3
     assert (tmp_path / "deep-ml" / "course.json").exists()
 
 
@@ -1048,12 +1051,19 @@ def test_revise_happy_path(tmp_path, monkeypatch):
     }]})
     assert seed_resp.status_code == 200
 
+    # `manifest` (from write_course) is now v3 disk shape (objectiveIds refs); resolve it
+    # back to wire shape (embedded objectives) before building the proposal, matching what
+    # a real compiler.revise_course output looks like -- and what valid_compiled_course
+    # (which checks embedded lesson.objectives) requires.
+    from backend import objectives
+    resolved = objectives.resolved_manifest(manifest)
+
     # Proposed course keeps only the first lesson (drops the completed second one).
     proposed = {
-        **manifest,
+        **resolved,
         "modules": [{
-            **manifest["modules"][0],
-            "lessons": [l for l in manifest["modules"][0]["lessons"] if l["id"] == kept_id],
+            **resolved["modules"][0],
+            "lessons": [l for l in resolved["modules"][0]["lessons"] if l["id"] == kept_id],
         }],
         "changeSummary": ["Removed lesson B to tighten scope"],
     }
@@ -1112,8 +1122,14 @@ def test_apply_revision_persists_and_rejects_bad(tmp_path, monkeypatch):
     cid = manifest["id"]
     client = _client(tmp_path, monkeypatch)
 
+    # write_course returns v3 disk shape (objectiveIds refs); a real revise submission is
+    # wire shape (embedded objectives), so resolve before building the payload -- otherwise
+    # valid_compiled_course rejects it for missing embedded lesson.objectives.
+    from backend import objectives
+    resolved = objectives.resolved_manifest(manifest)
+
     # Valid revision — same id, same lesson ids (no new ones), valid schema.
-    revised = {**manifest, "title": "Deep ML (Revised)"}
+    revised = {**resolved, "title": "Deep ML (Revised)"}
     r = client.post(f"/api/courses/{cid}/apply-revision", json={"course": revised})
     assert r.status_code == 200
     on_disk = json.loads((tmp_path / cid / "course.json").read_text())
@@ -1132,14 +1148,15 @@ def test_apply_revision_404_for_illegal_id(tmp_path, monkeypatch):
 
 
 def test_apply_revision_prunes_review_items(tmp_path, monkeypatch):
-    from backend import review_items
+    from backend import review_items, objectives
     manifest = courses.write_course(tmp_path, COMPILED)
     cid = manifest["id"]
     kept_id = manifest["modules"][0]["lessons"][0]["id"]
     review_items.save_items(tmp_path, cid, {"lessonId": kept_id, "reviewCount": 0, "items": []})
     review_items.save_items(tmp_path, cid, {"lessonId": "ghost-lesson", "reviewCount": 0, "items": []})
     client = _client(tmp_path, monkeypatch)
-    revised = {**manifest, "title": "Deep ML (Revised)"}
+    # resolve v3 disk shape back to wire (embedded objectives) before submitting the revise.
+    revised = {**objectives.resolved_manifest(manifest), "title": "Deep ML (Revised)"}
     r = client.post(f"/api/courses/{cid}/apply-revision", json={"course": revised})
     assert r.status_code == 200
     assert review_items.load_items(tmp_path, cid, kept_id) is not None

@@ -148,9 +148,16 @@ def write_course(content_dir, proposal):
         if field in proposal:
             manifest[field] = proposal[field]
 
+    # A compiled course (it carries schemaVersion) becomes refs-canonical on disk: lift its
+    # embedded lesson objectives into a course-level registry with stable ids. A legacy
+    # proposal (no schemaVersion) is written exactly as before.
+    if "schemaVersion" in manifest:
+        manifest = objectives.build_registry(manifest)
+
     course_dir = content_dir / course_id
     (course_dir / "lessons").mkdir(parents=True, exist_ok=True)
-    fsutil.write_text_atomic(course_dir / "course.json", json.dumps(manifest, indent=2, ensure_ascii=False))
+    fsutil.write_text_atomic(course_dir / "course.json",
+                             json.dumps(manifest, indent=2, ensure_ascii=False))
     return manifest
 
 
@@ -171,6 +178,7 @@ def apply_revision(content_dir, course_id, revised, *, now=None):
     from backend import generation
     if not generation.valid_compiled_course(revised):
         return None
+    revised = objectives.build_registry(revised)   # wire -> disk (v3), preserving retained ids
     current = json.loads(manifest_path.read_text())
     existing_ids = {l.get("id") for m in current.get("modules", []) for l in m.get("lessons", [])}
     pattern = re.compile(rf"^{re.escape(course_id)}-l\d+$")
