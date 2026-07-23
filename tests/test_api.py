@@ -151,3 +151,24 @@ def test_activity_negative_limit_is_clamped(client):
     resp = client.get("/api/activity?limit=-1")
     assert resp.status_code == 200
     assert len(resp.get_json()["activity"]) == 1
+
+
+def test_csp_header_on_index(client):
+    csp = client.get("/").headers.get("Content-Security-Policy")
+    assert csp is not None
+    assert "default-src 'self'" in csp
+    assert "script-src 'self';" in csp        # script-src is exactly 'self' — no unsafe-inline
+    assert "object-src 'none'" in csp
+    assert "base-uri 'none'" in csp
+
+
+def test_csp_header_on_api(client):
+    assert client.get("/api/courses").headers.get("Content-Security-Policy") is not None
+
+
+def test_style_src_allows_inline_but_script_src_does_not(client):
+    csp = client.get("/").headers["Content-Security-Policy"]
+    style_dir = [d for d in csp.split(";") if "style-src" in d][0]
+    script_dir = [d for d in csp.split(";") if "script-src" in d][0]
+    assert "unsafe-inline" in style_dir
+    assert "unsafe-inline" not in script_dir

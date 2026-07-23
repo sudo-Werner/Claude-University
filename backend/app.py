@@ -1131,4 +1131,14 @@ def create_app(db_path=None):
             return jsonify({"error": "not found"}), 404
         return send_from_directory(frontend_dir / "icons", filename)
 
+    _CSP = ("default-src 'self'; script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self'; "
+            "object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+
+    @app.after_request
+    def _security_headers(resp):
+        resp.headers.setdefault("Content-Security-Policy", _CSP)
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        return resp
+
     return app
