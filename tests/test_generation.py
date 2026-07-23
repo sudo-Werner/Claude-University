@@ -2225,3 +2225,13 @@ def test_ensure_lesson_mermaid_only_never_calls_resolver(tmp_path):
     out = gen.ensure_lesson(root, "demo", "demo-l1", {}, generate=lambda p: dict(made),
                             resolve_images=boom)
     assert out["images"] == [{"n": 1, "type": "mermaid", "code": "graph TD;", "caption": "m"}]
+
+
+def test_valid_lesson_accepts_svg_animated_image():
+    base = {k: "x" for k in gen.LESSON_KEYS}
+    base["checks"] = [dict(_OK_CHECK)]
+    base["preQuiz"] = dict(_OK_PREQUIZ)
+    base["spine"] = _ok_spine()
+    base["images"] = [{"type": "svg-animated", "code": "<svg viewBox='0 0 8 8'/>",
+                       "caption": "watch the flow"}]
+    assert gen.valid_lesson(base) is True

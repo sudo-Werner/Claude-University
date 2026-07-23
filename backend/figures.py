@@ -85,7 +85,7 @@ def valid_image_slot(slot):
     kind = slot.get("type", "web-image")
     if kind == "web-image":
         return all(isinstance(slot.get(f), str) and slot[f].strip() for f in ("query", "caption"))
-    if kind in ("mermaid", "svg"):
+    if kind in ("mermaid", "svg", "svg-animated"):
         code = slot.get("code")
         if not (isinstance(code, str) and code.strip() and len(code) <= 8192):
             return False

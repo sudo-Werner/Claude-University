@@ -281,3 +281,11 @@ def test_anim_strip_leaves_valid_still_frame():
     still = _re.sub(r'<animate[A-Za-z]*\b[^>]*/>', '', src)
     out = figures.sanitize_svg(still)  # allow_animation defaults False
     assert out is not None and "Blood cell" in out
+
+
+def test_valid_image_slot_accepts_svg_animated():
+    from backend import figures
+    assert figures.valid_image_slot(
+        {"type": "svg-animated", "code": "<svg/>", "caption": "watch the flow"}) is True
+    assert figures.valid_image_slot(
+        {"type": "svg-animated", "code": "", "caption": "c"}) is False
