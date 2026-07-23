@@ -211,3 +211,9 @@ def test_valid_image_slot_shared_helper():
     assert figures.valid_image_slot({"type": "web-image", "query": "", "caption": "c"}) is False
     assert figures.valid_image_slot({"type": "bogus", "code": "x", "caption": "c"}) is False
     assert figures.valid_image_slot("not a dict") is False
+
+
+def test_drawn_guidance_has_no_photo_as_fallback_framing():
+    text = figures.DRAWN_FIGURE_GUIDANCE.lower()
+    assert "too complex to draw" not in text  # the old loser-framing is gone
+    assert "recognize a real thing" in text or "recognise a real thing" in text

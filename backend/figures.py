@@ -34,13 +34,17 @@ ALLOWED_ATTRS = {
 # generation.py already imports images.py — putting this text in either of THEM would
 # risk a circular import).
 DRAWN_FIGURE_GUIDANCE = (
-    "\n\nA figure slot may also be a diagram Claude draws itself, as code — no extra "
-    "image call, no URL. Choose the figure type by what the content needs: concrete "
-    "identification (anatomy, organisms, objects) needs a web-image; a process, flow, "
-    "sequence, hierarchy, or timeline needs mermaid; a labeled spatial schematic that "
-    "mermaid cannot express needs svg (keep it simple: at most ~25 elements); "
-    "quantitative data needs mermaid xychart-beta or pie. When a diagram would be too "
-    "complex to draw clearly in code, prefer a web-image slot instead.\n"
+    "\n\nChoose the figure TYPE by what the content needs (this is independent of "
+    "how hard the content is):\n"
+    "  - web-image (a real photo/plate) whenever the learner must recognize a real "
+    "thing by appearance — anatomy, organisms, minerals, artefacts. A drawing cannot "
+    "substitute; this is first-class, never a fallback.\n"
+    "  - a static drawn diagram (mermaid for a process/flow/hierarchy/timeline or "
+    "quantitative chart; svg for a labelled spatial schematic mermaid cannot express, "
+    "keep it simple: at most ~25 elements) when structure or relationships are the "
+    "point and a still with arrows and labels reads at a glance.\n"
+    "  - svg-animated ONLY when the meaning IS change over time (a flow, a cycle, a "
+    "process in motion) and a static frame would genuinely lose the point.\n"
     '  A mermaid slot: {"type": "mermaid", "code": "<mermaid source>", "caption": '
     '"<one sentence saying what to NOTICE>"}.\n'
     '  An svg slot: {"type": "svg", "code": "<svg ...>...</svg>", "caption": "<one '
