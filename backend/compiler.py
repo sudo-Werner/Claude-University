@@ -293,7 +293,7 @@ def _assemble_contract(learner_brief, outline, enriched, grounding_sources):
     total_minutes = sum(est.values())
     level = outline.get("level", {})
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "title": outline.get("title", ""),
         "subtitle": outline.get("subtitle", ""),
         "brief": _brief_paragraph(learner_brief, level),

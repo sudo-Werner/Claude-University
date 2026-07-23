@@ -123,7 +123,7 @@ def test_assemble_contract_computes_hours_and_shape():
             {"id": "l1", "title": "a", "estMinutes": 90, "objectives": [OBJ], "prereqs": []},
             {"id": "l2", "title": "b", "estMinutes": 150, "objectives": [OBJ], "prereqs": ["l1"]}]}]}
     c = compiler._assemble_contract({"goal": "build models", "desiredDepth": "deep"}, outline, enriched, [])
-    assert c["schemaVersion"] == 2 and c["targetHours"] == 4          # round(240/60)
+    assert c["schemaVersion"] == 3 and c["targetHours"] == 4          # round(240/60)
     assert "id" not in c and c["level"]["code"] == "bachelor-y2"
     assert generation.valid_compiled_course(c)
     assert "build models" in c["brief"]
@@ -270,7 +270,7 @@ def test_revise_course_keeps_retained_objectives_mints_new_and_skips_sweep(monke
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("sweep must not run")))
     out = compiler.revise_course(existing, [{"role": "user", "content": "add a lesson"}],
                                  generate_sourced=fake_sourced, verify=fake_verify)
-    assert out["id"] == "c" and out["schemaVersion"] == 2
+    assert out["id"] == "c" and out["schemaVersion"] == 3
     assert out["changeSummary"] == ["added a lesson"]
     flat = [l for m in out["modules"] for l in m["lessons"]]
     assert flat[0]["id"] == "c-l1"
