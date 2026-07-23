@@ -183,3 +183,10 @@ def test_img_src_allows_data_uri_for_inline_svg_icons(client):
     assert "data:" in img_dir
     script_dir = [d for d in csp.split(";") if "script-src" in d][0]
     assert "data:" not in script_dir  # data: is IMG-only, never scripts
+
+
+def test_nosniff_header_present(client):
+    # X-Content-Type-Options: nosniff is set by the same after_request hook as the
+    # CSP; lock it so a future edit to that hook can't silently drop it.
+    assert client.get("/").headers.get("X-Content-Type-Options") == "nosniff"
+    assert client.get("/api/courses").headers.get("X-Content-Type-Options") == "nosniff"
