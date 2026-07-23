@@ -267,6 +267,14 @@ mark.highlight{background:rgba(255,196,64,.45); color:inherit; border-radius:3px
 .fig-credit a{color:var(--text-faint); text-decoration:underline; text-underline-offset:2px}
 .lesson-figures{padding:16px 18px}
 .lesson-fig-svg svg,.lesson-fig-mermaid svg{display:block; width:100%; max-width:100%; height:auto; margin:0 0 6px}
+/* Drawn figures sit on a soft inner-glass tile (the app's blur/shadow depth is
+   impossible inside sanitized SVG, so the tile supplies the surrounding depth). */
+.lesson-fig-svg,.lesson-fig-mermaid{
+  background:var(--glass-inner); border:1px solid var(--border-field);
+  border-radius:14px; padding:14px 16px;
+}
+/* Stop force-stretching a small diagram edge-to-edge: cap width, centre it. */
+.lesson-fig-mermaid svg{width:auto; max-width:100%; margin-inline:auto}
 
 /* quiz option row */
 .opt{display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:13px 14px; border-radius:14px;
