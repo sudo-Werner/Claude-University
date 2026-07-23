@@ -97,6 +97,7 @@ function drawnFigurePlaceholderHTML(entry, dataAttr) {
 
 function figureHTML(entry, courseId) {
   if (entry.type === "svg") return drawnFigurePlaceholderHTML(entry, "fig-svg");
+  if (entry.type === "svg-animated") return drawnFigurePlaceholderHTML(entry, "fig-svg-anim");
   if (entry.type === "mermaid") return drawnFigurePlaceholderHTML(entry, "fig-mermaid");
   return webImageFigureHTML(entry, courseId);
 }
@@ -106,7 +107,7 @@ function isValidFigureEntry(entry) {
   if (entry.type === "web-image") {
     return typeof entry.file === "string" && FIGURE_FILENAME_RE.test(entry.file);
   }
-  if (entry.type === "svg" || entry.type === "mermaid") {
+  if (entry.type === "svg" || entry.type === "mermaid" || entry.type === "svg-animated") {
     return typeof entry.code === "string" && entry.code.length > 0;
   }
   return false;
