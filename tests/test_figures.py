@@ -217,3 +217,67 @@ def test_drawn_guidance_has_no_photo_as_fallback_framing():
     text = figures.DRAWN_FIGURE_GUIDANCE.lower()
     assert "too complex to draw" not in text  # the old loser-framing is gone
     assert "recognize a real thing" in text or "recognise a real thing" in text
+
+
+# --- svg-animated: must be dropped (return None) under allow_animation=True ---
+_MAL = '<svg viewBox="0 0 800 500">{}</svg>'
+
+def _drop(inner):
+    return figures.sanitize_svg(_MAL.format(inner), allow_animation=True) is None
+
+def test_anim_rejects_set_and_animate_and_mpath():
+    assert _drop('<set attributeName="href" to="javascript:alert(1)"/>')
+    assert _drop('<animate attributeName="href" values="a;b" dur="2s"/>')
+    assert _drop('<animateMotion><mpath xlink:href="#p"/></animateMotion>')
+
+def test_anim_rejects_bad_attributename_and_type_and_events():
+    assert _drop('<rect width="9" height="9"><animateTransform attributeName="x" '
+                 'type="translate" values="0 0;9 0" dur="2s"/></rect>')
+    assert _drop('<rect width="9" height="9"><animateTransform attributeName="transform" '
+                 'type="matrix" values="1 0 0 1 0 0" dur="2s"/></rect>')
+    assert _drop('<rect width="9" height="9"><animateTransform attributeName="transform" '
+                 'type="translate" values="0 0;9 0" begin="rect.click" dur="2s"/></rect>')
+    assert _drop('<circle r="3"><animateMotion attributeName="transform" path="M0,0 L9,0" dur="2s"/></circle>')
+
+def test_anim_rejects_nonnumeric_values_and_bad_dur():
+    assert _drop('<rect width="9" height="9"><animateTransform attributeName="transform" '
+                 'type="translate" values="url(#x)" dur="2s"/></rect>')
+    assert _drop('<rect width="9" height="9"><animateTransform attributeName="transform" '
+                 'type="scale" values="1;2" dur="99s"/></rect>')  # dur > 20s
+
+def test_anim_rejects_over_budget():
+    dots = "".join('<circle r="1"><animateMotion path="M0,0 L9,0" dur="2s"/></circle>'
+                   for _ in range(9))  # 9 animation elements > 8
+    assert _drop(dots)
+
+def test_anim_elements_still_rejected_without_flag():
+    # default allow_animation=False -> animation is not permitted (static path unchanged)
+    assert figures.sanitize_svg(_MAL.format(
+        '<rect width="9" height="9"><animateTransform attributeName="transform" '
+        'type="translate" values="0 0;9 0" dur="2s"/></rect>')) is None
+
+# --- svg-animated: must survive and keep their animation elements ---
+def test_anim_accepts_spin_slide_pulse_motion():
+    spin = ('<rect x="10" y="10" width="80" height="40" fill="#7c6aff">'
+            '<animateTransform attributeName="transform" type="rotate" '
+            'values="0 50 30;360 50 30" dur="4s" repeatCount="indefinite"/></rect>')
+    slide = ('<rect x="0" y="0" width="20" height="20" fill="#4fa3e8">'
+             '<animateTransform attributeName="transform" type="translate" '
+             'values="0 0;100 0" dur="2s" repeatCount="indefinite"/></rect>')
+    motion = ('<circle r="4" fill="#d6557e"><animateMotion path="M0,0 L200,0" '
+              'dur="3s" begin="-0.5s" repeatCount="indefinite"/></circle>')
+    for inner in (spin, slide, motion):
+        out = figures.sanitize_svg(_MAL.format(inner), allow_animation=True)
+        assert out is not None
+        assert "animate" in out.lower()
+
+def test_anim_strip_leaves_valid_still_frame():
+    # remove every animate* element -> the remainder must still sanitize (static fallback)
+    import re as _re
+    src = _MAL.format('<circle cx="40" cy="40" r="4" fill="#d6557e">'
+                      '<animateMotion path="M0,0 L200,0" dur="3s"/></circle>'
+                      '<text x="10" y="20" font-size="14">Blood cell</text>')
+    assert figures.sanitize_svg(src, allow_animation=True) is not None
+    still = _re.sub(r'<animate[A-Za-z]*\b[^>]*/>', '', src)
+    out = figures.sanitize_svg(still)  # allow_animation defaults False
+    assert out is not None and "Blood cell" in out

@@ -28,6 +28,19 @@ ALLOWED_ATTRS = {
     "fill-opacity", "marker-end", "marker-start", "id", "class",
 }
 
+ANIM_ELEMENTS = {"animateTransform", "animateMotion"}
+ANIM_ATTRS = {
+    "attributeName", "type", "dur", "begin", "repeatCount", "values",
+    "additive", "accumulate", "path", "keyPoints", "rotate",
+}
+_TRANSFORM_TYPES = {"translate", "scale", "rotate", "skewX", "skewY"}
+_MAX_DRAWN_ELEMENTS = 30
+_MAX_ANIM_ELEMENTS = 8
+_CLOCK_RE = re.compile(r"^(-?\d+(?:\.\d+)?)(s|ms)?$")
+_NUMLIST_RE = re.compile(r"^[\s\d.,;+\-eE]+$")
+_PATH_RE = re.compile(r"^[\sMmLlHhVvCcSsQqTtAaZz0-9.,\-eE]+$")
+_POSNUM_RE = re.compile(r"^\d+(?:\.\d+)?$")
+
 # Prompt copy shared by generation.py's _IMAGES_BLOCK and images.py's backfill_prompt —
 # lives here (not in generation.py or images.py) so neither of those two modules needs
 # to import the other just for this string (images.py already needs sanitize_svg above;
@@ -90,13 +103,62 @@ def _local_name(tag):
     return tag, None
 
 
-def _check_element(el, is_root=False):
-    """Recursively validate one element and its subtree against the allowlists.
-    Returns True if the whole subtree is clean, False on the first violation
-    (short-circuits — the caller drops the whole figure on any False)."""
+def _clock_seconds(value):
+    """Parse an SMIL clock-value ('2s', '500ms', '1.5', '-0.5s') to float seconds,
+    or None if it is not a bare clock-value (rejects all event syntax)."""
+    m = _CLOCK_RE.match(value.strip())
+    if not m:
+        return None
+    num = float(m.group(1))
+    return num / 1000.0 if m.group(2) == "ms" else num
+
+
+def _valid_anim_attr(el_local, name, value):
+    """Value-restrict one animation attribute. Returns False -> whole figure dropped."""
+    if name == "attributeName":
+        return el_local == "animateTransform" and value == "transform"
+    if name == "type":
+        return el_local == "animateTransform" and value in _TRANSFORM_TYPES
+    if name == "dur":
+        secs = _clock_seconds(value)
+        return secs is not None and 1.0 <= secs <= 20.0
+    if name == "begin":
+        return _clock_seconds(value) is not None
+    if name == "repeatCount":
+        return value == "indefinite" or bool(_POSNUM_RE.match(value.strip()))
+    if name in ("values", "keyPoints"):
+        return value.strip() != "" and bool(_NUMLIST_RE.match(value))
+    if name == "path":
+        return value.strip() != "" and bool(_PATH_RE.match(value))
+    if name in ("additive", "accumulate"):
+        return value in ("replace", "sum", "none")
+    if name == "rotate":
+        return value in ("auto", "auto-reverse") or _clock_seconds(value) is not None
+    return False
+
+
+def _check_element(el, is_root=False, allow_animation=False):
+    """Recursively validate one element and its subtree. Returns True if the
+    whole subtree is clean, False on the first violation (short-circuits)."""
     local, uri = _local_name(el.tag)
     if uri is not None and uri != _SVG_NS:
         return False
+    if local in ANIM_ELEMENTS:
+        if not allow_animation:
+            return False
+        for attr_name in el.attrib:
+            attr_local, attr_uri = _local_name(attr_name)
+            if attr_uri == _XLINK_NS:
+                return False
+            if attr_local.lower().startswith("on") or attr_local in ("href", "style"):
+                return False
+            if attr_local not in ANIM_ATTRS:
+                return False
+            if not _valid_anim_attr(local, attr_local, el.attrib[attr_name]):
+                return False
+        for _child in el:
+            return False  # animation elements carry no children in this subset
+        return True
     if local == "svg" and not is_root:
         return False  # nested svg elements not allowed
     if local not in ALLOWED_ELEMENTS:
@@ -119,7 +181,7 @@ def _check_element(el, is_root=False):
                 if not re.match(r'^\s*url\s*\(\s*#[\w-]+\s*\)\s*$', attr_value, re.IGNORECASE):
                     return False
     for child in el:
-        if not _check_element(child):  # is_root=False for children
+        if not _check_element(child, allow_animation=allow_animation):  # is_root=False for children
             return False
     return True
 
@@ -136,13 +198,12 @@ def _strip_namespace(el):
         _strip_namespace(child)
 
 
-def sanitize_svg(code):
+def sanitize_svg(code, *, allow_animation=False):
     """Strict allowlist SVG sanitizer. Returns canonical sanitized SVG markup, or
-    None if code is empty/not a string, oversized (>8KB), unparseable XML, not
-    rooted at <svg>, missing a viewBox, carries a width/height on the root, or
-    contains ANY element, attribute, on* handler, href/xlink:href, or style not on
-    the allowlist. Never repairs — a violation drops the whole figure, it is never
-    partially cleaned."""
+    None on any violation (never repairs). allow_animation=False (default) is the
+    static path, unchanged. allow_animation=True additionally permits the
+    animateTransform/animateMotion subset with value restrictions and enforces
+    the <=30 drawn / <=8 animation element budgets."""
     if not isinstance(code, str) or not code.strip():
         return None
     if len(code.encode("utf-8")) > MAX_INPUT_BYTES:
@@ -167,7 +228,13 @@ def sanitize_svg(code):
     # explicitly, before the generic walk below would otherwise let them through.
     if "width" in root.attrib or "height" in root.attrib:
         return None
-    if not _check_element(root, is_root=True):
+    if not _check_element(root, is_root=True, allow_animation=allow_animation):
         return None
+    if allow_animation:
+        all_els = list(root.iter())
+        anim = sum(1 for e in all_els if _local_name(e.tag)[0] in ANIM_ELEMENTS)
+        drawn = len(all_els) - anim - 1  # minus the root <svg>
+        if anim > _MAX_ANIM_ELEMENTS or drawn > _MAX_DRAWN_ELEMENTS:
+            return None
     _strip_namespace(root)
     return ET.tostring(root, encoding="unicode")
