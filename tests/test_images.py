@@ -122,6 +122,37 @@ def test_download_verified_returns_none_on_http_error():
     assert images.download_verified("https://x/img", http_get=boom) is None
 
 
+def test_download_verified_reports_too_big(monkeypatch):
+    reasons = []
+    big = b"\xff\xd8\xff" + b"x" * (images.MAX_BYTES + 1)
+    out = images.download_verified("http://x/y.jpg", http_get=lambda u: big,
+                                   on_fail=reasons.append)
+    assert out is None
+    assert reasons == ["download-too-big"]
+
+
+def test_download_verified_reports_bad_magic(monkeypatch):
+    reasons = []
+    out = images.download_verified("http://x/y", http_get=lambda u: b"not-an-image",
+                                   on_fail=reasons.append)
+    assert out is None
+    assert reasons == ["download-bad-magic"]
+
+
+def test_download_verified_reports_http_error(monkeypatch):
+    reasons = []
+    def boom(u):
+        raise images.HTTPError(404)
+    out = images.download_verified("http://x/y", http_get=boom, on_fail=reasons.append)
+    assert out is None
+    assert reasons == ["http-error"]
+
+
+def test_download_verified_on_fail_optional_and_silent_on_success():
+    out = images.download_verified("http://x/y.png", http_get=lambda u: b"\x89PNG\r\n\x1a\n" + b"d")
+    assert out == (b"\x89PNG\r\n\x1a\n" + b"d", "png")  # no on_fail passed -> no crash
+
+
 # ---- _http_get: real implementation — User-Agent + timeout ----
 
 def test_http_get_sends_required_user_agent_and_timeout(monkeypatch):

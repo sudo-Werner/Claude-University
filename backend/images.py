@@ -197,16 +197,22 @@ def build_credit(candidate):
     return " — ".join(parts)
 
 
-def download_verified(url, *, http_get):
+def download_verified(url, *, http_get, on_fail=None):
     """Fetch + verify one candidate: HTTP 200 (enforced by http_get), magic
     bytes (jpeg/png/webp ONLY — SVG and anything else rejected regardless of
-    extension/Content-Type), size <=400KB. Returns (bytes, ext) or None on ANY
-    failure — never raises."""
+    extension/Content-Type), size <=MAX_BYTES. Returns (bytes, ext) or None on
+    ANY failure — never raises. `on_fail`, if given, is called once with the
+    reason string ('download-too-big' | 'download-bad-magic' | 'http-error')
+    before returning None (observational only — does not change the result)."""
     try:
         data = http_get(url)
     except Exception:
+        if on_fail:
+            on_fail("http-error")
         return None
     if not isinstance(data, (bytes, bytearray)) or len(data) > MAX_BYTES:
+        if on_fail:
+            on_fail("download-too-big")
         return None
     if data[:3] == b"\xff\xd8\xff":
         return bytes(data), "jpg"
@@ -214,6 +220,8 @@ def download_verified(url, *, http_get):
         return bytes(data), "png"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return bytes(data), "webp"
+    if on_fail:
+        on_fail("download-bad-magic")
     return None
 
 
