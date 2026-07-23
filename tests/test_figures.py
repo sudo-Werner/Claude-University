@@ -293,12 +293,17 @@ def test_valid_image_slot_accepts_svg_animated():
 
 def test_svg_animated_worked_example_survives_and_stills():
     import re as _re
+    # Authored to the still-frame rule: the circle carries an explicit base position
+    # (cx/cy = the vessel start) and its animateMotion path is RELATIVE (from M0,0),
+    # so stripping the animation leaves the marker sitting ON the vessel, not at (0,0).
     src = ('<svg viewBox="0 0 800 500">'
            '<path d="M100 50 Q 300 20 500 50" fill="none" stroke="#4fa3e8" stroke-width="6"/>'
-           '<circle r="6" fill="#4fa3e8"><animateMotion path="M100,50 Q300,20 500,50" '
+           '<circle cx="100" cy="50" r="6" fill="#4fa3e8"><animateMotion path="M0,0 Q200,-30 400,0" '
            'dur="3s" repeatCount="indefinite"/></circle>'
            '<text x="90" y="90" font-size="16" fill="#241f1a">Deoxygenated blood</text>'
            '</svg>')
     assert figures.sanitize_svg(src, allow_animation=True) is not None
     still = _re.sub(r'<animateMotion\b[^>]*/>', '', src)
-    assert figures.sanitize_svg(still) is not None  # correct labelled still remains
+    out = figures.sanitize_svg(still)  # allow_animation defaults False
+    assert out is not None
+    assert 'cx="100"' in out and 'cy="50"' in out  # marker sits on the vessel, not stranded at (0,0)

@@ -79,7 +79,7 @@ DRAWN_FIGURE_GUIDANCE = (
     "still. Prefer animateMotion (a <circle> travelling a path). Allowed animation is "
     "animateTransform (attributeName=\"transform\", type translate/scale/rotate/skewX/skewY) "
     "and animateMotion only; no other animation elements, no <style>, no href. Keep it "
-    "under 30 drawn and 8 animation elements, each dur 1-20s; at most ONE animated figure "
+    "to at most 30 drawn and 8 animation elements, each dur 1-20s; at most ONE animated figure "
     "per lesson. Labels stay fixed. Colours from the brand palette, except where a colour "
     "carries meaning (arterial-red vs venous-blue).\n"
     '  A web-image slot may also state "type": "web-image" explicitly (omitting type '
