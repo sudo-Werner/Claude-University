@@ -1,6 +1,7 @@
 import { esc } from "./escape.js";
 import { themedMermaid } from "./figuretheme.js";
 import { SVG_ANIM_SANITIZE_CONFIG } from "./figureconfig.js";
+import { attachFigurePlayer } from "./figureplayer.js";
 import { getSessionId, newId } from "./ids.js";
 import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
@@ -1944,8 +1945,9 @@ export async function init({ window, fetch }) {
           if (!stillFresh() || !fig.isConnected) return;
           const clean = DOMPurify.sanitize(entry.code, SVG_ANIM_SANITIZE_CONFIG);
           fig.insertAdjacentHTML("afterbegin", clean);
-          const svg = fig.querySelector("svg");
-          if (svg && typeof svg.pauseAnimations === "function") svg.pauseAnimations();
+          const reduced = window.matchMedia
+            && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          attachFigurePlayer(fig, { reducedMotion: !!reduced, win: window });
         })
         .catch(() => {}); // caption already shown is the fallback
     });

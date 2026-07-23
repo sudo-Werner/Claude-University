@@ -276,6 +276,22 @@ mark.highlight{background:rgba(255,196,64,.45); color:inherit; border-radius:3px
 /* Stop force-stretching a small diagram edge-to-edge: cap width, centre it. */
 .lesson-fig-mermaid svg{width:auto; max-width:100%; margin-inline:auto}
 
+/* Animated figures: same glass tile, centred SVG, plus the trusted control chip. */
+.lesson-fig-svg-animated{
+  background:var(--glass-inner); border:1px solid var(--border-field);
+  border-radius:14px; padding:14px 16px;
+}
+.lesson-fig-svg-animated svg{display:block; width:auto; max-width:100%; height:auto; margin:0 auto 6px}
+.fig-controls{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0 2px}
+.fig-controls button{
+  font:600 13px/1 var(--ui); color:var(--text); background:var(--glass-field);
+  border:1px solid var(--border-field); border-radius:999px; padding:6px 14px; cursor:pointer;
+}
+.fig-controls button:hover{filter:brightness(0.98)}
+.fig-controls button:focus-visible{outline:2px solid var(--purple); outline-offset:2px}
+.fig-controls .fig-speed{display:flex; align-items:center; gap:6px; font:600 12px/1 var(--ui); color:var(--text-dim)}
+.fig-controls input[type=range]{accent-color:var(--purple); cursor:pointer}
+
 /* quiz option row */
 .opt{display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:13px 14px; border-radius:14px;
   font-size:15px; line-height:1.35; background:var(--glass-field); border:1px solid var(--border-field); color:#48423a;
