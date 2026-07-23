@@ -1,5 +1,6 @@
 import { esc } from "./escape.js";
 import { themedMermaid } from "./figuretheme.js";
+import { SVG_ANIM_SANITIZE_CONFIG } from "./figureconfig.js";
 import { getSessionId, newId } from "./ids.js";
 import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
@@ -1933,6 +1934,20 @@ export async function init({ window, fetch }) {
           fig.insertAdjacentHTML("afterbegin", clean);
         })
         .catch(() => {}); // lazy-load/sanitize failure -> the caption already shown is the fallback
+    });
+
+    view.querySelectorAll("[data-fig-svg-anim]").forEach((fig) => {
+      const entry = byN.get(Number(fig.dataset.figSvgAnim));
+      if (!entry || typeof entry.code !== "string") return;
+      loadPurify()
+        .then((DOMPurify) => {
+          if (!stillFresh() || !fig.isConnected) return;
+          const clean = DOMPurify.sanitize(entry.code, SVG_ANIM_SANITIZE_CONFIG);
+          fig.insertAdjacentHTML("afterbegin", clean);
+          const svg = fig.querySelector("svg");
+          if (svg && typeof svg.pauseAnimations === "function") svg.pauseAnimations();
+        })
+        .catch(() => {}); // caption already shown is the fallback
     });
 
     view.querySelectorAll("[data-fig-mermaid]").forEach((fig) => {
