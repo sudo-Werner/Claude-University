@@ -42,11 +42,13 @@
     li.textContent = (pass ? "PASS: " : "FAIL: ") + name;
     ul.appendChild(li);
   }
-  // Observations (non-gating): the client layer does NOT strip inert interpolation
-  // attrs (from/to/calcMode) — DOMPurify's svg profile allows them and they are not
-  // a client-layer XSS concern. The SERVER sanitizer (_valid_anim_attr) pins the
-  // values-only contract and drops such figures before storage. Recorded so the
-  // two-layer split is explicit, not silently assumed.
+  // Observations (non-gating): DOMPurify 3.4.12's svg profile does not include the
+  // interpolation attrs from/to/calcMode, so the client strips them today as well
+  // (empirically verified in a real browser). We DON'T hard-assert this — it is a
+  // property of the DOMPurify profile, not of our FORBID lists, so a future DOMPurify
+  // could re-add them. The authoritative, version-independent values-only guarantee is
+  // the SERVER sanitizer (backend/figures.py _valid_anim_attr). These lines record the
+  // client's actual behavior so the two-layer split is explicit.
   const obsUl = document.getElementById("observations");
   const fromTo = S('<svg viewBox="0 0 8 8"><rect width="4" height="4"><animateTransform attributeName="transform" type="translate" from="0 0" to="4 0" calcMode="linear" dur="2s"/></rect></svg>');
   for (const attr of ["from=", " to=", "calcmode"]) {
