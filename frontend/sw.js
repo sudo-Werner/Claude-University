@@ -3,7 +3,7 @@
 // (courses, lessons, stats, chat) must always hit the network; the offline
 // sync design (frontend/src/sync.js) already owns its own localStorage queue
 // and would double up badly with a cached API response.
-const CACHE = "cu-shell-v2";
+const CACHE = "cu-shell-v3";
 const SHELL = ["/", "/styles.css"];
 
 self.addEventListener("install", (event) => {
