@@ -1,4 +1,5 @@
 import { esc } from "./escape.js";
+import { themedMermaid } from "./figuretheme.js";
 import { getSessionId, newId } from "./ids.js";
 import { buildEvent, appendEvent } from "./eventlog.js";
 import { flush } from "./sync.js";
@@ -1939,7 +1940,7 @@ export async function init({ window, fetch }) {
       if (!entry || typeof entry.code !== "string") return;
       const renderId = `mermaid-fig-${entry.n}-${Math.random().toString(36).slice(2)}`;
       loadMermaidLib()
-        .then((mermaid) => mermaid.render(renderId, entry.code))
+        .then((mermaid) => mermaid.render(renderId, themedMermaid(entry.code)))
         .then(({ svg }) => {
           if (!stillFresh() || !fig.isConnected) return;
           fig.insertAdjacentHTML("afterbegin", svg);
