@@ -218,7 +218,7 @@ def create_app(db_path=None):
         if not body.get("title") or not body.get("modules"):
             return jsonify({"error": "title and modules are required"}), 400
         manifest = courses.write_course(courses.CONTENT_DIR, body)
-        return jsonify({"course": manifest}), 201
+        return jsonify({"course": objectives.resolved_manifest(manifest)}), 201
 
     @app.post("/api/courses/compile")
     def post_course_compile():
@@ -1000,7 +1000,7 @@ def create_app(db_path=None):
         written = courses.apply_revision(courses.CONTENT_DIR, course_id, revised)
         if written is None:
             return jsonify({"error": "invalid revision"}), 400
-        return jsonify({"course": written})
+        return jsonify({"course": objectives.resolved_manifest(written)})
 
     @app.get("/api/courses/<course_id>/images/<filename>")
     def course_image(course_id, filename):

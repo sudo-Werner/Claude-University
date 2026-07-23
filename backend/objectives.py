@@ -34,7 +34,9 @@ def objective_index(manifest):
 
 def for_lesson(manifest, lesson):
     """A lesson's objective dicts: resolved through the registry when the lesson carries
-    objectiveIds (v3 disk), else the lesson's embedded objectives (v2/wire), else []."""
+    objectiveIds (v3 disk), else the lesson's embedded objectives (v2/wire), else [].
+    The returned dicts are the registry's own objects by reference -- callers must not
+    mutate them in place."""
     ids = lesson.get("objectiveIds")
     if isinstance(ids, list):
         index = objective_index(manifest)
@@ -48,7 +50,8 @@ def for_lesson(manifest, lesson):
 def resolved_manifest(manifest):
     """DISK -> WIRE: a copy where every lesson carries embedded `objectives` (hydrated from
     the registry), so the frontend and the LLM stages see the pre-registry shape. The input
-    manifest is not mutated."""
+    manifest is not mutated, but the embedded objective dicts are the registry's own objects
+    by reference -- callers must not mutate them in place."""
     modules = []
     for m in manifest.get("modules", []):
         lessons = [{**l, "objectives": for_lesson(manifest, l)} for l in m.get("lessons", [])]

@@ -26,8 +26,8 @@ def migrate(content_dir=courses.CONTENT_DIR):
         if not manifest_path.exists():
             continue
         manifest = json.loads(manifest_path.read_text())
-        if manifest.get("schemaVersion") == 2:
-            print(f"skip  {child.name}: already schemaVersion 2")
+        if manifest.get("schemaVersion", 0) >= 2:
+            print(f"skip  {child.name}: already schemaVersion >= 2")
             clean += 1
             continue
         try:

@@ -45,6 +45,21 @@ def test_post_courses_writes_compiled(tmp_path, monkeypatch):
     assert (tmp_path / "deep-ml" / "course.json").exists()
 
 
+def test_post_courses_response_embeds_objectives(tmp_path, monkeypatch):
+    """POST /api/courses is a wire response: even though write_course persists (and
+    returns to the caller) the v3 disk shape (objectiveIds refs only), the HTTP
+    response body must resolve those refs so every lesson carries embedded
+    objectives — no lesson should be objectiveIds-only on the wire."""
+    client = _client(tmp_path, monkeypatch)
+    resp = client.post("/api/courses", json=COMPILED)
+    assert resp.status_code == 201
+    course = resp.get_json()["course"]
+    for module in course["modules"]:
+        for lesson in module["lessons"]:
+            assert lesson.get("objectives"), f"lesson {lesson.get('id')} missing embedded objectives"
+    assert course["modules"][0]["lessons"][0]["objectives"][0]["text"] == OBJ["text"]
+
+
 def _fixture_course(courses, root):
     """Create a course manifest plus one written lesson file in a temp content dir.
 
@@ -1142,6 +1157,25 @@ def test_apply_revision_persists_and_rejects_bad(tmp_path, monkeypatch):
     assert r.get_json()["error"] == "invalid revision"
 
 
+def test_apply_revision_response_embeds_objectives(tmp_path, monkeypatch):
+    """POST /apply-revision is a wire response: apply_revision persists (and returns
+    to the caller) the v3 disk shape (objectiveIds refs only), so the HTTP response
+    body must resolve those refs — no lesson should be objectiveIds-only on the wire."""
+    manifest = courses.write_course(tmp_path, COMPILED)
+    cid = manifest["id"]
+    client = _client(tmp_path, monkeypatch)
+    from backend import objectives
+    resolved = objectives.resolved_manifest(manifest)
+    revised = {**resolved, "title": "Deep ML (Revised)"}
+    r = client.post(f"/api/courses/{cid}/apply-revision", json={"course": revised})
+    assert r.status_code == 200
+    course = r.get_json()["course"]
+    for module in course["modules"]:
+        for lesson in module["lessons"]:
+            assert lesson.get("objectives"), f"lesson {lesson.get('id')} missing embedded objectives"
+    assert course["modules"][0]["lessons"][0]["objectives"][0]["text"] == OBJ["text"]
+
+
 def test_apply_revision_404_for_illegal_id(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     assert client.post("/api/courses/Bad_Id!/apply-revision", json={}).status_code == 404
@@ -1166,7 +1200,7 @@ def test_apply_revision_prunes_review_items(tmp_path, monkeypatch):
 def test_apply_revision_keeps_misconceptions_for_a_dropped_lesson(tmp_path):
     # Uses the COMPILED fixture (like the sibling apply_revision tests above), not
     # _fixture_course — apply_revision's own valid_compiled_course gate requires
-    # schemaVersion 2 + level/targetHours/skills/outcomes, which _fixture_course's
+    # schemaVersion 2 or 3 + level/targetHours/skills/outcomes, which _fixture_course's
     # bare manifest doesn't carry, so a revision built from it is always rejected
     # regardless of the misconceptions behavior under test here.
     from backend import courses, misconceptions as mc
