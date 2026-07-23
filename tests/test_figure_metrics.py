@@ -37,6 +37,43 @@ def test_id_alignment_and_realization(tmp_path):
     assert m["mermaid_share"] == 0.5                 # 1 of 2 drawn/photo slots is mermaid
 
 
+def test_orphaned_telemetry_lesson_does_not_break_metrics(tmp_path):
+    """The telemetry JSONL is append-only and accumulates rows for ALL time,
+    including lessons later renamed/removed from the manifest. compute() must
+    bound its aggregation to the current manifest's lessons so a renamed/
+    removed lesson's stale rows can't push fig_lessons past total_lessons
+    (which would make zero_figure_rate go negative) or drift figures_per_lesson."""
+    lessons = {"demo-l1": [{"text": "a", "bloom": "analyze", "knowledge": "conceptual"}],
+               "demo-l2": [{"text": "b", "bloom": "analyze", "knowledge": "conceptual"}]}
+    manifest_events = [
+        {"course_id": "demo", "lesson_id": "demo-l1", "n": 1,
+         "requested_type": "web-image", "outcome": "rendered", "drop_reason": None},
+        {"course_id": "demo", "lesson_id": "demo-l2", "n": 1,
+         "requested_type": "mermaid", "outcome": "rendered", "drop_reason": None},
+    ]
+    # Stale telemetry for a lesson that has since been renamed/removed from the
+    # manifest -- the append-only JSONL still has these rows from before the rename.
+    orphan_events = [
+        {"course_id": "demo", "lesson_id": "demo-l-renamed-away", "n": 1,
+         "requested_type": "mermaid", "outcome": "rendered", "drop_reason": None},
+        {"course_id": "demo", "lesson_id": "demo-l-renamed-away", "n": 1,
+         "requested_type": "mermaid", "outcome": "rendered", "drop_reason": None},
+    ]
+
+    dirty_dir = tmp_path / "dirty"
+    _seed(dirty_dir, "demo", lessons=lessons, events=manifest_events + orphan_events)
+    m = figure_metrics.compute(dirty_dir, "demo")
+
+    # Reference: the same manifest, but the telemetry JSONL only ever saw the
+    # current lessons (no orphaned rows) -- this is what the metrics SHOULD be.
+    clean_dir = tmp_path / "clean"
+    _seed(clean_dir, "demo", lessons=lessons, events=manifest_events)
+    expected = figure_metrics.compute(clean_dir, "demo")
+
+    assert m["zero_figure_rate"] >= 0.0
+    assert m == expected
+
+
 def test_regression_ok_gate(tmp_path):
     base = {"id_alignment_rate": 0.6, "figures_per_lesson": 1.0, "zero_figure_rate": 0.3}
     good = {"id_alignment_rate": 0.7, "figures_per_lesson": 1.05, "zero_figure_rate": 0.3}

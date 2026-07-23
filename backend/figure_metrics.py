@@ -27,6 +27,11 @@ def _lesson_strata(content_dir, course_id):
 def compute(content_dir, course_id):
     rows = [r for r in figure_telemetry.read(content_dir) if r.get("course_id") == course_id]
     strata = _lesson_strata(content_dir, course_id)
+    # The telemetry JSONL is append-only and accumulates rows for all time,
+    # including lessons since renamed or removed from the manifest. Bound
+    # aggregation to the current manifest's lessons so stale/orphaned rows
+    # can't inflate fig_lessons past total_lessons or drift the per-lesson mean.
+    rows = [r for r in rows if r.get("lesson_id") in strata]
     by_lesson = defaultdict(list)
     for r in rows:
         by_lesson[r.get("lesson_id")].append(r)
@@ -52,7 +57,7 @@ def compute(content_dir, course_id):
                               drawn_and_photo),
         "web_image_realization_rate": rate(
             sum(1 for r in photos if r.get("outcome") == "rendered"), len(photos)),
-        "figures_per_lesson": rate(len(rows), len(fig_lessons)) if fig_lessons else 0.0,
+        "figures_per_lesson": rate(len(rows), len(fig_lessons)),
         "zero_figure_rate": rate(total_lessons - len(fig_lessons), total_lessons),
     }
 
