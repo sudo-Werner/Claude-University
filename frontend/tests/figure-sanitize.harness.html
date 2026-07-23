@@ -28,9 +28,11 @@
     ["strips foreignObject", '<svg viewBox="0 0 8 8"><foreignObject width="8" height="8"><div>x</div></foreignObject></svg>', o => !o.includes("foreignobject")],
     ["strips script", '<svg viewBox="0 0 8 8"><script>alert(1)<\/script><rect width="4" height="4"/></svg>', o => !o.includes("<script")],
     ["strips use", '<svg viewBox="0 0 8 8"><use xlink:href="#x"/><rect width="4" height="4"/></svg>', o => !o.includes("<use")],
+    ["strips image", '<svg viewBox="0 0 8 8"><image xlink:href="x.png" width="4" height="4"/><rect width="4" height="4"/></svg>', o => !o.includes("<image")],
     // must-strip: dangerous attributes (FORBID_ATTR)
     ["strips href (javascript: via <a>)", '<svg viewBox="0 0 8 8"><a href="javascript:alert(1)"><rect width="4" height="4"/></a></svg>', o => !o.includes("javascript")],
     ["strips xlink:href", '<svg viewBox="0 0 8 8"><rect width="4" height="4" xlink:href="javascript:alert(1)"/></svg>', o => !o.includes("xlink")],
+    ["strips event-handler attrs (onload/onclick/onbegin/onend)", '<svg viewBox="0 0 8 8" onload="alert(1)"><rect width="4" height="4" onclick="alert(1)"><animateTransform attributeName="transform" type="translate" values="0 0;4 0" dur="2s" onbegin="alert(1)" onend="alert(1)"/></rect></svg>', o => !o.includes("onload") && !o.includes("onclick") && !o.includes("onbegin") && !o.includes("onend")],
   ];
   const ul = document.getElementById("results");
   let ok = true;
