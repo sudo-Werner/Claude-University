@@ -60,11 +60,9 @@ export function dashboardHTML(data, timerView) {
       <div class="phase-labels">${labels}</div>
       <div class="timer-status"><span>${timerView.statusLabel}</span><span class="clock">${timerView.clock}</span></div>
       <button class="btn-primary" data-action="start-session"${data.complete ? " disabled" : ""}>${PLAY_ICON} Start session</button>
-      <button class="btn-secondary" data-action="curriculum" style="margin-top:8px">View all lessons</button>
+      <!-- Curriculum / Library / My notes / Misconceptions moved into the shell's
+           sidenav (paintCourse's if-guards tolerate their absence here). -->
       <button class="btn-secondary" data-action="refine" style="margin-top:8px">Refine this course</button>
-      <button class="btn-secondary" data-action="library" style="margin-top:8px">Library · grounded sources</button>
-      <button class="btn-secondary" data-action="mynotes" style="margin-top:8px">My notes</button>
-      <button class="btn-secondary" data-action="misconceptions" style="margin-top:8px">Misconceptions</button>
     </section>
     <div class="stat-row">
       <section class="stat">

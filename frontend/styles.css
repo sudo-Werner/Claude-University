@@ -895,3 +895,71 @@ button.gen-chip{cursor:pointer; border:1px solid var(--border-glass); border-rad
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none !important; transition:none !important}
 }
+
+
+/* =================  IN-COURSE SIDENAV  =================
+   Rendered by shellHTML({nav}) for every screen inside a course. Two modes:
+   - <1100px: off-canvas drawer over the page, opened by the topbar menu button
+     (.sn-open); scrim click or any navigation closes it (shell repaint).
+   - >=1100px: sticky glass rail beside the content; the topbar hides (the rail
+     carries brand, gen chip and feedback) and .app widens.
+   Toggling is one class — .shell.sn-open — owned by app.js delegation. */
+.shell{display:flex; flex-direction:column; min-width:0; width:100%}
+.shell-main{display:flex; flex-direction:column; gap:16px; min-width:0}
+.topbar .sn-open{display:flex; align-items:center; justify-content:center; width:38px; height:38px; flex:none;
+  border:1px solid var(--border-field); border-radius:var(--r-sm); background:var(--glass-field);
+  color:var(--text-2); cursor:pointer}
+.shell .topbar{justify-content:flex-start; gap:10px}
+.shell .topbar .fb-toggle{margin-left:auto}
+.sidenav{position:fixed; z-index:70; top:0; bottom:0; left:0; width:286px; padding:24px 16px 20px;
+  display:flex; flex-direction:column; gap:24px; overflow-y:auto;
+  background:linear-gradient(160deg, rgba(255,253,248,.94), rgba(248,239,220,.96));
+  border-right:1px solid var(--border-glass); box-shadow:24px 0 80px -20px rgba(60,40,20,.45);
+  transform:translateX(-108%); transition:transform .28s cubic-bezier(.2,.8,.25,1)}
+.shell.sn-open .sidenav{transform:none}
+.sn-scrim{position:fixed; z-index:65; inset:0; background:rgba(40,30,18,.35);
+  opacity:0; pointer-events:none; transition:opacity .28s ease}
+.shell.sn-open .sn-scrim{opacity:1; pointer-events:auto}
+.sn-close{position:absolute; top:14px; right:12px; width:32px; height:32px; border-radius:999px; border:none;
+  background:rgba(36,31,26,.07); color:var(--text-2); font:600 17px/1 var(--ui); cursor:pointer}
+.sn-brand{padding:0 8px}
+.sn-nav{display:flex; flex-direction:column; gap:2px}
+.sn-item{display:flex; align-items:center; gap:11px; width:100%; padding:10px 12px; border:none;
+  border-radius:var(--r-sm); background:none; text-align:left; font:600 13.5px/1 var(--ui);
+  color:#6b6255; cursor:pointer; transition:background .2s, color .2s}
+.sn-item svg{flex:none}
+.sn-item:hover{background:rgba(255,253,248,.72); color:var(--text)}
+.sn-item.on{background:rgba(255,253,248,.92); color:var(--text);
+  box-shadow:0 1px 0 rgba(255,255,255,.9) inset, 0 8px 22px -14px rgba(90,65,40,.55)}
+.sn-item.on svg{color:var(--purple)}
+.sn-label{flex:1}
+.sn-dot{width:6px; height:6px; border-radius:999px; background:var(--purple); box-shadow:0 0 8px rgba(124,106,255,.8)}
+.sn-badge{font:700 11px/1 var(--ui); color:#fff; background:var(--blue); border-radius:999px; padding:3px 7px}
+.sn-foot{margin-top:auto; display:flex; flex-direction:column; gap:12px}
+.sn-course{padding:12px; border-radius:12px;
+  background:linear-gradient(160deg, rgba(124,106,255,.14), rgba(124,106,255,.07));
+  border:1px solid rgba(124,106,255,.26); box-shadow:0 1px 0 rgba(255,255,255,.55) inset}
+.sn-course-label{font:700 10.5px/1 var(--ui); letter-spacing:.09em; text-transform:uppercase;
+  color:var(--purple-deep); margin-bottom:8px}
+.sn-course-title{font:600 13px/1.35 var(--ui); color:var(--text)}
+.sn-course-meta{font:12px/1 var(--ui); color:var(--text-mut); margin-top:4px}
+.sidenav .feedback-bar{flex-direction:column; align-items:stretch}
+
+@media (min-width:1100px){
+  .app:has(> .shell){max-width:1280px}
+  .app:has(> .shell):has(.lesson-col){max-width:1480px}
+  .shell{display:grid; grid-template-columns:250px minmax(0,1fr); gap:34px; align-items:start}
+  .sidenav{position:sticky; top:26px; z-index:1; transform:none; transition:none;
+    height:calc(100vh - 52px); width:auto;
+    border:1px solid var(--border-glass); border-radius:var(--r-lg);
+    background:linear-gradient(160deg, rgba(255,253,248,.44), rgba(255,253,248,.26));
+    backdrop-filter:blur(40px) saturate(1.7); -webkit-backdrop-filter:blur(40px) saturate(1.7);
+    box-shadow:var(--sh-stat)}
+  /* the rail carries brand + gen chip + feedback; the topbar (and its drawer
+     button) is redundant beside it. Its fb slot stays painted but hidden —
+     the sidenav's own entry point takes over. */
+  .shell .topbar,.topbar .sn-open,.sn-close,.sn-scrim{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .sidenav,.sn-scrim{transition:none}
+}

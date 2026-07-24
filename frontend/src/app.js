@@ -10,7 +10,7 @@ import { timerView, TOTAL_SECONDS } from "./timer.js";
 import { listCourses, loadCourse, loadLesson, getLessonStatus, createCourse, loadReviews, loadReviewItems, gradeAnswer, deepenLesson, loadCapstone, loadLibrary, loadCourseNotes, loadMisconceptions, deleteMisconception, compileProgram, reviseCourse, applyRevision, explainAnswer, gradeTeaching, startExam, submitExam, startRemediation, loadTranscript, gradeRemediationApply, submitCapstone, sendFeedback, getQuizRound, postQuizResults, getQuizStats, makeHighlightReviewItem, startLessonGeneration, getGenerationProgress, listGenerationJobs } from "./courses.js";
 import { loadStats, loadActivity } from "./stats.js";
 import { arcadeHTML, arcadeGeneratingHTML, arcadeLockedHTML, arcadeTimeoutHTML, hostIntroHTML, questionHTML, gradeChoice, matchBoardHTML, matchUpInit, matchUpSelectLeft, matchUpSelectRight, matchUpScore, arcadeResultHTML } from "./views/arcade.js";
-import { shellHTML, feedbackBarHTML } from "./views/shell.js";
+import { shellHTML as shellBaseHTML, feedbackBarHTML } from "./views/shell.js";
 import { homeHTML } from "./views/home.js";
 import { dashboardHTML } from "./views/dashboard.js";
 import { lessonHTML, ratingLocked } from "./views/lesson.js";
@@ -111,6 +111,37 @@ export async function init({ window, fetch }) {
     genPollTimer: null,
   };
 
+  // ---- in-course sidenav (rail >=1100px, drawer below) ----
+  // Injected centrally: shellHTML below shadows the imported base and derives
+  // nav context from ui.screen at paint time, so the 20+ existing shell paint
+  // sites stay untouched. Screens missing from this map (home, add-course
+  // chat, syllabus, activity, transcript, arcade) keep the plain topbar shell.
+  const SIDE_ACTIVE = {
+    course: "today", refine: "today", revising: "today", revision: "today",
+    lesson: "today", "lesson-loading": "today", activate: "today",
+    generating: "today", "review-loading": "today",
+    curriculum: "curriculum", exam: "curriculum", "exam-loading": "curriculum",
+    "exam-result": "curriculum", capstone: "curriculum",
+    remediation: "curriculum", "remediation-loading": "curriculum",
+    library: "library", mynotes: "mynotes", misconceptions: "misconceptions",
+  };
+  function sideNavData() {
+    const active = SIDE_ACTIVE[ui.screen];
+    if (!active || !ui.manifest) return null;
+    const p = (ui.summary && ui.summary.progress) || {};
+    return {
+      active,
+      reviewsDue: (ui.summary && ui.summary.reviewsDue) || 0,
+      courseTitle: ui.manifest.title,
+      lessonsDone: p.done || 0,
+      lessonsTotal: p.total || 0,
+    };
+  }
+  // Same signature the paint sites already use.
+  function shellHTML(opts) {
+    return shellBaseHTML({ ...opts, nav: sideNavData() });
+  }
+
   // ---- feedback bar (global; delegated on root so it survives every shell repaint) ----
   // Two slots can exist at once (the topbar's, always present, plus the lesson
   // screen's second slot below the workspace panel) — both share the one
@@ -176,6 +207,29 @@ export async function init({ window, fetch }) {
       return;
     }
     if (e.target.closest('[data-action="gen-open"]')) { openGenTarget(); return; }
+    const snItem = e.target.closest("[data-side-nav]");
+    if (snItem) {
+      const go = snItem.getAttribute("data-side-nav");
+      if (go === "today") showCourse();
+      else if (go === "curriculum") showCurriculum();
+      else if (go === "reviews") {
+        // Same contract as the dashboard's Review button (disabled at 0 due):
+        // a standalone review always lands back on the dashboard when done.
+        if (!(ui.summary && ui.summary.reviewsDue > 0)) return;
+        ui.continueToLessonAfterReview = false;
+        startReviewSession();
+      }
+      else if (go === "arcade") showArcade();
+      else if (go === "library") showLibrary();
+      else if (go === "mynotes") showMyNotes();
+      else if (go === "misconceptions") showMisconceptions();
+      return;
+    }
+    if (e.target.closest('[data-action="sidenav-toggle"]')) {
+      const sh = root.querySelector(".shell");
+      if (sh) sh.classList.toggle("sn-open");
+      return;
+    }
     const fbToggle = e.target.closest('[data-action="feedback-toggle"]');
     if (fbToggle) {
       // Navigation repaints the shell with an empty slot without touching
