@@ -577,6 +577,76 @@ def test_resolve_images_no_candidates_drops_slot(tmp_path):
     assert not (content_dir / "demo" / "images").exists()
 
 
+def test_resolve_images_relaxes_overspecific_query_to_leading_words(tmp_path):
+    # Live failure 2026-07-24 (telemetry): the model's 9-term query matched nothing
+    # on Commons (archive search AND-matches all terms) while its 2-3 leading words
+    # matched plenty. The resolver must retry with the leading words before dropping.
+    content_dir = tmp_path / "courses"
+    commons_json = json.dumps({"query": {"pages": {
+        "1": {"title": "File:A.png", "imageinfo": [{
+            "thumburl": "https://upload.wikimedia.org/a.png",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:A.png",
+            "extmetadata": {"LicenseShortName": {"value": "CC0"}, "Artist": {"value": "Ann"},
+                            "AttributionRequired": {"value": "false"}}}]},
+        "2": {"title": "File:B.png", "imageinfo": [{
+            "thumburl": "https://upload.wikimedia.org/b.png",
+            "descriptionurl": "https://commons.wikimedia.org/wiki/File:B.png",
+            "extmetadata": {"LicenseShortName": {"value": "CC BY 4.0"}, "Artist": {"value": "Bob"},
+                            "AttributionRequired": {"value": "true"}}}]},
+    }}}).encode()
+    full = "dermoscopy+melanoma+photo+asymmetric+irregular+border+multicolor+lesion"
+    first3 = "dermoscopy+melanoma+photo"
+
+    def fake_http_get(url):
+        if "commons.wikimedia.org" in url:
+            if full in url:
+                return json.dumps({"query": {"pages": {}}}).encode()  # over-specific: nothing
+            if first3 in url:
+                return commons_json  # relaxed to leading 3 words: 2 valid candidates
+            raise AssertionError(f"unexpected commons query in {url}")
+        if "api.openverse.org" in url:
+            return json.dumps({"results": []}).encode()  # full-query fallback also empty
+        if url == "https://upload.wikimedia.org/a.png":
+            return _PNG_BYTES
+        if url == "https://upload.wikimedia.org/b.png":
+            return _PNG_BYTES
+        raise AssertionError(f"unexpected url {url}")
+
+    slots = [{"query": "dermoscopy melanoma photo asymmetric irregular border multicolor lesion",
+              "caption": "Notice the asymmetry"}]
+    resolved = images.resolve_images("demo", "demo-l1", slots, content_dir=content_dir,
+                                     http_get=fake_http_get,
+                                     structured=lambda *a, **k: {"pick": 1})
+    assert len(resolved) == 1
+    assert resolved[0]["type"] == "web-image"
+    assert (content_dir / "demo" / "images" / "demo-l1-1.png").exists()
+
+
+def test_resolve_images_relaxation_exhausted_still_drops_no_candidates(tmp_path):
+    # Even the relaxed retries (leading 3, then 2 words) can come up empty — the
+    # slot must still drop with the honest no-candidates reason, not loop forever.
+    content_dir = tmp_path / "courses"
+    commons_queries = []
+
+    def fake_http_get(url):
+        if "commons.wikimedia.org" in url:
+            commons_queries.append(url)
+            return json.dumps({"query": {"pages": {}}}).encode()
+        if "api.openverse.org" in url:
+            return json.dumps({"results": []}).encode()
+        raise AssertionError(url)
+
+    events = []
+    resolved = images.resolve_images(
+        "demo", "demo-l1",
+        [{"query": "alpha beta gamma delta epsilon", "caption": "c"}],
+        content_dir=content_dir, http_get=fake_http_get,
+        structured=lambda *a, **k: {"pick": 1}, on_event=events.append)
+    assert resolved == []
+    assert len(commons_queries) == 3  # full, first-3, first-2 — then gives up
+    assert events[-1]["drop_reason"] == "no-candidates"
+
+
 def test_resolve_images_openverse_429_skips_without_retry(tmp_path):
     content_dir = tmp_path / "courses"
     calls = {"openverse": 0}

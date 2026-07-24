@@ -445,6 +445,16 @@ def test_lesson_prompt_mentions_checks():
     assert "mcq" in p and "fill" in p
 
 
+def test_lesson_prompt_asks_for_broad_search_words_not_discriminating_terms():
+    # Live failure 2026-07-24: "discriminating archive search terms" produced a
+    # 9-term query that matched nothing on Commons (search AND-matches all terms).
+    # The prompt must steer toward few broad words instead.
+    p = gen.lesson_prompt(brief="b", profile={}, lesson_id="x-l1", lesson_title="T",
+                          module_title="M", position=1, total=2)
+    assert "discriminating" not in p
+    assert "2-4 broad search words" in p
+
+
 def test_ensure_lesson_sanitizes_check_html(tmp_path):
     import json as _json
     from backend import courses

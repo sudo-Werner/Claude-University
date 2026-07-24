@@ -317,12 +317,22 @@ def _resolve_one_slot(n, slot, course_id, lesson_id, *, images_dir, http_get,
 
     if not (isinstance(query, str) and query.strip() and isinstance(caption, str) and caption.strip()):
         return drop("malformed-slot")
-    commons = commons_search(query, http_get=http_get)
-    valid = [c for c in commons if license_allowed(c.get("licenseShort"))]
-    openverse = []
-    if len(valid) < 2:
-        openverse = openverse_search(query, http_get=http_get)
-        valid = valid + [c for c in openverse if license_allowed(c.get("licenseShort"))]
+    # Archive search AND-matches every term, so an over-specific query finds nothing
+    # (live 2026-07-24: the model's 9-term query -> 0 candidates while its 2 leading
+    # words -> 7). When a query matches nothing at all, relax it to the leading 3,
+    # then 2 words before giving up — bounded, and only on the empty-search path.
+    words = query.split()
+    attempts = [query] + [" ".join(words[:k]) for k in (3, 2) if len(words) > k]
+    commons = openverse = valid = []
+    for attempt in attempts:
+        commons = commons_search(attempt, http_get=http_get)
+        valid = [c for c in commons if license_allowed(c.get("licenseShort"))]
+        openverse = []
+        if len(valid) < 2:
+            openverse = openverse_search(attempt, http_get=http_get)
+            valid = valid + [c for c in openverse if license_allowed(c.get("licenseShort"))]
+        if commons or openverse:
+            break  # the search matched something; the license filter decides below
     if not valid:
         # distinguish "search found nothing" from "found but all filtered out"
         return drop("no-candidates" if not (commons or openverse) else "license-filtered")

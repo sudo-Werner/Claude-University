@@ -305,7 +305,8 @@ _IMAGES_BLOCK = (
     "second, [[figure:3]] for the third. Budget at most ONE figure per major concept and at most "
     "THREE per lesson.\n"
     '  images (optional — omit the key entirely if no figure genuinely helps): a list of 0-3 '
-    '{"query": "<discriminating archive search terms>", "caption": "<one sentence saying what to '
+    '{"query": "<2-4 broad search words, e.g. dermoscopy melanoma — archive search matches ALL '
+    'terms, so fewer, broader words find more; never a full description>", "caption": "<one sentence saying what to '
     'NOTICE>"}, one per [[figure:n]] token you placed, in the same order.\n'
 ) + figures.DRAWN_FIGURE_GUIDANCE
 
