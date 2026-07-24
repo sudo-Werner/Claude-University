@@ -142,6 +142,12 @@ def test_activity_limit_is_bounded_and_tolerant(client):
     assert client.get("/api/activity?limit=banana").status_code == 200
 
 
+def test_get_events_limit_non_numeric_falls_back_to_default(client):
+    resp = client.get("/api/events?limit=abc")
+    assert resp.status_code == 200
+    assert resp.get_json()["events"] == []
+
+
 def test_activity_negative_limit_is_clamped(client):
     for i in range(3):
         client.post("/api/events", json={"events": [{

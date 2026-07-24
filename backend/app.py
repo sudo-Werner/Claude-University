@@ -13,9 +13,16 @@ _IMAGE_FILENAME_RE = _re.compile(r"^[a-z0-9-]+-\d\.(jpg|png|webp)$")
 _JOB_TIMEOUT = 1200
 
 
+_REAUTH_MESSAGE = "Claude needs re-authentication on the Pi — run `claude` there to log in again."
+
+
+def _reauth_response():
+    return jsonify({"error": _REAUTH_MESSAGE, "code": "reauth"}), 503
+
+
 def _job_error_message(exc):
     if isinstance(exc, claude_client.ClaudeAuthError):
-        return "Claude needs re-authentication on the Pi — run `claude` there to log in again."
+        return _REAUTH_MESSAGE
     if isinstance(exc, claude_client.ClaudeError):
         if "timed out" in str(exc):
             return "Generation took too long and was stopped — try again."
@@ -36,6 +43,16 @@ def _lesson_concepts(course_id, lesson_id):
         return []
     return [c["term"] for c in concepts
             if isinstance(c, dict) and isinstance(c.get("term"), str) and c["term"].strip()]
+
+
+def _lesson_title(course_id, lesson_id):
+    """Best-effort lesson title lookup for misconception logging — manifest load +
+    flatten_lessons, falling back to the lesson_id itself if the manifest or the
+    lesson entry within it is missing."""
+    manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
+    lesson_meta = next(
+        (l for l in courses.flatten_lessons(manifest) if l["id"] == lesson_id), None)
+    return lesson_meta["title"] if lesson_meta else lesson_id
 
 
 def _with_concepts(lesson, course_id, lesson_id):
@@ -108,11 +125,16 @@ def create_app(db_path=None):
                 try:
                     quiz.kick_restock(courses.CONTENT_DIR, path, cid, generate=generate)
                 except Exception:
+                    app.logger.exception("kick_restock failed")
                     pass  # a restock nudge must never break event ingestion
         return jsonify(result)
 
     @app.get("/api/events")
     def get_events():
+        try:
+            limit = int(request.args.get("limit", 1000))
+        except ValueError:
+            limit = 1000
         conn = db.get_connection(path)
         try:
             result = queries.query_events(
@@ -120,7 +142,7 @@ def create_app(db_path=None):
                 since=request.args.get("since"),
                 session_id=request.args.get("session_id"),
                 event_type=request.args.get("type"),
-                limit=int(request.args.get("limit", 1000)),
+                limit=limit,
             )
         finally:
             conn.close()
@@ -217,6 +239,12 @@ def create_app(db_path=None):
         body = request.get_json(silent=True) or {}
         if not body.get("title") or not body.get("modules"):
             return jsonify({"error": "title and modules are required"}), 400
+        for module in body.get("modules", []):
+            if not (isinstance(module, dict) and isinstance(module.get("title"), str) and module["title"].strip()):
+                return jsonify({"error": "every module needs a title"}), 400
+            for lesson in module.get("lessons", []):
+                if not (isinstance(lesson, dict) and isinstance(lesson.get("title"), str) and lesson["title"].strip()):
+                    return jsonify({"error": "every lesson needs a title"}), 400
         manifest = courses.write_course(courses.CONTENT_DIR, body)
         return jsonify({"course": objectives.resolved_manifest(manifest)}), 201
 
@@ -232,7 +260,7 @@ def create_app(db_path=None):
         try:
             compiled = compiler.compile_course(brief, generate_sourced=generate_sourced, verify=verify)
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "couldn't build your program, try again"}), 502
         if not generation.valid_compiled_course(compiled):
@@ -335,7 +363,7 @@ def create_app(db_path=None):
                 prior_knowledge=prior_knowledge, misconceptions=misconception_texts,
             )
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not prepare this lesson"}), 502
         if lesson is None:
@@ -456,7 +484,8 @@ def create_app(db_path=None):
         if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
             return jsonify({"error": "lesson not found"}), 404
         body = request.get_json(silent=True) or {}
-        answer = (body.get("answer") or "").strip()
+        answer = body.get("answer")
+        answer = answer.strip() if isinstance(answer, str) else ""
         if not answer:
             return jsonify({"error": "answer is required"}), 400
         generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_grade)
@@ -465,7 +494,7 @@ def create_app(db_path=None):
                 courses.CONTENT_DIR, course_id, lesson_id, answer, generate=generate,
             )
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not grade this answer"}), 502
         if result is None:
@@ -477,7 +506,8 @@ def create_app(db_path=None):
         if not _ID_RE.match(course_id) or not _ID_RE.match(lesson_id):
             return jsonify({"error": "lesson not found"}), 404
         body = request.get_json(silent=True) or {}
-        explanation = (body.get("explanation") or "").strip()
+        explanation = body.get("explanation")
+        explanation = explanation.strip() if isinstance(explanation, str) else ""
         if not explanation:
             return jsonify({"error": "explanation is required"}), 400
         generate = lambda prompt: claude_client.run_structured(prompt, validate=generation.valid_explain)
@@ -486,7 +516,7 @@ def create_app(db_path=None):
                 courses.CONTENT_DIR, course_id, lesson_id, explanation, generate=generate,
             )
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not read your explanation"}), 502
         if result is None:
@@ -494,10 +524,7 @@ def create_app(db_path=None):
         rubric = result.pop("rubric", None)
         if rubric and rubric.get("misconceptions"):
             try:
-                manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
-                lesson_meta = next(
-                    (l for l in courses.flatten_lessons(manifest) if l["id"] == lesson_id), None)
-                lesson_title = lesson_meta["title"] if lesson_meta else lesson_id
+                lesson_title = _lesson_title(course_id, lesson_id)
                 misconceptions.add_entries(
                     courses.CONTENT_DIR, course_id, lesson_id, lesson_title, "explain",
                     [(text, explanation[:280]) for text in rubric["misconceptions"]],
@@ -543,7 +570,7 @@ def create_app(db_path=None):
                 exam = exams.finalize_exam(obj, slots, exam_key, course_id)
                 exams.save_pending(courses.CONTENT_DIR, course_id, exam)
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not prepare this exam"}), 502
         return jsonify(exams.client_view(exam))
@@ -568,7 +595,7 @@ def create_app(db_path=None):
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not grade this exam — your answers were not lost, try again"}), 502
         finally:
@@ -603,7 +630,7 @@ def create_app(db_path=None):
                     manifest=manifest, spine_lessons=spine_lessons, generate=generate,
                 )
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not prepare the gap review — try again"}), 502
         return jsonify(session)
@@ -643,7 +670,7 @@ def create_app(db_path=None):
         try:
             result = claude_client.run_structured(prompt, validate=generation.valid_grade)
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not grade this answer"}), 502
         # modelAnswer is revealed only after grading, like a solution reveal.
@@ -674,7 +701,7 @@ def create_app(db_path=None):
                 prior_knowledge=prior_knowledge, misconceptions=misconception_texts,
             )
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not deepen this lesson"}), 502
         if lesson is None:
@@ -699,7 +726,7 @@ def create_app(db_path=None):
                 courses.CONTENT_DIR, course_id, scope, prof_data, generate=generate,
             )
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not prepare the real-world connections"}), 502
         if capstone is None:
@@ -729,7 +756,7 @@ def create_app(db_path=None):
                 manifest=manifest, generate=generate,
             )
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not grade your capstone — your work was not lost, try again"}), 502
         finally:
@@ -748,7 +775,7 @@ def create_app(db_path=None):
                 courses.CONTENT_DIR, course_id, generate_sourced=generate_sourced,
             )
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not compile the course library"}), 502
         if library is None:
@@ -861,16 +888,13 @@ def create_app(db_path=None):
         try:
             result = claude_client.run_structured(prompt, validate=generation.valid_grade)
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not grade your teaching"}), 502
         rubric = generation._extract_rubric(result)
         if rubric and rubric.get("misconceptions"):
             try:
-                manifest = courses.load_manifest(courses.CONTENT_DIR, course_id)
-                lesson_meta = next(
-                    (l for l in courses.flatten_lessons(manifest) if l["id"] == lesson_id), None)
-                lesson_title = lesson_meta["title"] if lesson_meta else lesson_id
+                lesson_title = _lesson_title(course_id, lesson_id)
                 teacher_text = " ".join(
                     str(m.get("content", "")) for m in messages if m.get("role") == "user")
                 misconceptions.add_entries(
@@ -920,7 +944,7 @@ def create_app(db_path=None):
                     existing_checks=existing_checks, generate=generate,
                 )
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not prepare fresh review questions"}), 502
         # userItems (highlight-derived, persistent) ride along with the AI-fresh set —
@@ -951,7 +975,7 @@ def create_app(db_path=None):
                     lesson_meta=lesson_meta, spine_entry=spine_entry, generate=generate,
                 )
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "could not create a review item from that highlight"}), 502
         return jsonify({"item": item})
@@ -972,7 +996,7 @@ def create_app(db_path=None):
                 generate_sourced=generate_sourced, verify=verify,
             )
         except claude_client.ClaudeAuthError:
-            return jsonify({"error": "Claude needs re-authentication on the Pi — run `claude` there to log in again.", "code": "reauth"}), 503
+            return _reauth_response()
         except claude_client.ClaudeError:
             return jsonify({"error": "couldn't revise your course, try again"}), 502
         if not generation.valid_compiled_course(proposed):
@@ -1030,6 +1054,7 @@ def create_app(db_path=None):
         try:
             quiz.kick_restock(courses.CONTENT_DIR, path, course_id, generate=generate)
         except Exception:
+            app.logger.exception("kick_restock failed")
             pass  # a spawn failure must not fail a successful round serve
         if round_ is None:
             return jsonify({"status": "generating"})
@@ -1051,6 +1076,7 @@ def create_app(db_path=None):
         try:
             quiz.kick_restock(courses.CONTENT_DIR, path, course_id, generate=generate)
         except Exception:
+            app.logger.exception("kick_restock failed")
             pass  # a spawn failure must not fail a successful result submission
         return jsonify(result)
 

@@ -383,6 +383,16 @@ def test_post_course_rejects_missing_fields(client, tmp_path, monkeypatch):
     assert client.post("/api/courses", json={"modules": []}).status_code == 400
 
 
+def test_post_course_rejects_module_without_title(client, tmp_path, monkeypatch):
+    from backend import courses
+    monkeypatch.setattr(courses, "CONTENT_DIR", tmp_path / "courses")
+    resp = client.post("/api/courses", json={
+        "title": "Test Course",
+        "modules": [{"lessons": [{"title": "L1"}]}],
+    })
+    assert resp.status_code == 400
+
+
 def test_routes_reject_illegal_ids(client):
     assert client.get("/api/courses/Bad_Id").status_code == 404
     assert client.get("/api/courses/machine-learning/lessons/..%2fsecret").status_code == 404
@@ -487,6 +497,16 @@ def test_grade_endpoint_rejects_empty_answer(client, tmp_path, monkeypatch):
     manifest, lesson_id = _fixture_course(courses, root)
     cid = manifest["id"]
     resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/grade", json={"answer": "   "})
+    assert resp.status_code == 400
+
+
+def test_grade_endpoint_rejects_non_string_answer(client, tmp_path, monkeypatch):
+    from backend import courses
+    root = tmp_path / "courses"; root.mkdir()
+    monkeypatch.setattr(courses, "CONTENT_DIR", root)
+    manifest, lesson_id = _fixture_course(courses, root)
+    cid = manifest["id"]
+    resp = client.post(f"/api/courses/{cid}/lessons/{lesson_id}/grade", json={"answer": 123})
     assert resp.status_code == 400
 
 
