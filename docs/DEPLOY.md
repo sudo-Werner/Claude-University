@@ -21,10 +21,14 @@ on the Pi (recovered from Claude CLI transcripts). Hence the hard rules below.
 
 ## The command
 
+If anything under `frontend/` changed, bump `CACHE` in `frontend/sw.js` first (e.g.
+`cu-shell-v4` -> `cu-shell-v5`) — otherwise returning browsers serve stale cached assets.
+
 ```bash
 rsync -az \
   --exclude='.git/' --exclude='.venv/' --exclude='node_modules/' \
   --exclude='__pycache__/' --exclude='.pytest_cache/' --exclude='.superpowers/' \
+  --exclude='.claude/' \
   --exclude='backend/data/' --exclude='data/' --exclude='content/' \
   /Users/wernervanellewee/Projects/Claude_Education/ werner@192.168.2.69:~/claude_university/
 ```
