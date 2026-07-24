@@ -322,6 +322,15 @@ export async function init({ window, fetch }) {
   }
   doc.addEventListener("selectionchange", captureSelectionForHighlight);
 
+  // Every workspace save writes the SAME shape (notes/chat/highlights for a
+  // course+lesson) -- see notes.js's warning that omitting `highlights` wipes it.
+  // Defaults courseId/lessonId to the on-screen lesson; callers holding an
+  // explicit cid/lid (a stream reply whose lesson may no longer be on screen)
+  // pass them instead.
+  function persistWorkspace(ws, courseId = ui.courseId, lessonId = ui.lesson.id) {
+    return saveWorkspace({ fetch, storage, courseId, lessonId, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+  }
+
   // Tapping the floating button: reads the live selection, computes `occurrence`
   // (which match of the exact selected text this is, counted across the container's
   // flattened text at THIS moment -- the anchoring rule), saves it, and applies the
@@ -345,7 +354,7 @@ export async function init({ window, fetch }) {
     const highlight = { id: newId("hl-"), text, occurrence };
     ws.highlights = [...(ws.highlights || []), highlight];
     applyHighlight(container, highlight);
-    saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+    persistWorkspace(ws);
   }
   // Removes one highlight: drop its id from the stored list, unwrap its mark(s) back
   // into plain text (no re-render needed -- this mutates the live DOM directly), and
@@ -357,7 +366,7 @@ export async function init({ window, fetch }) {
     if (!container || !id || !ws) return;
     ws.highlights = (ws.highlights || []).filter((h) => h.id !== id);
     removeHighlightMarks(container, id);
-    saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+    persistWorkspace(ws);
   }
 
   // Tapping any <mark> opens a small 2-action menu instead of removing it outright:
@@ -1810,7 +1819,7 @@ export async function init({ window, fetch }) {
   async function saveWsNow() {
     const ls = ui.lessonState, ws = ls.ws;
     if (!ws) return;
-    const res = await saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+    const res = await persistWorkspace(ws);
     if (ui.lessonState !== ls) return;
     ws.saveStatus = res.ok ? "saved" : "offline";
     const el = root.querySelector(".ws-status");
@@ -1848,7 +1857,7 @@ export async function init({ window, fetch }) {
       onDone: () => {
         ws.pending = false;                 // always clear pending so the input re-enables
         if (reply.content.trim()) ws.chat.push(reply);
-        saveWorkspace({ fetch, storage, courseId: cid, lessonId: lid, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+        persistWorkspace(ws, cid, lid);
         if (onScreen()) paintLesson();
       },
       onError: (e) => {
@@ -1964,7 +1973,7 @@ export async function init({ window, fetch }) {
     USE_PROFILES: { svg: true, svgFilters: true },
     ALLOWED_TAGS: ["svg","g","rect","circle","ellipse","line","polyline","polygon","path","text","tspan","title","defs","marker"],
     ALLOWED_ATTR: ["viewBox","x","y","x1","y1","x2","y2","cx","cy","r","rx","ry","width","height","d","points","transform","fill","stroke","stroke-width","stroke-dasharray","stroke-linecap","stroke-linejoin","font-size","font-family","font-weight","text-anchor","dominant-baseline","opacity","fill-opacity","marker-end","marker-start","id","class"],
-    FORBID_TAGS: ["style","image","use","a","foreignObject","script"],
+    FORBID_TAGS: ["animate","set","mpath","animateColor","discard","style","image","use","a","foreignObject","script"],
     FORBID_ATTR: ["href","xlink:href","style"],
   };
 
@@ -2119,7 +2128,7 @@ export async function init({ window, fetch }) {
       ws.open = true;
       ws.tab = "chat";
       ws.chat.push({ role: "assistant", content: g.followUp });
-      saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+      persistWorkspace(ws);
       paintLesson();
     });
     const socBtn = view.querySelector('[data-action="socratic-start"]');
@@ -2133,7 +2142,7 @@ export async function init({ window, fetch }) {
       if (entering) {
         ws.chat.push({ role: "assistant", content: SOCRATIC_OPENER });
         // Best-effort persist — same fire-and-forget idiom as the explain-chat seeding.
-        saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+        persistWorkspace(ws);
       }
       paintLesson();
     });
@@ -2150,7 +2159,7 @@ export async function init({ window, fetch }) {
         ws.teachGrade = null;
         ws.chat.push({ role: "assistant", content: TEACH_OPENER });
         // Best-effort persist — same fire-and-forget idiom as the socratic entry above.
-        saveWorkspace({ fetch, storage, courseId: ui.courseId, lessonId: ui.lesson.id, notes: ws.notes, chat: ws.chat, highlights: ws.highlights });
+        persistWorkspace(ws);
       }
       paintLesson();
     });
