@@ -57,7 +57,7 @@ def compute(content_dir, course_id):
                               drawn_and_photo),
         "web_image_realization_rate": rate(
             sum(1 for r in photos if r.get("outcome") == "rendered"), len(photos)),
-        "figures_per_lesson": rate(len(rows), len(fig_lessons)),
+        "figures_per_lesson": rate(len(rows), total_lessons),
         "zero_figure_rate": rate(total_lessons - len(fig_lessons), total_lessons),
     }
 

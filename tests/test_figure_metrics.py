@@ -74,6 +74,22 @@ def test_orphaned_telemetry_lesson_does_not_break_metrics(tmp_path):
     assert m == expected
 
 
+def test_figures_per_lesson_denominator_is_total_lessons(tmp_path):
+    """figures_per_lesson promises figures-per-lesson-in-the-course, so it must
+    divide by total_lessons -- not by the count of lessons that already have a
+    figure (which would silently mask a lesson with zero figures)."""
+    content_dir = tmp_path / "courses"
+    _seed(content_dir, "demo",
+          lessons={"demo-l1": [{"text": "a", "bloom": "analyze", "knowledge": "conceptual"}],
+                   "demo-l2": [{"text": "b", "bloom": "analyze", "knowledge": "conceptual"}]},
+          events=[
+            {"course_id": "demo", "lesson_id": "demo-l1", "n": 1,
+             "requested_type": "mermaid", "outcome": "rendered", "drop_reason": None},
+          ])
+    m = figure_metrics.compute(content_dir, "demo")
+    assert m["figures_per_lesson"] == 0.5   # 1 row / 2 total lessons, not 1 / 1 fig lesson
+
+
 def test_regression_ok_gate(tmp_path):
     base = {"id_alignment_rate": 0.6, "figures_per_lesson": 1.0, "zero_figure_rate": 0.3}
     good = {"id_alignment_rate": 0.7, "figures_per_lesson": 1.05, "zero_figure_rate": 0.3}

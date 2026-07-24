@@ -61,13 +61,13 @@ def test_migrate_write_failure_does_not_abort_batch(tmp_path, monkeypatch):
     monkeypatch.setattr(compiler, "enrich_course", valid_enrich)
 
     write_calls = []
-    original_write = migrate_courses._atomic_write
-    def flaky_write(path, data):
+    original_write = migrate_courses.fsutil.write_text_atomic
+    def flaky_write(path, text):
         write_calls.append(str(path))
         if "aaa" in str(path):
             raise OSError("disk full")
-        return original_write(path, data)
-    monkeypatch.setattr(migrate_courses, "_atomic_write", flaky_write)
+        return original_write(path, text)
+    monkeypatch.setattr(migrate_courses.fsutil, "write_text_atomic", flaky_write)
 
     result = migrate_courses.migrate(tmp_path)
     assert result["enriched"] >= 1 and result["errors"] >= 1

@@ -7,13 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from backend import claude_client, compiler, courses, generation
-
-
-def _atomic_write(path, data):
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False))
-    tmp.replace(path)
+from backend import claude_client, compiler, courses, fsutil, generation
 
 
 def migrate(content_dir=courses.CONTENT_DIR):
@@ -25,7 +19,12 @@ def migrate(content_dir=courses.CONTENT_DIR):
         manifest_path = child / "course.json"
         if not manifest_path.exists():
             continue
-        manifest = json.loads(manifest_path.read_text())
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except (ValueError, OSError) as exc:
+            print(f"ERROR {child.name}: course.json does not parse ({exc})")
+            errors += 1
+            continue
         if manifest.get("schemaVersion", 0) >= 2:
             print(f"skip  {child.name}: already schemaVersion >= 2")
             clean += 1
@@ -41,7 +40,7 @@ def migrate(content_dir=courses.CONTENT_DIR):
             errors += 1
             continue
         try:
-            _atomic_write(manifest_path, compiled)
+            fsutil.write_text_atomic(manifest_path, json.dumps(compiled, indent=2, ensure_ascii=False))
         except Exception as exc:  # a write failure on one course must not abort the batch
             print(f"ERROR {child.name}: write failed: {exc}")
             errors += 1
