@@ -116,6 +116,95 @@ Mark items done here with date + merge commit as they land.
 - [ ] **12. houston memory contention** [Infra, Werner-only: cap/relocate houston, add swap,
   or accept that CU generation can fail when houston is busy. Open since 2026-06-24]
 
+## Tier 2 (persona batch) — added 2026-07-22, go/no-go per item before building
+
+From the persona brainstorm ([docs/research/2026-07-22-persona-brainstorm.md](../docs/research/2026-07-22-persona-brainstorm.md)),
+triaged with Werner 2026-07-22. **[P]** = that sheet. Only the ideas judged worth building are
+here; killed/parked/redesign-owned ideas are listed at the end so they aren't re-proposed. Cost
+tags are rough (LOW/MED/HIGH). These need a per-item go/no-go, then their own brainstorm→spec→plan.
+
+- [ ] **21. Life-grounded assignments** [P #13 — top pick]. Generate exercises from Werner's own
+  artifacts on the same Pi (trading_system, home_assistant, Involo repos; trading data): refactor
+  your own code, reason about your own data. Deletes the transfer gap — the one thing only a
+  university-of-one can do. Evidence is honest: this is a *structural* bet (situated/authentic
+  practice), not a measured effect size. Cost: HIGH — needs a read-only, Werner-pointed ingest of
+  chosen repos/data (never leaves the Pi), a generator that builds a real task from a code/data
+  slice, and grading. Depends on: strongest after the objective backbone (assignments bind to
+  objectives); reuses the lesson-gen background-job + grading. Risk: shallow = gimmick; scope the
+  ingest tightly. Decision: its own multi-session brainstorm+spec, not a quick win.
+- [ ] **22. Questions become the university** [P #19 — top pick]. One-tap capture of mid-lesson
+  tangent questions as first-class objects; later the curriculum grows an objective/lesson from a
+  captured question, your question quoted at the top. A captured question = a proto-objective, so
+  this rides directly on the objective-centric model. Evidence: interest-driven learning +
+  elaborative interrogation. Cost: MED-HIGH. Depends on: the objective-id backbone (Phase 0, in
+  progress). Decision: park until Phase 0 lands, then brainstorm.
+- [ ] **23. Grade your past self** [P #15 — top pick]. Resurface the learner's own months-old
+  explain-back verbatim and have them critique it: spaced retrieval + calibration + visceral
+  progress, from data already in the event log. Evidence: retrieval practice (g≈0.5–0.7 vs
+  restudy) + self-explanation. Cost: LOW (assembly + one grading prompt). Depends on: months of
+  history to bite (Werner ~1mo in — build the capture now, the "grade your past self" reveal
+  matures in Q3). Decision: cheap; go/no-go.
+- [ ] **24. Interleaved review across courses** [P #10]. Shuffle due items across all
+  courses/modules into one mixed queue (today reviews are per-course). Evidence: interleaving
+  g≈0.42 for discriminable item types — and Werner runs several courses at once, so it genuinely
+  applies. Distinct from item 19 (reviews-before-lesson, single course). Cost: LOW-MED (SRS queue
+  exists; add a cross-course mixed mode). Decision: cheap engine win; go/no-go.
+- [ ] **25. Spot-the-flaw / reviewer-2 on your own work** [P #14 + PhD #3]. Two modes: (a) Claude
+  writes a subtly wrong explanation, learner finds the error; (b) Claude adversarially reviews the
+  learner's OWN explanation/answer/code, attacking method/logic/claims. Trains calibrated distrust
+  of AI — valuable for a heavy AI user. Evidence: erroneous-examples / refutation-text. Cost: MED.
+  Risk: mode (a) must ALWAYS reveal+verify afterward so a missed flaw never teaches the error.
+  Decision: go/no-go; strong fit for a skeptical engineer.
+- [ ] **26. Examined external readings** [P #12]. Occasionally assign a real chapter/paper from the
+  Library's accredited sources and have Claude examine the learner on it — keeps "materials teach,
+  AI verifies" literally true. Cost: MED (reuses Library + the viva/grading engine). Overlaps item
+  11 (viva) as the exam engine; sequence after it. Decision: go/no-go.
+- [ ] **27. Citation audit** [P: PhD #7, stolen into student use]. Verify that every source Claude
+  cites in a lesson/answer actually says what it's claimed to say (fetch + check). Cheap,
+  mechanical; hardens the Library grounding and catches the ~11% hallucination class Werner already
+  worries about. Cost: LOW-MED (reuses the sources/fetch engine). Decision: strong honesty win;
+  go/no-go.
+- [ ] **28. Night-shift pre-warm of due reviews** [P #17, safe half only]. A nightly idle-hours job
+  pre-generates the KNOWN due-review items for the next day so the wait is zero and paid calls
+  batch into one predictable window. Explicitly NOT the "pre-generate the likely next lesson" half
+  (speculative — wastes tokens on content that may never open). Reuses the lesson-gen background-job
+  infra (feat/lesson-gen-progress). Cost: MED. Interacts with item 12 (houston contention).
+  Decision: go/no-go.
+- [ ] **29. Advisor / anti-isolation layer** [P #23 — recurs in every persona]. An in-app advisor
+  that, when the learner returns, reviews the event log, says one true hard thing, asks what pulled
+  at them, proposes next term's shape, and grants permission to drop dead courses. Addresses the
+  real failure mode of self-study (dropout, not bad pedagogy) — the sheet's own cross-persona note
+  calls this the universal missing piece. HARD CONSTRAINT: honors the redesign §4A no-outbound rule
+  — it waits for the learner to walk in; it NEVER notifies, nags, or schedules a ping. Evidence is
+  honest: advising/retention value is real but this specific in-app pattern is unproven — build
+  lean and instrument. Cost: MED. Decision: the most interesting gap; worth its own brainstorm, but
+  only within the no-outbound rule.
+
+### Persona batch — cross-references & decisions (do not re-propose)
+
+- **Owned by the objective-centric redesign — cross-ref, not duplicated here:**
+  **Confidence calibration on checks** [P #11] → redesign §4A places the confidence tap on
+  *delayed/spaced* reviews (not immediate checks — an immediate tap measures the fluency illusion,
+  not knowledge) + Phase 4. Could be pulled forward as a cheap standalone if wanted before the
+  redesign lands. **The atlas / knowledge map** [P #22-viz] → the visual form of the redesign's
+  rich open-learner-model (§4A); honest caveat: OLM→self-regulation evidence is mixed, build lean.
+  **Viva mode** [P #7] → already item 11. **Token streaming** [P #6] → already item 10.
+- **Killed:** **Knowledge-rot detection** [P #16] — speculative + token-expensive; fundamentals
+  don't rot fast enough at this level to justify an idle-hours re-search job. Revisit only if
+  narrowed to named fast-moving domains.
+- **Recommend decline (needs Werner's explicit reconciliation):** **FSRS full adoption**
+  [P #8 / item 6 above]. At n=1 you can't fit FSRS's parameters, so you'd get its complexity with
+  none of its payoff; keep only the *graded* recall signal (latency + hint + retry) feeding the
+  existing scheduler. NOTE: this CONTRADICTS the objective-centric redesign spec, which currently
+  says "adopt FSRS" — item 6 and the spec must be reconciled to one decision. Left untouched
+  pending Werner's ruling.
+- **Parked (not added as items):** learner-authored textbook [P #18] — nice someday-capstone, low
+  urgency; taken-to-the-edge [P #20] and seminar mode [P #21] — fold into viva (11) +
+  examined-readings (26), not separate builds.
+- **Personas 2 & 3 (PhD, lecturer):** inspiration, not roadmap — they only become a roadmap if CU
+  stops being a university-of-one. Open question for Werner. Citation audit (27) and reviewer-2
+  (25b) are the only PhD ideas pulled into the student track.
+
 ## Tier 3 — hygiene batch (approved; fold into one small branch when convenient)
 
 - [x] **13. Backup restore-check** [S]: monthly (cron or documented manual step) restore of
@@ -228,6 +317,28 @@ Mark items done here with date + merge commit as they land.
 
 ## Handoff notes
 
+- 2026-07-23 08:34: **Phase 0 objective-id backbone CODE-COMPLETE.** Branch
+  `feat/phase0-objective-id-backbone`, HEAD `e3db3c7`. All 9 tasks implemented, each
+  task-reviewed and approved; final whole-branch review (verdict: ready to merge) plus a
+  4-item fix batch (wire-shaped both POST course responses, guarded the legacy
+  `migrate_courses.py` against v3 stores, registry shared-reference docstrings, stale
+  comment). Backend 966 / frontend 371 green (baselines 942/369). Full trail:
+  `.superpowers/sdd/progress.md`. **MERGED to main 2026-07-23 08:49** (fast-forward
+  c10ac6a→e3db3c7, carried `feat/lesson-gen-progress` too since Phase 0 was stacked on it;
+  backend 966 green on main; NOT pushed — origin/main is 86 behind, Werner's call).
+  **DEPLOYED + LIVE-VERIFIED 2026-07-23 09:12 — Phase 0 SHIPPED.** Pi was offline (expired
+  Tailscale node key — fixed with `sudo tailscale up --advertise-routes=192.168.2.0/24`, the
+  Pi is a subnet router; disable key expiry to prevent recurrence). Deploy: rsync (content/
+  and data/ excluded) → restart → live migration (4 courses v2→v3, 0 errors, 90/74/90/66).
+  Verified on the Pi: API serves all 4 at schemaVersion 3 with embedded objectives on every
+  lesson; disk v3 + `course.json.pre-objid-*` sidecars hold the v2 originals; end-to-end
+  lossless; exam blueprints resolve live; frontend `>= 2` gate served. restore_check + a
+  dry-run on a copy of the real content preceded it. **Open follow-ups:** (a) revise
+  round-trip not live-fired (avoids LLM spend / prod state — covered by tests); worth a manual
+  browser smoke-test when convenient. (b) sidecars retained until Werner confirms healthy,
+  then removable. (c) service-worker cache-first: hard-refresh the browser once. (d) Phase-4
+  precondition in memory: seed the objective-id counter from the on-disk registry max before
+  any objective-id-keyed persistence lands.
 - Session norms: spec → plan → subagent build → per-task review → final whole-branch review
   → merge → deploy ([docs/DEPLOY.md](../docs/DEPLOY.md) — read the hard rules) → live-verify
   on the Pi → clean up test data → update this file + the ledger.
