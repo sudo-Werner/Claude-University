@@ -257,6 +257,10 @@ def test_anim_rejects_over_budget():
                    for _ in range(9))  # 9 animation elements > 8
     assert _drop(dots)
 
+def test_anim_rejects_over_budget_drawn():
+    rects = "".join('<rect width="1" height="1"/>' for _ in range(31))  # 31 drawn > 30, 0 animation elements
+    assert _drop(rects)
+
 def test_anim_elements_still_rejected_without_flag():
     # default allow_animation=False -> animation is not permitted (static path unchanged)
     assert figures.sanitize_svg(_MAL.format(

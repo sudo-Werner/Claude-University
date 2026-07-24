@@ -86,3 +86,24 @@ test("attachFigurePlayer's frame loop self-terminates once its figure is detache
   assert.equal(rafCallbacks.length, 2, "a detached figure's frame must NOT reschedule");
   assert.equal(observerDisconnectCalls, 1, "a detached figure's frame must disconnect its observer");
 });
+
+// Regression guard for the guard app.js relies on to call attachFigurePlayer
+// unconditionally: a fig with no <svg>, or an <svg> lacking setCurrentTime
+// (non-SMIL-capable / not really an svg element), must be a no-op.
+test("attachFigurePlayer returns null and never schedules a frame when the fig has no animatable svg", () => {
+  let rafCalls = 0;
+  const fakeWin = {
+    requestAnimationFrame() { rafCalls++; return 1; },
+    cancelAnimationFrame() {},
+  };
+
+  const figNoSvg = { querySelector() { return null; } };
+  assert.equal(attachFigurePlayer(figNoSvg, { win: fakeWin }), null);
+
+  const figSvgNoSetCurrentTime = {
+    querySelector(sel) { return sel === "svg" ? {} : null; },
+  };
+  assert.equal(attachFigurePlayer(figSvgNoSetCurrentTime, { win: fakeWin }), null);
+
+  assert.equal(rafCalls, 0, "requestAnimationFrame must never be invoked for an unplayable fig");
+});

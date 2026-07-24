@@ -956,6 +956,23 @@ def test_backfill_course_missing_course_returns_zero(tmp_path):
     assert images.backfill_course(tmp_path / "courses", "no-such-course", generate=lambda p, v: {}) == 0
 
 
+def test_backfill_course_skips_invalid_json_file_and_continues(tmp_path):
+    """A corrupt lesson JSON file must not raise or block the batch — the
+    well-formed pending lesson alongside it should still be processed."""
+    root = tmp_path / "courses"
+    lessons_dir = root / "demo" / "lessons"
+    lessons_dir.mkdir(parents=True)
+    (lessons_dir / "demo-l1.json").write_text("{not valid json")
+    pending = {"id": "demo-l2", "topic": "t", "promptHtml": "<p>Second lesson.</p>"}
+    (lessons_dir / "demo-l2.json").write_text(json.dumps(pending))
+
+    def generate(prompt, validate):
+        return {"images": [], "promptHtml": "<p>Second lesson.</p>"}
+
+    count = images.backfill_course(root, "demo", generate=generate)
+    assert count == 1
+
+
 def test_backfill_course_survives_timeout_and_continues_batch(tmp_path):
     """backfill_course must handle subprocess.TimeoutExpired (not just ClaudeError)
     and continue processing remaining lessons."""

@@ -20,3 +20,16 @@ def test_read_missing_file_is_empty(tmp_path):
 
 def test_record_never_raises_on_bad_dir():
     figure_telemetry.record("/nonexistent/deeply/nested", {"n": 1})  # no exception
+
+
+def test_read_skips_malformed_lines(tmp_path):
+    path = tmp_path / figure_telemetry.TELEMETRY_FILENAME
+    path.write_text(
+        '{"n": 1}\n'
+        "not json\n"
+        '{"n": 2}\n',
+        encoding="utf-8",
+    )
+    rows = figure_telemetry.read(tmp_path)
+    assert len(rows) == 2
+    assert rows[0]["n"] == 1 and rows[1]["n"] == 2
