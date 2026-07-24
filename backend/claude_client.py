@@ -1,3 +1,4 @@
+import collections
 import json
 import os
 import signal
@@ -100,8 +101,13 @@ def _spawn_cli(args, timeout=None):
 
         watchdog = threading.Timer(wait, _kill_on_timeout)
         watchdog.start()
+        # Bounded tail of stdout — lesson streams are large, so we never accumulate
+        # the whole thing, just enough to catch an auth-failure marker that the CLI
+        # printed to stdout instead of stderr (see _auth_failure_reason below).
+        recent_stdout = collections.deque(maxlen=50)
         try:
             for line in proc.stdout:
+                recent_stdout.append(line)
                 yield line
             # Must wait() before reading returncode: the read loop ending only means
             # the pipe closed, not that the process has been reaped yet. Checking
@@ -112,7 +118,8 @@ def _spawn_cli(args, timeout=None):
             if proc.returncode != 0:
                 tmpfile.seek(0)
                 err = tmpfile.read() or ""
-                reason = _auth_failure_reason("", err, scan_text=True)
+                out = "".join(recent_stdout)
+                reason = _auth_failure_reason(out, err, scan_text=True)
                 if reason:
                     raise ClaudeAuthError(reason)
                 raise ClaudeError(f"claude stream exited {proc.returncode}: {err[:500]}")

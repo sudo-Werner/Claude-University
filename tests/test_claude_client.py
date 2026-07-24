@@ -309,6 +309,18 @@ def test_spawn_cli_delivers_bursted_lines_without_returncode_race(monkeypatch, t
         assert list(cc._spawn_cli(["-p", "x"])) == ["a\n", "b\n", "c\n", "d\n"]
 
 
+def test_spawn_cli_raises_auth_error_on_stdout_marker(monkeypatch, tmp_path):
+    # The marker is printed to stdout (not stderr) and the process exits non-zero —
+    # this used to raise a generic ClaudeError because the exit-code check only
+    # scanned stderr, losing an auth failure the CLI reported on stdout.
+    script = tmp_path / "fake-claude"
+    script.write_text("#!/bin/sh\necho 'not logged in'\nexit 1\n")
+    script.chmod(0o755)
+    monkeypatch.setattr(cc, "CLAUDE_BIN", str(script))
+    with pytest.raises(cc.ClaudeAuthError):
+        list(cc._spawn_cli(["-p", "x"]))
+
+
 # ---- progress_events: stream-json -> user-facing feed lines ----
 
 def _assistant(blocks):
